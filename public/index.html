@@ -3,10 +3,392 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brakeknights</title>
+  <title>Brakeknights – Work Orders</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1a1a;
+      border-bottom: 2px solid #e63946;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    header span {
+      color: #e63946;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    main {
+      max-width: 960px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    .new-job-form {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .new-job-form h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .form-row.full { grid-template-columns: 1fr; }
+
+    input, textarea {
+      width: 100%;
+      background: #0f0f0f;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.6rem 0.75rem;
+      color: #e8e8e8;
+      font-size: 0.95rem;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #e63946;
+    }
+
+    textarea { resize: vertical; min-height: 70px; }
+
+    input::placeholder, textarea::placeholder { color: #555; }
+
+    button.submit {
+      background: #e63946;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.65rem 1.5rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button.submit:hover { background: #c1121f; }
+
+    .jobs-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+
+    .jobs-header h2 { font-size: 1.1rem; font-weight: 600; }
+
+    .count {
+      background: #2a2a2a;
+      border-radius: 99px;
+      padding: 0.2rem 0.65rem;
+      font-size: 0.8rem;
+      color: #aaa;
+    }
+
+    .filters {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .filter-btn {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.35rem 0.85rem;
+      color: #aaa;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .filter-btn.active, .filter-btn:hover {
+      border-color: #e63946;
+      color: #fff;
+    }
+
+    .job-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .job-card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.5rem;
+      align-items: start;
+      transition: border-color 0.15s;
+    }
+
+    .job-card[data-status="pending"]    { --accent: #f4a261; }
+    .job-card[data-status="in-progress"] { --accent: #457b9d; }
+    .job-card[data-status="complete"]   { --accent: #2a9d8f; }
+
+    .job-meta {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.25rem;
+    }
+
+    .job-vehicle {
+      font-size: 0.82rem;
+      color: #888;
+      margin-bottom: 0.5rem;
+    }
+
+    .job-description {
+      font-size: 0.9rem;
+      color: #ccc;
+      line-height: 1.45;
+    }
+
+    .job-date {
+      font-size: 0.75rem;
+      color: #555;
+      margin-top: 0.5rem;
+    }
+
+    .job-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.5rem;
+    }
+
+    .status-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.2rem 0.6rem;
+      border-radius: 99px;
+      color: #fff;
+      background: var(--accent);
+    }
+
+    select.status-select {
+      background: #0f0f0f;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 0.35rem 0.5rem;
+      color: #e8e8e8;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    button.delete-btn {
+      background: none;
+      border: none;
+      color: #555;
+      font-size: 1rem;
+      cursor: pointer;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    button.delete-btn:hover { color: #e63946; background: #2a0a0a; }
+
+    .empty {
+      text-align: center;
+      color: #444;
+      padding: 3rem;
+      font-size: 0.95rem;
+    }
+
+    .error-msg {
+      color: #e63946;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+  </style>
 </head>
 <body>
-  <h1>Brakeknights</h1>
-  <p>Site coming soon.</p>
+  <header>
+    <h1>Brakeknights</h1>
+    <span>Work Orders</span>
+  </header>
+
+  <main>
+    <div class="new-job-form">
+      <h2>New Work Order</h2>
+      <div class="form-row">
+        <input id="customer" type="text" placeholder="Customer name">
+        <input id="vehicle" type="text" placeholder="Vehicle (e.g. 2018 Ford F-150)">
+      </div>
+      <div class="form-row full">
+        <textarea id="description" placeholder="Work to be done (e.g. Replace front brake pads and rotors)"></textarea>
+      </div>
+      <button class="submit" onclick="createJob()">Add Work Order</button>
+      <div id="form-error" class="error-msg"></div>
+    </div>
+
+    <div class="jobs-header">
+      <h2>Open Jobs <span class="count" id="job-count">0</span></h2>
+      <div class="filters">
+        <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+        <button class="filter-btn" onclick="setFilter('pending', this)">Pending</button>
+        <button class="filter-btn" onclick="setFilter('in-progress', this)">In Progress</button>
+        <button class="filter-btn" onclick="setFilter('complete', this)">Complete</button>
+      </div>
+    </div>
+
+    <div class="job-list" id="job-list"></div>
+  </main>
+
+  <script>
+    let allJobs = [];
+    let activeFilter = 'all';
+
+    async function loadJobs() {
+      const res = await fetch('/api/jobs');
+      allJobs = await res.json();
+      renderJobs();
+    }
+
+    function setFilter(filter, btn) {
+      activeFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderJobs();
+    }
+
+    function renderJobs() {
+      const list = document.getElementById('job-list');
+      const jobs = activeFilter === 'all'
+        ? allJobs
+        : allJobs.filter(j => j.status === activeFilter);
+
+      document.getElementById('job-count').textContent = jobs.length;
+
+      if (jobs.length === 0) {
+        list.innerHTML = '<div class="empty">No work orders here.</div>';
+        return;
+      }
+
+      list.innerHTML = jobs.map(job => `
+        <div class="job-card" data-status="${job.status}" id="job-${job.id}">
+          <div>
+            <div class="job-meta">${escape(job.customer)}</div>
+            <div class="job-vehicle">${escape(job.vehicle)}</div>
+            <div class="job-description">${escape(job.description)}</div>
+            <div class="job-date">${formatDate(job.created_at)}</div>
+          </div>
+          <div class="job-actions">
+            <span class="status-badge">${formatStatus(job.status)}</span>
+            <select class="status-select" onchange="updateStatus(${job.id}, this.value)">
+              <option value="pending"     ${job.status === 'pending'     ? 'selected' : ''}>Pending</option>
+              <option value="in-progress" ${job.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
+              <option value="complete"    ${job.status === 'complete'    ? 'selected' : ''}>Complete</option>
+            </select>
+            <button class="delete-btn" onclick="deleteJob(${job.id})" title="Delete">✕</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function createJob() {
+      const customer    = document.getElementById('customer').value.trim();
+      const vehicle     = document.getElementById('vehicle').value.trim();
+      const description = document.getElementById('description').value.trim();
+      const errEl       = document.getElementById('form-error');
+      errEl.textContent = '';
+
+      if (!customer || !vehicle || !description) {
+        errEl.textContent = 'All three fields are required.';
+        return;
+      }
+
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer, vehicle, description }),
+      });
+
+      if (!res.ok) {
+        errEl.textContent = 'Failed to create job.';
+        return;
+      }
+
+      document.getElementById('customer').value = '';
+      document.getElementById('vehicle').value = '';
+      document.getElementById('description').value = '';
+      loadJobs();
+    }
+
+    async function updateStatus(id, status) {
+      const res = await fetch(`/api/jobs/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        const idx = allJobs.findIndex(j => j.id === id);
+        if (idx !== -1) allJobs[idx] = updated;
+        renderJobs();
+      }
+    }
+
+    async function deleteJob(id) {
+      const res = await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        allJobs = allJobs.filter(j => j.id !== id);
+        renderJobs();
+      }
+    }
+
+    function escape(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function formatStatus(s) {
+      return { pending: 'Pending', 'in-progress': 'In Progress', complete: 'Complete' }[s] || s;
+    }
+
+    function formatDate(dt) {
+      return new Date(dt + 'Z').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+    }
+
+    loadJobs();
+  </script>
 </body>
 </html>
