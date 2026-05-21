@@ -1,19 +1,11 @@
 {
-  "inputs": [
-    {
-      "id": "api_token",
-      "type": "promptString",
-      "description": "Hostinger API token",
-      "password": true
-    }
-  ],
-  "servers": {
+  "mcpServers": {
     "hostinger-mcp": {
       "type": "stdio",
       "command": "node",
       "args": ["./node_modules/.bin/hostinger-api-mcp"],
       "env": {
-        "API_TOKEN": "${input:api_token}"
+        "API_TOKEN": "${HOSTINGER_API_TOKEN}"
       }
     }
   }
