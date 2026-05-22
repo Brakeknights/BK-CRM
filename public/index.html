@@ -3,10 +3,1646 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brakeknights</title>
+  <title>Brake Knights – Mobile Brake Repair | Northern Virginia</title>
+  <meta name="description" content="Professional mobile brake service in Northern Virginia. We come to you! Brake pad & rotor replacement, caliper repair, fluid flush, and more. Call 703-977-4475.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy: #0d1b2a;
+      --navy-mid: #1b2c3e;
+      --blue: #1a4a7a;
+      --blue-light: #2563a8;
+      --gold: #e8a020;
+      --gold-light: #f5c242;
+      --red: #c0392b;
+      --white: #ffffff;
+      --off-white: #f7f9fc;
+      --gray-light: #e8edf4;
+      --gray: #6b7a8d;
+      --text: #1a2535;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+      background: var(--white);
+      line-height: 1.6;
+    }
+
+    a { text-decoration: none; color: inherit; }
+    img { max-width: 100%; display: block; }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── HEADER ── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: var(--navy);
+      box-shadow: 0 2px 12px rgba(0,0,0,.4);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 68px;
+    }
+
+    .logo {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--white);
+      letter-spacing: -0.5px;
+    }
+
+    .logo span { color: var(--gold); }
+
+    nav { display: flex; align-items: center; gap: 4px; }
+
+    .nav-item {
+      position: relative;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 14px;
+      color: #c8d4e0;
+      font-size: 0.9rem;
+      font-weight: 500;
+      border-radius: 6px;
+      transition: background .15s, color .15s;
+      white-space: nowrap;
+    }
+
+    .nav-link:hover { background: rgba(255,255,255,.08); color: var(--white); }
+
+    .nav-link .caret {
+      font-size: .65rem;
+      opacity: .7;
+      transition: transform .2s;
+    }
+
+    .nav-item:hover .caret { transform: rotate(180deg); }
+
+    .dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      min-width: 240px;
+      background: var(--navy-mid);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 8px;
+      padding: 8px 0;
+      box-shadow: 0 12px 32px rgba(0,0,0,.5);
+    }
+
+    .nav-item:hover .dropdown { display: block; }
+
+    .dropdown a {
+      display: block;
+      padding: 9px 20px;
+      color: #b0bec9;
+      font-size: 0.875rem;
+      transition: background .12s, color .12s;
+    }
+
+    .dropdown a:hover {
+      background: rgba(255,255,255,.07);
+      color: var(--white);
+    }
+
+    .header-cta {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .fb-link {
+      color: #90a4b8;
+      font-size: .85rem;
+      transition: color .15s;
+    }
+
+    .fb-link:hover { color: #4a90d9; }
+
+    .btn-call {
+      background: var(--gold);
+      color: var(--navy);
+      font-weight: 700;
+      font-size: .9rem;
+      padding: 10px 20px;
+      border-radius: 8px;
+      transition: background .15s, transform .1s;
+      white-space: nowrap;
+    }
+
+    .btn-call:hover {
+      background: var(--gold-light);
+      transform: translateY(-1px);
+    }
+
+    /* mobile hamburger */
+    .hamburger {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      cursor: pointer;
+      padding: 8px;
+    }
+
+    .hamburger span {
+      display: block;
+      width: 24px;
+      height: 2px;
+      background: var(--white);
+      border-radius: 2px;
+    }
+
+    /* ── HERO ── */
+    #hero {
+      position: relative;
+      min-height: 540px;
+      display: flex;
+      align-items: center;
+      background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+      overflow: hidden;
+    }
+
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background-image: url('https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1400&auto=format&fit=crop');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.18;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      max-width: 680px;
+      padding: 80px 0;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(232,160,32,.15);
+      border: 1px solid rgba(232,160,32,.4);
+      color: var(--gold-light);
+      font-size: .8rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 20px;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    .hero-content h1 {
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      font-weight: 800;
+      color: var(--white);
+      line-height: 1.2;
+      margin-bottom: 20px;
+    }
+
+    .hero-content p {
+      font-size: 1.1rem;
+      color: #b8cce0;
+      margin-bottom: 32px;
+      max-width: 560px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      background: var(--gold);
+      color: var(--navy);
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 14px 28px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+
+    .btn-primary:hover { background: var(--gold-light); transform: translateY(-2px); }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--white);
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 14px 28px;
+      border-radius: 8px;
+      border: 2px solid rgba(255,255,255,.3);
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+
+    .btn-outline:hover { border-color: var(--white); background: rgba(255,255,255,.08); }
+
+    /* ── VALUE PROPS ── */
+    #value-props {
+      background: var(--white);
+      padding: 64px 0;
+      border-bottom: 1px solid var(--gray-light);
+    }
+
+    .props-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+    }
+
+    .prop-card {
+      text-align: center;
+      padding: 36px 28px;
+      border-radius: 12px;
+      border: 1px solid var(--gray-light);
+      transition: box-shadow .2s, transform .2s;
+    }
+
+    .prop-card:hover {
+      box-shadow: 0 8px 32px rgba(26,74,122,.12);
+      transform: translateY(-4px);
+    }
+
+    .prop-icon {
+      font-size: 2.5rem;
+      margin-bottom: 16px;
+    }
+
+    .prop-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 12px;
+    }
+
+    .prop-card p {
+      color: var(--gray);
+      font-size: .925rem;
+      line-height: 1.7;
+    }
+
+    /* ── SECTION COMMON ── */
+    section { padding: 72px 0; }
+
+    .section-label {
+      font-size: .8rem;
+      font-weight: 700;
+      color: var(--blue-light);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: clamp(1.5rem, 3vw, 2.2rem);
+      font-weight: 800;
+      color: var(--navy);
+      line-height: 1.25;
+      margin-bottom: 16px;
+    }
+
+    .section-sub {
+      font-size: 1rem;
+      color: var(--gray);
+      max-width: 600px;
+      margin-bottom: 48px;
+    }
+
+    /* ── CONTACT FORM ── */
+    #contact {
+      background: var(--navy);
+      color: var(--white);
+    }
+
+    #contact .section-title { color: var(--white); }
+    #contact .section-sub { color: #8fa8c0; }
+    #contact .section-label { color: var(--gold-light); }
+
+    .contact-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: start;
+    }
+
+    .contact-form {
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 16px;
+      padding: 40px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      font-size: .85rem;
+      font-weight: 600;
+      color: #90a8c0;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.15);
+      color: var(--white);
+      font-family: inherit;
+      font-size: .95rem;
+      padding: 12px 14px;
+      border-radius: 8px;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    .form-group input::placeholder,
+    .form-group textarea::placeholder { color: #506070; }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      border-color: var(--gold);
+    }
+
+    .form-group textarea { resize: vertical; min-height: 100px; }
+
+    .form-legal {
+      font-size: .78rem;
+      color: #607080;
+      margin-top: 12px;
+      line-height: 1.6;
+    }
+
+    .form-legal a { color: var(--gold-light); }
+
+    .contact-info h3 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+    }
+
+    .contact-detail {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .contact-detail-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+
+    .contact-detail-text strong {
+      display: block;
+      font-size: .85rem;
+      color: #8fa8c0;
+      margin-bottom: 2px;
+    }
+
+    .contact-detail-text a,
+    .contact-detail-text span {
+      color: var(--white);
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .hours-grid {
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 24px;
+    }
+
+    .hours-grid h4 {
+      font-size: .9rem;
+      color: var(--gold-light);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    .hours-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: .9rem;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+    }
+
+    .hours-row:last-child { border-bottom: none; }
+
+    .hours-row .day { color: #8fa8c0; }
+
+    /* ── PROCESS ── */
+    #process { background: var(--off-white); }
+
+    .process-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .process-step {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+      position: relative;
+      padding-bottom: 40px;
+    }
+
+    .process-step:last-child { padding-bottom: 0; }
+
+    .step-line {
+      position: absolute;
+      left: 28px;
+      top: 56px;
+      bottom: 0;
+      width: 2px;
+      background: var(--gray-light);
+    }
+
+    .process-step:last-child .step-line { display: none; }
+
+    .step-number {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--navy);
+      color: var(--white);
+      font-size: 1.1rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .step-content { padding-top: 12px; }
+
+    .step-content h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 6px;
+    }
+
+    .step-content p {
+      color: var(--gray);
+      font-size: .925rem;
+    }
+
+    /* ── WHY CHOOSE ── */
+    #why-choose { background: var(--white); }
+
+    .why-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .why-card {
+      padding: 32px;
+      border-radius: 12px;
+      border: 1px solid var(--gray-light);
+      display: flex;
+      gap: 20px;
+    }
+
+    .why-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--blue), var(--blue-light));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      flex-shrink: 0;
+    }
+
+    .why-card h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 8px;
+    }
+
+    .why-card p {
+      color: var(--gray);
+      font-size: .9rem;
+    }
+
+    /* ── SERVICES ── */
+    #services { background: var(--off-white); }
+
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+    }
+
+    .service-card {
+      background: var(--white);
+      border-radius: 12px;
+      padding: 28px;
+      border: 1px solid var(--gray-light);
+      transition: box-shadow .2s, transform .2s;
+    }
+
+    .service-card:hover {
+      box-shadow: 0 8px 28px rgba(26,74,122,.1);
+      transform: translateY(-3px);
+    }
+
+    .service-card h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 10px;
+    }
+
+    .service-card p {
+      color: var(--gray);
+      font-size: .9rem;
+      line-height: 1.65;
+    }
+
+    .service-icon {
+      font-size: 2rem;
+      margin-bottom: 14px;
+    }
+
+    /* ── WARNINGS ── */
+    #warnings {
+      background: linear-gradient(135deg, #7b1515 0%, var(--red) 100%);
+      color: var(--white);
+    }
+
+    #warnings .section-title { color: var(--white); }
+    #warnings .section-sub { color: rgba(255,255,255,.75); }
+    #warnings .section-label { color: #ffaaaa; }
+
+    .warnings-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .warning-item {
+      background: rgba(0,0,0,.2);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 10px;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .warning-item span {
+      font-size: 1.4rem;
+    }
+
+    .warning-item p {
+      font-size: .9rem;
+      font-weight: 500;
+    }
+
+    /* ── PRICING ── */
+    #pricing { background: var(--white); }
+
+    .pricing-table {
+      width: 100%;
+      border-collapse: collapse;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,.08);
+    }
+
+    .pricing-table th {
+      background: var(--navy);
+      color: var(--white);
+      padding: 18px 24px;
+      text-align: left;
+      font-size: .9rem;
+      font-weight: 600;
+    }
+
+    .pricing-table th:first-child { width: 40%; }
+
+    .pricing-table td {
+      padding: 16px 24px;
+      font-size: .95rem;
+      border-bottom: 1px solid var(--gray-light);
+    }
+
+    .pricing-table tr:last-child td { border-bottom: none; }
+
+    .pricing-table tbody tr:nth-child(even) { background: var(--off-white); }
+
+    .price-highlight { color: var(--blue); font-weight: 700; }
+
+    .best-price {
+      color: #1a7a3a;
+      font-weight: 800;
+      background: #e8f7ec;
+      border-radius: 6px;
+      padding: 4px 10px;
+    }
+
+    /* ── AREAS ── */
+    #areas { background: var(--off-white); }
+
+    .areas-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: start;
+    }
+
+    .area-list {
+      columns: 2;
+      gap: 8px;
+    }
+
+    .area-list li {
+      list-style: none;
+      padding: 5px 0;
+      color: var(--gray);
+      font-size: .9rem;
+      break-inside: avoid;
+    }
+
+    .area-list li::before {
+      content: "📍 ";
+      font-size: .8rem;
+    }
+
+    .zip-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .875rem;
+    }
+
+    .zip-table th {
+      text-align: left;
+      padding: 8px 12px;
+      background: var(--gray-light);
+      font-weight: 600;
+      color: var(--navy);
+      border-radius: 4px;
+    }
+
+    .zip-table td {
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--gray-light);
+      color: var(--gray);
+    }
+
+    .zip-table tr:last-child td { border-bottom: none; }
+
+    /* ── FAQ ── */
+    #faq { background: var(--white); }
+
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      border: 1px solid var(--gray-light);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .faq-item {
+      border-bottom: 1px solid var(--gray-light);
+    }
+
+    .faq-item:last-child { border-bottom: none; }
+
+    .faq-question {
+      width: 100%;
+      text-align: left;
+      padding: 20px 24px;
+      background: none;
+      border: none;
+      font-family: inherit;
+      font-size: .975rem;
+      font-weight: 600;
+      color: var(--navy);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      transition: background .12s;
+    }
+
+    .faq-question:hover { background: var(--off-white); }
+
+    .faq-question.open { background: var(--off-white); }
+
+    .faq-chevron {
+      font-size: .75rem;
+      color: var(--gray);
+      transition: transform .25s;
+      flex-shrink: 0;
+    }
+
+    .faq-question.open .faq-chevron { transform: rotate(180deg); }
+
+    .faq-answer {
+      display: none;
+      padding: 0 24px 20px;
+      color: var(--gray);
+      font-size: .925rem;
+      line-height: 1.7;
+    }
+
+    .faq-answer.open { display: block; }
+
+    /* ── NO SHOP ── */
+    #no-shop { background: var(--navy); color: var(--white); }
+    #no-shop .section-title { color: var(--white); }
+    #no-shop .section-sub { color: #8fa8c0; }
+    #no-shop .section-label { color: var(--gold-light); }
+
+    .no-shop-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+    }
+
+    .no-shop-col h4 {
+      font-size: .875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 20px;
+    }
+
+    .no-shop-col.no-more h4 { color: #ff8888; }
+    .no-shop-col.instead h4 { color: #7de87d; }
+
+    .no-shop-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .no-shop-list li {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: .95rem;
+      color: #b0c4d8;
+    }
+
+    .no-shop-col.no-more .no-shop-list li::before {
+      content: "✗";
+      color: #ff6b6b;
+      font-weight: 700;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .no-shop-col.instead .no-shop-list li::before {
+      content: "✓";
+      color: #5dd85d;
+      font-weight: 700;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      background: #060d14;
+      color: #6b7a8d;
+      padding: 48px 0 24px;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 48px;
+      margin-bottom: 40px;
+    }
+
+    .footer-brand .logo {
+      font-size: 1.3rem;
+      margin-bottom: 14px;
+    }
+
+    .footer-brand p {
+      font-size: .875rem;
+      line-height: 1.7;
+      color: #4a5a6a;
+    }
+
+    .footer-col h4 {
+      font-size: .85rem;
+      font-weight: 700;
+      color: #90a4b8;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 16px;
+    }
+
+    .footer-col ul { list-style: none; }
+
+    .footer-col ul li {
+      margin-bottom: 8px;
+    }
+
+    .footer-col ul li a {
+      color: #4a5a6a;
+      font-size: .875rem;
+      transition: color .15s;
+    }
+
+    .footer-col ul li a:hover { color: #90a4b8; }
+
+    .footer-bottom {
+      border-top: 1px solid #111c26;
+      padding-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .footer-bottom p { font-size: .8rem; }
+
+    .footer-links {
+      display: flex;
+      gap: 20px;
+    }
+
+    .footer-links a {
+      font-size: .8rem;
+      color: #4a5a6a;
+      transition: color .15s;
+    }
+
+    .footer-links a:hover { color: #90a4b8; }
+
+    /* ── MOBILE ── */
+    @media (max-width: 900px) {
+      nav, .fb-link { display: none; }
+      .hamburger { display: flex; }
+      .props-grid { grid-template-columns: 1fr; }
+      .contact-grid { grid-template-columns: 1fr; gap: 40px; }
+      .services-grid { grid-template-columns: repeat(2, 1fr); }
+      .why-grid { grid-template-columns: 1fr; }
+      .warnings-grid { grid-template-columns: 1fr 1fr; }
+      .no-shop-grid { grid-template-columns: 1fr; gap: 32px; }
+      .footer-grid { grid-template-columns: 1fr; gap: 32px; }
+      .areas-cols { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 620px) {
+      .services-grid { grid-template-columns: 1fr; }
+      .warnings-grid { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+      .hero-content { padding: 60px 0; }
+      .pricing-table th, .pricing-table td { padding: 12px 14px; }
+    }
+  </style>
 </head>
 <body>
-  <h1>Brakeknights</h1>
-  <p>Your mobile brake repair heroes.</p>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="container">
+    <div class="header-inner">
+      <a href="#" class="logo">Brake<span>Knights</span></a>
+
+      <nav>
+        <div class="nav-item">
+          <a href="#" class="nav-link">Home</a>
+        </div>
+
+        <div class="nav-item">
+          <a href="#services" class="nav-link">Services <span class="caret">▾</span></a>
+          <div class="dropdown">
+            <a href="#services">Brake Pad &amp; Rotor Replacement</a>
+            <a href="#services">Brake Caliper Repair or Replacement</a>
+            <a href="#services">Drum Brake Replacement</a>
+            <a href="#services">Brake Hose Replacement</a>
+            <a href="#services">Brake Fluid Flush</a>
+            <a href="#services">Brake Inspection</a>
+          </div>
+        </div>
+
+        <div class="nav-item">
+          <a href="#why-choose" class="nav-link">About</a>
+        </div>
+
+        <div class="nav-item">
+          <a href="#contact" class="nav-link">Contact</a>
+        </div>
+
+        <div class="nav-item">
+          <a href="#areas" class="nav-link">Location <span class="caret">▾</span></a>
+          <div class="dropdown">
+            <a href="#areas">Sterling</a>
+            <a href="#areas">Herndon</a>
+            <a href="#areas">Ashburn</a>
+            <a href="#areas">Dulles</a>
+            <a href="#areas">Chantilly</a>
+            <a href="#areas">Reston</a>
+            <a href="#areas">Great Falls</a>
+            <a href="#areas">Leesburg</a>
+            <a href="#areas">Purcellville</a>
+            <a href="#areas">McLean</a>
+            <a href="#areas">Vienna</a>
+            <a href="#areas">Tysons Corner</a>
+            <a href="#areas">Falls Church</a>
+            <a href="#areas">Centreville</a>
+            <a href="#areas">Gainesville</a>
+            <a href="#areas">Haymarket</a>
+            <a href="#areas">Manassas</a>
+            <a href="#areas">Aldie</a>
+            <a href="#areas">Arlington</a>
+            <a href="#areas">Alexandria</a>
+            <a href="#areas">Lansdowne</a>
+            <a href="#areas">Broadlands</a>
+            <a href="#areas">South Riding</a>
+            <a href="#areas">Brambleton</a>
+          </div>
+        </div>
+      </nav>
+
+      <div class="header-cta">
+        <a href="https://www.facebook.com/brakeknights" class="fb-link" target="_blank" rel="noopener">📘 Facebook</a>
+        <a href="tel:7039774475" class="btn-call">Call/Text 703-977-4475</a>
+      </div>
+
+      <div class="hamburger" onclick="toggleMenu(this)">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ── HERO ── -->
+<section id="hero">
+  <div class="hero-bg"></div>
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-badge">⚔️ &nbsp;Professional Mobile Brake Service</div>
+      <h1>Based Out of Sterling and Services All of Northern VA</h1>
+      <p>Brake Knights is a professional Mobile Brake Service that brings the shop directly to your location. No shop visits required, we come to you!</p>
+      <div class="hero-actions">
+        <a href="tel:7039774475" class="btn-primary">📞 Call Us</a>
+        <a href="#contact" class="btn-outline">Get a Free Estimate</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── VALUE PROPS ── -->
+<section id="value-props">
+  <div class="container">
+    <div class="props-grid">
+      <div class="prop-card">
+        <div class="prop-icon">🛡️</div>
+        <h3>Reliable Service</h3>
+        <p>With over 5,000 brake quests completed, our trusted expertise ensures each repair is executed with precision — no surprises, just steadfast service every time.</p>
+      </div>
+      <div class="prop-card">
+        <div class="prop-icon">🛡️</div>
+        <h3>Customer Focused</h3>
+        <p>You're our top priority. From transparent pricing to flexible scheduling, everything we do is designed to make your brake repair as smooth and stress-free as possible.</p>
+      </div>
+      <div class="prop-card">
+        <div class="prop-icon">⚔️</div>
+        <h3>Heroic Assistance</h3>
+        <p>When your brakes need help, our knights ride out — fully equipped, fully certified, and ready to restore your stopping power right where you are.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CONTACT FORM ── -->
+<section id="contact">
+  <div class="container">
+    <div class="contact-grid">
+      <div>
+        <div class="section-label">Reach Out</div>
+        <h2 class="section-title">Get in Touch with Your Mobile Brake Repair Heroes!</h2>
+        <p class="section-sub">Getting your brakes fixed has never been easier. Fill out the form and a knight will be in touch shortly to schedule your service.</p>
+
+        <div class="contact-detail">
+          <div class="contact-detail-icon">📞</div>
+          <div class="contact-detail-text">
+            <strong>Phone / Text</strong>
+            <a href="tel:7039774475">703-977-4475</a>
+          </div>
+        </div>
+
+        <div class="contact-detail">
+          <div class="contact-detail-icon">✉️</div>
+          <div class="contact-detail-text">
+            <strong>Email</strong>
+            <a href="mailto:greetings@brakeknights.com">greetings@brakeknights.com</a>
+          </div>
+        </div>
+
+        <div class="contact-detail">
+          <div class="contact-detail-icon">📘</div>
+          <div class="contact-detail-text">
+            <strong>Facebook</strong>
+            <a href="https://www.facebook.com/brakeknights" target="_blank" rel="noopener">Brake Knights</a>
+          </div>
+        </div>
+
+        <div class="hours-grid">
+          <h4>⚔️ Hours of Operation</h4>
+          <div class="hours-row">
+            <span class="day">Monday – Friday</span>
+            <span>9:00 AM – 6:00 PM</span>
+          </div>
+          <div class="hours-row">
+            <span class="day">Saturday</span>
+            <span>9:00 AM – 3:00 PM</span>
+          </div>
+          <div class="hours-row">
+            <span class="day">Sunday</span>
+            <span>Resting from Battle</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="contact-form">
+        <form onsubmit="handleSubmit(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fname">First Name *</label>
+              <input type="text" id="fname" placeholder="John" required>
+            </div>
+            <div class="form-group">
+              <label for="lname">Last Name *</label>
+              <input type="text" id="lname" placeholder="Smith" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="phone">Phone Number *</label>
+              <input type="tel" id="phone" placeholder="703-555-0100" required>
+            </div>
+            <div class="form-group">
+              <label for="email">Email *</label>
+              <input type="email" id="email" placeholder="john@example.com" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="vehicle">Vehicle Info *</label>
+            <input type="text" id="vehicle" placeholder="2018 Honda Accord" required>
+          </div>
+
+          <div class="form-group">
+            <label for="message">Message *</label>
+            <textarea id="message" placeholder="Describe your brake issue or questions..." required></textarea>
+          </div>
+
+          <button type="submit" class="btn-primary" style="width:100%;padding:14px;">Submit Your Request</button>
+
+          <p class="form-legal">
+            By submitting you consent to receive SMS messages from Brake Knights regarding your service request. Standard messaging rates may apply.
+            View our <a href="#" onclick="return false;">Privacy Policy</a> and <a href="#" onclick="return false;">Terms &amp; Conditions</a>.
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PROCESS ── -->
+<section id="process">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:start;">
+      <div>
+        <div class="section-label">How It Works</div>
+        <h2 class="section-title">Your Brake Repair Quest — 5 Steps</h2>
+        <p class="section-sub">From first call to final warranty — here's exactly what happens when you book with Brake Knights.</p>
+      </div>
+
+      <div class="process-steps">
+        <div class="process-step">
+          <div class="step-line"></div>
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Initial Estimate &amp; Scheduling</h3>
+            <p>Call or text us for a quick estimate. We can often schedule same-day or next-day appointments, including evening and weekend slots.</p>
+          </div>
+        </div>
+        <div class="process-step">
+          <div class="step-line"></div>
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Knight Arrives at Your Location</h3>
+            <p>Your technician arrives in a fully equipped mobile service vehicle — everything needed for a complete brake job is on board.</p>
+          </div>
+        </div>
+        <div class="process-step">
+          <div class="step-line"></div>
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Professional On-Site Brake Repair</h3>
+            <p>We handle the full repair right in your driveway, parking lot, or workplace — no shop visit needed.</p>
+          </div>
+        </div>
+        <div class="process-step">
+          <div class="step-line"></div>
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <h3>Road Testing</h3>
+            <p>After the repair, we road-test your vehicle to verify full braking performance and make sure everything is right.</p>
+          </div>
+        </div>
+        <div class="process-step">
+          <div class="step-number">5</div>
+          <div class="step-content">
+            <h3>12-Month Warranty Documentation</h3>
+            <p>We provide full warranty documentation covering both parts and labor for 12 months — your assurance of quality work.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── WHY CHOOSE ── -->
+<section id="why-choose">
+  <div class="container">
+    <div class="section-label">Why Brake Knights</div>
+    <h2 class="section-title">The Knight's Code of Service</h2>
+    <p class="section-sub">Four commitments that set our mobile brake service apart from every traditional shop in Northern Virginia.</p>
+
+    <div class="why-grid">
+      <div class="why-card">
+        <div class="why-icon">🏅</div>
+        <div>
+          <h3>Expert ASE-Certified Knights</h3>
+          <p>Our technicians bring decades of combined experience and thousands of successful brake repairs. Every knight on our team is trained to the highest standard.</p>
+        </div>
+      </div>
+      <div class="why-card">
+        <div class="why-icon">💰</div>
+        <div>
+          <h3>Transparent Pricing</h3>
+          <p>No hidden fees. No surprise charges. You get a clear, upfront estimate before any work begins — and that's exactly what you pay.</p>
+        </div>
+      </div>
+      <div class="why-card">
+        <div class="why-icon">🛡️</div>
+        <div>
+          <h3>12-Month Warranty</h3>
+          <p>Every brake repair is backed by a full 12-month warranty on both parts and labor. We stand behind our work, period.</p>
+        </div>
+      </div>
+      <div class="why-card">
+        <div class="why-icon">🚗</div>
+        <div>
+          <h3>Mobile Convenience</h3>
+          <p>We come to your home, office, or any location in Northern Virginia. No rentals, no waiting rooms, no disruption to your day.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── SERVICES ── -->
+<section id="services">
+  <div class="container">
+    <div class="section-label">What We Do</div>
+    <h2 class="section-title">Complete Mobile Brake Services</h2>
+    <p class="section-sub">From routine pad replacements to full caliper overhauls — if it's brake-related, we handle it at your location.</p>
+
+    <div class="services-grid">
+      <div class="service-card">
+        <div class="service-icon">🔧</div>
+        <h3>Brake Pad &amp; Rotor Replacement</h3>
+        <p>Worn brake pads and damaged rotors reduce stopping power and create dangerous driving conditions. We replace both components with high-quality parts, restoring full braking performance.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">⚙️</div>
+        <h3>Brake Caliper Repair &amp; Replacement</h3>
+        <p>Sticking or leaking calipers cause uneven braking, vehicle pulling, and premature pad wear. We diagnose, rebuild, or replace calipers to restore balanced stopping power.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">🥁</div>
+        <h3>Drum Brake &amp; Shoe Replacement</h3>
+        <p>Rear drum brake systems need regular attention. We adjust or replace brake shoes, springs, and wheel cylinders to keep your rear brakes performing at their best.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">💧</div>
+        <h3>Brake Hose Replacement</h3>
+        <p>Cracked or damaged brake hoses disrupt fluid flow and compromise system pressure. We inspect and replace hoses to maintain proper hydraulic operation.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">🧪</div>
+        <h3>Brake Fluid Flush Service</h3>
+        <p>Over time, brake fluid absorbs moisture and degrades. Our flush service removes contaminated fluid, prevents internal corrosion, and restores optimal braking feel.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-icon">🔍</div>
+        <h3>Professional Brake Inspection &amp; Diagnosis</h3>
+        <p>Our $60 comprehensive inspection checks pads, rotors, calipers, hoses, and fluid levels. You'll receive a full written report with honest, no-pressure recommendations.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── WARNINGS ── -->
+<section id="warnings">
+  <div class="container">
+    <div class="section-label">⚠️ Warning Signs</div>
+    <h2 class="section-title">Don't Ignore These Brake Warning Signs</h2>
+    <p class="section-sub">These symptoms mean your brakes need immediate attention. Call or text us right away — 703-977-4475.</p>
+
+    <div class="warnings-grid">
+      <div class="warning-item">
+        <span>🔽</span>
+        <p>Brake pedal goes to the floor</p>
+      </div>
+      <div class="warning-item">
+        <span>🔊</span>
+        <p>Grinding or scraping noises when braking</p>
+      </div>
+      <div class="warning-item">
+        <span>↔️</span>
+        <p>Vehicle pulls hard to one side when braking</p>
+      </div>
+      <div class="warning-item">
+        <span>💡</span>
+        <p>Brake warning light illuminated on dashboard</p>
+      </div>
+      <div class="warning-item">
+        <span>🔥</span>
+        <p>Burning smell after braking</p>
+      </div>
+      <div class="warning-item">
+        <span>📳</span>
+        <p>Vibration or pulsing in the brake pedal</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PRICING ── -->
+<section id="pricing">
+  <div class="container">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Brake Pads &amp; Rotors — Cost Per Axle</h2>
+    <p class="section-sub">See how Brake Knights compares to traditional options. All prices are per axle and include parts and labor.</p>
+
+    <table class="pricing-table">
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>Price Per Axle</th>
+          <th>Wait Time</th>
+          <th>Comes to You?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Dealership</td>
+          <td class="price-highlight">$700 – $900</td>
+          <td>2–4 hours</td>
+          <td>❌ No</td>
+        </tr>
+        <tr>
+          <td>Traditional Repair Shop</td>
+          <td class="price-highlight">$550 – $700</td>
+          <td>1–3 hours</td>
+          <td>❌ No</td>
+        </tr>
+        <tr>
+          <td><strong>Brake Knights</strong></td>
+          <td><span class="best-price">$525 – $625</span></td>
+          <td>At your location</td>
+          <td>✅ Yes!</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── SERVICE AREAS ── -->
+<section id="areas">
+  <div class="container">
+    <div class="section-label">Service Territory</div>
+    <h2 class="section-title">We Serve All of Northern Virginia</h2>
+    <p class="section-sub">Based in Sterling — covering Loudoun, Fairfax, Prince William, Arlington, and Alexandria.</p>
+
+    <div class="areas-cols">
+      <div>
+        <h3 style="font-size:1.05rem;font-weight:700;color:var(--navy);margin-bottom:20px;">Primary Service Areas</h3>
+        <ul class="area-list">
+          <li>Sterling</li>
+          <li>Herndon</li>
+          <li>Ashburn</li>
+          <li>Dulles</li>
+          <li>Lansdowne</li>
+          <li>Broadlands</li>
+          <li>Brambleton</li>
+          <li>South Riding</li>
+          <li>Chantilly</li>
+          <li>Reston</li>
+          <li>Great Falls</li>
+          <li>Dulles Town Center</li>
+          <li>Purcellville</li>
+          <li>Leesburg</li>
+          <li>Aldie</li>
+          <li>Centreville</li>
+          <li>Vienna</li>
+          <li>McLean</li>
+          <li>Tysons Corner</li>
+          <li>Falls Church</li>
+          <li>Haymarket</li>
+          <li>Gainesville</li>
+          <li>Manassas</li>
+          <li>Arlington</li>
+          <li>Alexandria</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 style="font-size:1.05rem;font-weight:700;color:var(--navy);margin-bottom:20px;">ZIP Code Coverage</h3>
+        <table class="zip-table">
+          <thead>
+            <tr>
+              <th>City</th>
+              <th>ZIP Codes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Sterling</td><td>20164, 20165, 20166</td></tr>
+            <tr><td>Herndon</td><td>20170, 20171</td></tr>
+            <tr><td>Ashburn</td><td>20147, 20148</td></tr>
+            <tr><td>Lansdowne</td><td>20176</td></tr>
+            <tr><td>Brambleton</td><td>20148</td></tr>
+            <tr><td>South Riding</td><td>20152</td></tr>
+            <tr><td>Chantilly</td><td>20151, 20152</td></tr>
+            <tr><td>Reston</td><td>20190, 20191, 20194</td></tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:24px;background:var(--gray-light);border-radius:10px;padding:18px;">
+          <p style="font-size:.875rem;color:var(--gray);">Not sure if we cover your area? Call or text <a href="tel:7039774475" style="color:var(--blue);font-weight:600;">703-977-4475</a> and we'll confirm right away.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FAQ ── -->
+<section id="faq">
+  <div class="container">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title">Frequently Asked Questions</h2>
+    <p class="section-sub">Everything you need to know about mobile brake service with Brake Knights.</p>
+
+    <div class="faq-list">
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          How quickly can you respond and complete a brake repair?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          We can often schedule same-day or next-day appointments. Most brake jobs are completed within 1–2 hours on-site. We also offer 24-hour scheduling for non-emergency repairs.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          What types of vehicles do you work on?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          We work on all passenger cars, trucks, SUVs, and minivans. Our mobile service vehicles are stocked with parts and tools for a wide range of makes and models. Contact us to confirm compatibility for your specific vehicle.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          What does the $60 brake inspection include?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          Our comprehensive $60 inspection covers brake pad thickness, rotor condition and measurements, caliper function, brake hose integrity, and brake fluid quality. You receive a detailed written report with no-pressure recommendations.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          How long does a typical brake repair take?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          A standard brake pad and rotor replacement on one axle takes approximately 1–1.5 hours. More complex repairs such as caliper replacement may take up to 2 hours. We'll give you a time estimate when you book.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          What does the 12-month warranty cover?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          Our 12-month warranty covers both parts and labor on all brake work we perform. If anything we repaired fails within 12 months, we'll make it right at no additional charge.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          Can you come to my workplace?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          Absolutely. Many of our customers prefer to have us service their vehicle while they're at work. As long as there's a safe, accessible parking spot, we can take care of your brakes while you stay productive.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          What payment methods do you accept?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          We accept all major credit and debit cards, cash, and digital payments including Venmo and Zelle. Payment is collected after the job is complete and you're satisfied.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          What are the signs I need new brakes?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          Key warning signs include: squealing or grinding noises, a brake pedal that sinks toward the floor, the vehicle pulling to one side, vibration in the pedal, or the brake warning light illuminating on your dashboard. If you notice any of these, call us right away.
+        </div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          How do I know if you service my area?
+          <span class="faq-chevron">▾</span>
+        </button>
+        <div class="faq-answer">
+          We cover all of Northern Virginia — Loudoun, Fairfax, Prince William, Arlington, and Alexandria counties. If you're unsure, just call or text us at 703-977-4475 and we'll confirm immediately.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── NO SHOP ── -->
+<section id="no-shop">
+  <div class="container">
+    <div class="section-label">The Brake Knights Difference</div>
+    <h2 class="section-title">Skip the Shop. We Come to You.</h2>
+    <p class="section-sub">Traditional repair shops ask a lot of you. We ask nothing — except where to show up.</p>
+
+    <div class="no-shop-grid">
+      <div class="no-shop-col no-more">
+        <h4>No More Shop Hassles</h4>
+        <ul class="no-shop-list">
+          <li>Waiting room time</li>
+          <li>Arranging alternate transportation</li>
+          <li>Disrupting your work day</li>
+          <li>High-pressure upsell tactics</li>
+          <li>Inflated dealership estimates</li>
+        </ul>
+      </div>
+      <div class="no-shop-col instead">
+        <h4>Instead You Get</h4>
+        <ul class="no-shop-list">
+          <li>Service at your home, office, or anywhere</li>
+          <li>Flexible scheduling that fits your life</li>
+          <li>Transparent, upfront pricing</li>
+          <li>Expert workmanship backed by warranty</li>
+          <li>Personal attention from your technician</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <div class="logo">Brake<span>Knights</span></div>
+        <p>Professional mobile brake service serving all of Northern Virginia. Based in Sterling, we bring the shop to you — no waiting rooms, no surprises, just expert brake work backed by a 12-month warranty.</p>
+      </div>
+
+      <div class="footer-col">
+        <h4>Services</h4>
+        <ul>
+          <li><a href="#services">Brake Pad &amp; Rotor Replacement</a></li>
+          <li><a href="#services">Caliper Repair &amp; Replacement</a></li>
+          <li><a href="#services">Drum Brake &amp; Shoe Replacement</a></li>
+          <li><a href="#services">Brake Hose Replacement</a></li>
+          <li><a href="#services">Brake Fluid Flush</a></li>
+          <li><a href="#services">Brake Inspection ($60)</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="#why-choose">About Us</a></li>
+          <li><a href="#areas">Service Areas</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="#contact">Contact</a></li>
+          <li><a href="https://www.facebook.com/brakeknights" target="_blank" rel="noopener">Facebook</a></li>
+          <li><a href="tel:7039774475">703-977-4475</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <p>© 2025 Brake Knights. All rights reserved.</p>
+      <div class="footer-links">
+        <a href="#" onclick="return false;">Privacy Policy</a>
+        <a href="#" onclick="return false;">Terms and Conditions</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  function toggleFaq(btn) {
+    const answer = btn.nextElementSibling;
+    const isOpen = btn.classList.contains('open');
+    // close all
+    document.querySelectorAll('.faq-question.open').forEach(q => {
+      q.classList.remove('open');
+      q.nextElementSibling.classList.remove('open');
+    });
+    if (!isOpen) {
+      btn.classList.add('open');
+      answer.classList.add('open');
+    }
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    const btn = e.target.querySelector('[type=submit]');
+    btn.textContent = 'Request Sent! We\'ll be in touch soon.';
+    btn.style.background = '#1a7a3a';
+    btn.style.color = '#fff';
+    btn.disabled = true;
+  }
+
+  function toggleMenu(el) {
+    // mobile nav placeholder — expand as needed
+    el.classList.toggle('active');
+  }
+</script>
 </body>
 </html>
