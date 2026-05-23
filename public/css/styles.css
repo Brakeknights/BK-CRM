@@ -163,9 +163,9 @@ nav { display: flex; align-items: center; gap: 4px; }
   position: absolute;
   inset: 0;
   background-image: url('/images/knight-on-horse.jpg');
-  background-size: 100% auto;
+  background-size: 50%;
   background-repeat: no-repeat;
-  background-position: center center;
+  background-position: right center;
   opacity: 0.32;
 }
 
