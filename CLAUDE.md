@@ -35,5 +35,16 @@ The API token is entered securely at session start — never hardcode it.
 - Always commit to feature branch `claude/practical-cori-46WgI` first
 - Show screenshots for approval before pushing to dev
 
+## Current Work in Progress
+Update this section at the end of each session to stay caught up next time.
+
+- Elfsight Google Reviews carousel added to homepage (`public/index.html`)
+  - Widget ID: `76cf70b9-2bf0-4d45-a110-c5e3b0e7de57`
+  - Configured with dark theme, "What Our Customers Say" header, 3-column layout
+  - Elfsight platform script already in `<head>`: `https://elfsightcdn.com/platform.js`
+- Latest commit: "Add Elfsight Google Reviews carousel to homepage"
+- Working branch: `claude/dreamy-noether-W8Mwi`
+- Next steps: [update this when you know what's next]
+
 ## Contact
 greetings@brakeknights.com
