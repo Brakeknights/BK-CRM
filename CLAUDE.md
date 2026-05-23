@@ -30,10 +30,12 @@ The API token is entered securely at session start — never hardcode it.
 - Always use `offsetTop` pattern: `const y = await page.evaluate(() => document.querySelector('#section-id').offsetTop); await page.evaluate((y) => window.scrollTo(0, y), y);`
 - Never merge to `dev` without explicit user approval — commit and push to the feature branch only
 
-## Dev Workflow Rules
-- Do NOT merge to `dev` unless the user explicitly says to push/approve for dev
-- Always commit to feature branch `claude/practical-cori-46WgI` first
-- Show screenshots for approval before pushing to dev
+## Dev Workflow Rules — STRICT
+- ALWAYS commit changes to the feature branch ONLY
+- NEVER merge to `dev` without explicit user approval
+- NEVER merge to `master` without explicit user approval (only after reviewing dev)
+- Show screenshots for approval before any merge
+- Current feature branch: `claude/dreamy-noether-W8Mwi`
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
