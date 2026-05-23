@@ -188,7 +188,7 @@
     .hero-bg {
       position: absolute;
       inset: 0;
-      background-image: url('https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1400&auto=format&fit=crop');
+      background-image: url('/images/photo2.jpg');
       background-size: cover;
       background-position: center;
       opacity: 0.18;
@@ -542,10 +542,30 @@
     /* ── WHY CHOOSE ── */
     #why-choose { background: var(--white); }
 
+    .why-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .why-photo {
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0,0,0,.15);
+    }
+
+    .why-photo img {
+      width: 100%;
+      height: 480px;
+      object-fit: cover;
+      display: block;
+    }
+
     .why-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
+      grid-template-columns: 1fr;
+      gap: 20px;
     }
 
     .why-card {
@@ -946,7 +966,8 @@
       .props-grid { grid-template-columns: 1fr; }
       .contact-grid { grid-template-columns: 1fr; gap: 40px; }
       .services-grid { grid-template-columns: repeat(2, 1fr); }
-      .why-grid { grid-template-columns: 1fr; }
+      .why-layout { grid-template-columns: 1fr; }
+      .why-photo { display: none; }
       .warnings-grid { grid-template-columns: 1fr 1fr; }
       .no-shop-grid { grid-template-columns: 1fr; gap: 32px; }
       .footer-grid { grid-template-columns: 1fr; gap: 32px; }
@@ -1235,6 +1256,10 @@
     <h2 class="section-title">The Knight's Code of Service</h2>
     <p class="section-sub">Four commitments that set our mobile brake service apart from every traditional shop in Northern Virginia.</p>
 
+    <div class="why-layout">
+    <div class="why-photo">
+      <img src="/images/photo1.jpg" alt="Brake Knights technician at work">
+    </div>
     <div class="why-grid">
       <div class="why-card">
         <div class="why-icon">🏅</div>
@@ -1264,6 +1289,7 @@
           <p>We come to your home, office, or any location in Northern Virginia. No rentals, no waiting rooms, no disruption to your day.</p>
         </div>
       </div>
+    </div>
     </div>
   </div>
 </section>
