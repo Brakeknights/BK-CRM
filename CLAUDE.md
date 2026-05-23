@@ -44,7 +44,8 @@ Update this section at the end of each session to stay caught up next time.
   - Elfsight platform script already in `<head>`: `https://elfsightcdn.com/platform.js`
 - Latest commit: "Add Elfsight Google Reviews carousel to homepage"
 - Working branch: `claude/dreamy-noether-W8Mwi`
-- Next steps: Figure out what to do with the Elfsight Google Reviews widget — user was trying to share a screenshot of the widget config (dark theme, "What Our Customers Say", 3-column carousel) but kept hitting image upload errors. Resume by asking the user what they want to change or verify about the widget.
+- Elfsight Google Reviews widget is live and working on dev.brakeknights.com ✓
+- Next steps: User to review dev site and approve merging to master when ready.
 
 ## Contact
 greetings@brakeknights.com
