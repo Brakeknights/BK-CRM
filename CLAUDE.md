@@ -41,7 +41,7 @@ The API token is entered securely at session start — never hardcode it.
 Update this section at the end of each session to stay caught up next time.
 
 - Working branch: `claude/dreamy-noether-W8Mwi`
-- Next steps: User to review dev site and approve feature branch → merge to dev → then master
+- Next steps: User reviewing knight-on-horse homepage hero (full-width, 32% opacity). Awaiting approval to merge to dev. Image saved at /public/images/knight-on-horse.jpg. CSS in styles.css already updated.
 
 ## To-Do List
 
