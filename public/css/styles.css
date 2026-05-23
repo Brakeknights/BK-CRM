@@ -168,6 +168,9 @@ nav { display: flex; align-items: center; gap: 4px; }
   background-position: center center;
   opacity: 0.32;
 }
+@media (max-width: 768px) {
+  .hero-bg { background-size: cover; }
+}
 
 .hero-content { position: relative; z-index: 2; max-width: 680px; padding: 80px 0; }
 
