@@ -7,7 +7,7 @@
   <meta name="description" content="Discover Brake Knights' mission of honesty and integrity. Learn how our ASE-certified experts bring top-notch brake repair right to your doorstep in Northern Virginia.">
   <link rel="icon" href="/favicon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Pathway+Extreme:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/styles.css">
   <style>
     .tale-section {
@@ -23,12 +23,18 @@
       background-image: url('/images/knight.jpg');
       background-size: cover;
       background-position: center;
-      opacity: 0.12;
       z-index: 0;
+    }
+    .tale-overlay {
+      position: absolute;
+      inset: 0;
+      background: var(--navy);
+      opacity: 0.66;
+      z-index: 1;
     }
     .tale-section .container {
       position: relative;
-      z-index: 1;
+      z-index: 2;
     }
     .tale-label {
       font-size: .8rem;
@@ -37,36 +43,41 @@
       text-transform: uppercase;
       letter-spacing: 2px;
       margin-bottom: 16px;
+      font-family: 'Inter', sans-serif;
     }
     .tale-title {
-      font-size: clamp(2rem, 5vw, 3.5rem);
-      font-weight: 800;
+      font-size: 64px;
+      font-weight: 400;
       color: var(--white);
       line-height: 1.15;
       margin-bottom: 40px;
-      font-style: italic;
+      font-family: 'Pathway Extreme', sans-serif;
     }
     .tale-body { max-width: 780px; }
     .tale-body p {
-      font-size: 1.05rem;
-      color: #c0d4e8;
+      font-size: 20px;
+      font-weight: 400;
+      color: var(--white);
       line-height: 1.85;
       margin-bottom: 24px;
+      font-family: 'Pathway Extreme', sans-serif;
     }
     .tale-body p.emphasis {
-      font-size: 1.15rem;
-      font-weight: 600;
+      font-size: 22px;
+      font-weight: 400;
       color: var(--white);
       font-style: italic;
       border-left: 3px solid var(--gold);
       padding-left: 20px;
       margin: 32px 0;
+      font-family: 'Pathway Extreme', sans-serif;
     }
     .tale-body p.callout {
-      font-size: 1.05rem;
-      font-weight: 600;
+      font-size: 20px;
+      font-weight: 400;
       color: var(--gold-light);
       margin-top: 8px;
+      font-family: 'Pathway Extreme', sans-serif;
     }
     .tale-divider {
       width: 60px;
@@ -189,6 +200,7 @@
 <!-- ── A KNIGHT'S TALE ── -->
 <section class="tale-section">
   <div class="tale-bg"></div>
+  <div class="tale-overlay"></div>
   <div class="container">
     <div class="tale-label">⚔️ &nbsp;Our Origin Story</div>
     <h1 class="tale-title">A Knights Tale</h1>
