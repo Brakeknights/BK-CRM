@@ -178,9 +178,9 @@ nav { display: flex; align-items: center; gap: 4px; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: rgba(0,0,0,.5);
+  background: var(--gold);
   border: 1px solid var(--gold);
-  color: var(--gold-light);
+  color: var(--navy);
   font-size: 1rem;
   font-weight: 700;
   padding: 8px 18px;
