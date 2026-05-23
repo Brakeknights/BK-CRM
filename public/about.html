@@ -11,9 +11,24 @@
   <link rel="stylesheet" href="/css/styles.css">
   <style>
     .tale-section {
+      position: relative;
       background: linear-gradient(180deg, var(--navy) 0%, #0a1520 100%);
       color: var(--white);
       padding: 80px 0;
+      overflow: hidden;
+    }
+    .tale-bg {
+      position: absolute;
+      inset: 0;
+      background-image: url('/images/service-areas.webp');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.12;
+      z-index: 0;
+    }
+    .tale-section .container {
+      position: relative;
+      z-index: 1;
     }
     .tale-label {
       font-size: .8rem;
@@ -173,6 +188,7 @@
 
 <!-- ── A KNIGHT'S TALE ── -->
 <section class="tale-section">
+  <div class="tale-bg"></div>
   <div class="container">
     <div class="tale-label">⚔️ &nbsp;Our Origin Story</div>
     <h1 class="tale-title">A Knights Tale</h1>
