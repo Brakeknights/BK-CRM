@@ -32,9 +32,9 @@ The API token is entered securely at session start — never hardcode it.
 
 ## Dev Workflow Rules — STRICT
 - ALWAYS commit changes to the feature branch ONLY
-- NEVER merge to `dev` without explicit user approval
+- NEVER merge to `dev` without explicit user approval — not even after showing a screenshot
 - NEVER merge to `master` without explicit user approval (only after reviewing dev)
-- Show screenshots for approval before any merge
+- Show screenshots and WAIT for the user to say "push to dev" or "approved" before merging
 - Current feature branch: `claude/dreamy-noether-W8Mwi`
 
 ## Current Work in Progress
