@@ -10,11 +10,11 @@ Built with Node.js/Express, deployed on Hostinger.
 - Live site must never be broken — always preview on dev first
 
 ## Branch & Deployment Workflow
-- `dev` branch → deploys to **dev.brakeknights.com** via Hostinger MCP archive upload
+- `dev` branch → **auto-deploys to dev.brakeknights.com** via Hostinger git integration (Branch: dev, Node 22) — just push to `dev` and it deploys automatically
 - `master` branch → deploys to **brakeknights.com** (live site)
-- All changes go on `dev` first. Only merge to `master` when the user approves.
+- All changes go on feature branch first. Only merge to `dev` when user approves. Only merge to `master` when user approves.
 - Never push directly to `master` without explicit user approval.
-- **IMPORTANT:** Hostinger has a git auto-deploy configured. To prevent it from overwriting archive deployments, always deploy to dev via `hosting_deployJsApplication` MCP tool (archive method), NOT by triggering git deploys. The `dev` git branch should always match what's on dev.brakeknights.com.
+- **Deployment note:** Hostinger git auto-deploy is configured to watch the `dev` branch. Pushing to `dev` triggers deployment. Archive uploads also work but git push is simpler. SMTP_PASS env var is already set in Hostinger for dev.brakeknights.com.
 
 ## Hostinger MCP
 A Hostinger MCP server is configured in `.mcp.json`.
@@ -53,12 +53,13 @@ ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
 Update this section at the end of each session to stay caught up next time.
 
 - Working branch: `claude/gallant-edison-TMDeb` (also `claude/awesome-wright-cEFDs` — same code)
-- `dev` branch live and auto-deploying to dev.brakeknights.com via Hostinger git integration ✅
+- `dev` branch is live at dev.brakeknights.com — auto-deploys on every push to `dev` ✅
+- Form emails fully working: internal notification + customer confirmation ✅
 - Next steps:
   1. About page mobile fix — background photo too large, text blurry on mobile
   2. Hero CTA redesign — user has specific vision, discuss before building
-  3. Upload 5 phone photos
-  4. Once all approved → push to dev → then master
+  3. Upload 5 phone photos and add to site
+  4. Once all approved → merge to master
 
 ## To-Do List
 ⚠️ Single source of truth. Update every time an item is completed or added.
@@ -67,19 +68,25 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] About page mobile fix — background photo too large, text blurry and too large on mobile
 - [ ] Homepage hero CTA redesign — user has specific vision; discuss before building
 - [ ] Upload 5 phone photos and add to the site
-- [x] Set `SMTP_PASS` env var in Hostinger hPanel — done ✅
-- [x] Automated customer confirmation email — quote inquiry framing, 3-step what's next, tested and working ✅
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
-- [ ] Merge feature branch → dev → then master (once remaining items complete)
+- [ ] Merge dev → master (once remaining items complete)
 
-### Completed
+### Completed This Session
+- [x] Hero subtitle size — settled at 2.6rem
+- [x] Van hero background on mobile — decided to keep hidden (16:9 image doesn't suit portrait mobile)
+- [x] `dev` git branch set up — Hostinger auto-deploys from it, Node 22, stable
+- [x] Fix deployment reversion — added `engines: node>=22` to package.json, exclude `.claude/` from archive
+- [x] Set `SMTP_PASS` env var in Hostinger hPanel ✅
+- [x] Contact form emails working — internal notification to greetings@brakeknights.com
+- [x] Customer confirmation email — branded, quote inquiry framing, tested working both ways
+- [x] Subject line — removed phone number, now just "New Service Request: First Last"
+
+### Previously Completed
 - [x] Van photo added to homepage hero — `/images/van.jpg`, 16:9 crop, cover sizing, 18% opacity, hidden on mobile
 - [x] Hero badge — Option B (solid blue bg, navy text)
 - [x] Hero subtitle added — "We Come To You, At Your Home or Office!" — 2.6rem
 - [x] Hero text improved — larger h1, brighter paragraph text, text shadows for legibility
 - [x] Hero gradient overlay — darkens left side for text contrast
-- [x] `dev` git branch created — Hostinger configured to auto-deploy from `dev`, Node 22
-- [x] Fix deployment reversion — added `engines: node>=22` to package.json, exclude `.claude/` from archive
 
 ### Previously Completed
 - [x] Rebuild homepage
