@@ -51,10 +51,10 @@ Update this section at the end of each session to stay caught up next time.
 
 - Working branch: `claude/dreamy-noether-W8Mwi`
 - Next steps:
-  1. Mobile menu still has issues per user — get details next session and fix
+  1. Mobile menu overlap issue — fixes pushed to dev, user still testing on phone. May still need more work.
   2. Hero badge: Option B (solid gold bg, navy text) is committed but not approved — user needs to pick Option A (dark backdrop, gold text) or Option B
   3. Van photo for hero: user wants to use it but couldn't share via iCloud. Ask them to try Imgur (imgur.com → upload → copy direct link) next session
-  4. Status bar for context usage is now configured in ~/.claude/settings.json — will show on next session start
+  4. Status bar moved to project-level .claude/settings.json and .claude/statusline.sh — persists across sessions now. Test at next session start.
   5. SEO improvements live on dev, not yet on master
 
 ## To-Do List
@@ -73,7 +73,7 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Add comprehensive SEO improvements (schema, canonical, OG tags, NAP, FAQ schema, BreadcrumbList)
 - [x] Fix mobile hamburger menu (was broken — now opens/closes with collapsible submenus)
 - [x] Add knight-on-horse background image to homepage hero (100% auto, 32% opacity)
-- [x] Add context usage status bar to Claude Code
+- [x] Add context usage status bar to Claude Code (moved to project .claude/settings.json + .claude/statusline.sh for persistence)
 
 ### Pending
 - [ ] Upload 5 phone photos and add to site
