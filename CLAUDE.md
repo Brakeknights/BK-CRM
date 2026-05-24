@@ -44,31 +44,33 @@ THE WORKFLOW IS:
   dev → WAIT FOR APPROVAL → then merge to master
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
-- Current feature branch: `claude/stoic-maxwell-n9CYe`
+- Current feature branch: `claude/gallant-edison-TMDeb`
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/stoic-maxwell-n9CYe`
+- Working branch: `claude/gallant-edison-TMDeb`
 - Next steps:
-  1. Hero badge: Option B (solid gold bg, navy text) is committed but not approved — user needs to pick Option A (dark backdrop, gold text) or Option B
-  2. Van photo for hero: user wants to use it but couldn't share via iCloud. Ask them to try Imgur (imgur.com → upload → copy direct link) next session
-  3. Fix About page on mobile: background photo too large, font too large and blurry
-  4. Feature branch ready for review → merge to dev → then master
+  1. Hero badge: user is deciding between Option A (dark backdrop, gold text) or Option B (solid blue bg, navy text) — decision pending
+  2. Van photo: committed to feature branch at `/images/van.jpg`, hero CSS updated — awaiting user approval of screenshot before merging
+  3. About page mobile fix still pending
+  4. Once badge decision made and van photo approved → merge to dev → then master
 
 ## To-Do List
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
 - [ ] Set `SMTP_PASS` env var in Hostinger hPanel → Hosting → Manage → Node.js → Environment Variables (value = greetings@brakeknights.com email password) — **user action required**
-- [ ] Hero badge style — Option A (dark backdrop, gold text) or Option B (solid gold bg, navy text)? Option B is currently on the feature branch — **decision needed**
-- [ ] Van photo — need a hosted image URL to add to homepage hero — **decision needed**
+- [ ] Hero badge style — Option A (dark backdrop, gold text) or Option B (solid blue bg, navy text)? — **decision needed**
 - [ ] About page mobile fix — background photo too large, text blurry and too large on mobile
 - [ ] Automated customer confirmation email — branded reply sent to customer on form submission (confirm receipt, booking details)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 - [ ] Homepage hero CTA redesign — user has specific vision; discuss before building
 - [ ] Upload 5 phone photos and add to the site
-- [ ] Approve feature branch (`claude/stoic-maxwell-n9CYe`) → merge to dev → then master
+- [ ] Approve feature branch (`claude/gallant-edison-TMDeb`) → merge to dev → then master
+
+### Completed
+- [x] Van photo added to homepage hero — `/images/van.jpg`, cover + 45% opacity
 
 ### Completed
 - [x] Rebuild homepage

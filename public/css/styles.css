@@ -165,11 +165,11 @@ nav { display: flex; align-items: center; gap: 4px; }
 .hero-bg {
   position: absolute;
   inset: 0;
-  background-image: url('/images/knight-on-horse.jpg');
-  background-size: 100% auto;
+  background-image: url('/images/van.jpg');
+  background-size: cover;
   background-repeat: no-repeat;
   background-position: center center;
-  opacity: 0.32;
+  opacity: 0.45;
 }
 @media (max-width: 768px) {
   .hero-bg { background-size: cover; }
