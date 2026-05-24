@@ -53,28 +53,33 @@ Update this section at the end of each session to stay caught up next time.
 
 - Working branch: `claude/gallant-edison-TMDeb`
 - Next steps:
-  1. Hero badge: user is deciding between Option A (dark backdrop, gold text) or Option B (solid blue bg, navy text) — decision pending
-  2. Van photo: committed to feature branch at `/images/van.jpg`, hero CSS updated — awaiting user approval of screenshot before merging
-  3. About page mobile fix still pending
-  4. Once badge decision made and van photo approved → merge to dev → then master
+  1. Hero subtitle size — user choosing between Option 1 (1.6rem), Option 2 (1.9rem), Option 3 (2.2rem) — decision pending
+  2. About page mobile fix still pending
+  3. Hero CTA redesign — user has specific vision, discuss before building
+  4. Upload 5 phone photos
+  5. Once all approved → push to dev → then master
 
 ## To-Do List
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Set `SMTP_PASS` env var in Hostinger hPanel → Hosting → Manage → Node.js → Environment Variables (value = greetings@brakeknights.com email password) — **user action required**
-- [ ] Hero badge style — Option A (dark backdrop, gold text) or Option B (solid blue bg, navy text)? — **decision needed**
+- [ ] Hero subtitle size — pick Option 1 (1.6rem), 2 (1.9rem), or 3 (2.2rem) — **decision needed**
 - [ ] About page mobile fix — background photo too large, text blurry and too large on mobile
-- [ ] Automated customer confirmation email — branded reply sent to customer on form submission (confirm receipt, booking details)
-- [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 - [ ] Homepage hero CTA redesign — user has specific vision; discuss before building
 - [ ] Upload 5 phone photos and add to the site
-- [ ] Approve feature branch (`claude/gallant-edison-TMDeb`) → merge to dev → then master
+- [ ] Set `SMTP_PASS` env var in Hostinger hPanel → Hosting → Manage → Node.js → Environment Variables (value = greetings@brakeknights.com email password) — **user action required**
+- [ ] Automated customer confirmation email — branded reply sent to customer on form submission (confirm receipt, booking details)
+- [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
+- [ ] Merge feature branch (`claude/gallant-edison-TMDeb`) → dev → then master
 
 ### Completed
-- [x] Van photo added to homepage hero — `/images/van.jpg`, cover + 45% opacity
+- [x] Van photo added to homepage hero — `/images/van.jpg`, 16:9 crop, cover sizing, 18% opacity, hidden on mobile
+- [x] Hero badge — Option B (solid blue bg, navy text), on dev
+- [x] Hero subtitle added — "We Come To You, At Your Home or Office!" on feature branch
+- [x] Hero text improved — larger h1, brighter paragraph text, text shadows for legibility
+- [x] Hero gradient overlay — darkens left side for text contrast
 
-### Completed
+### Previously Completed
 - [x] Rebuild homepage
 - [x] Add real photos (hero + why-choose section)
 - [x] Fix colors to royal blue brand
