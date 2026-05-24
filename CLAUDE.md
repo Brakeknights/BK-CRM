@@ -33,17 +33,19 @@ The API token is entered securely at session start — never hardcode it.
 ## Dev Workflow Rules — ABSOLUTE NON-NEGOTIABLE
 ⛔ STOP. READ THIS BEFORE EVERY PUSH. NO EXCEPTIONS. EVER.
 
-1. ALL changes go to the feature branch ONLY (`claude/dreamy-noether-W8Mwi`)
+1. ALL changes go to the feature branch ONLY
 2. After making changes: take a screenshot, show the user, then STOP and WAIT
-3. Do NOT merge to `dev` until the user explicitly says "push to dev" or "approved"
+3. Do NOT merge to `dev` until the user explicitly says "push to dev" or "merge to dev" or "approved for dev"
 4. Do NOT merge to `master` under any circumstances without explicit user approval
 5. "I won't do it again" is not enough — CHECK THIS LIST before every single merge
+6. ⛔ NEVER auto-merge to dev after a fix, even if it seems small or obvious
 
 THE WORKFLOW IS:
   feature branch → show screenshot → WAIT FOR APPROVAL → then merge to dev
   dev → WAIT FOR APPROVAL → then merge to master
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
+ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
 - Current feature branch: `claude/gallant-edison-TMDeb`
 
 ## Current Work in Progress
