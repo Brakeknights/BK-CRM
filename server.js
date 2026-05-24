@@ -65,14 +65,14 @@ app.post('/api/contact', async (req, res) => {
 
       <!-- Body -->
       <div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">
-        <h2 style="color:#0a1f3d;margin:0 0 12px;font-size:1.2rem;">Hi ${firstName}, we received your request!</h2>
+        <h2 style="color:#0a1f3d;margin:0 0 12px;font-size:1.2rem;">Hi ${firstName}, we got your message!</h2>
         <p style="color:#444;line-height:1.6;margin:0 0 24px;">
-          Thanks for reaching out to Brake Knights. A knight will be in touch shortly to confirm your appointment and provide an upfront estimate.
+          Thanks for reaching out to Brake Knights. We'll review your information and get back to you shortly to discuss your brake service and provide a quote.
         </p>
 
         <!-- Request summary -->
         <div style="background:#f4f7fb;border-radius:6px;padding:20px;margin-bottom:24px;">
-          <p style="margin:0 0 12px;font-weight:bold;color:#0a1f3d;font-size:0.95rem;">Your Request Summary</p>
+          <p style="margin:0 0 12px;font-weight:bold;color:#0a1f3d;font-size:0.95rem;">What You Sent Us</p>
           <table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">
             <tr><td style="padding:5px 0;color:#888;width:90px;">Name</td><td style="padding:5px 0;">${firstName} ${lastName}</td></tr>
             <tr><td style="padding:5px 0;color:#888;">Phone</td><td style="padding:5px 0;">${phone}</td></tr>
@@ -84,9 +84,9 @@ app.post('/api/contact', async (req, res) => {
         <!-- What to expect -->
         <p style="color:#0a1f3d;font-weight:bold;margin:0 0 10px;font-size:0.95rem;">What happens next?</p>
         <ol style="color:#444;line-height:1.8;margin:0 0 24px;padding-left:20px;font-size:0.9rem;">
-          <li>We'll call or text you to confirm your appointment time and location.</li>
-          <li>Our knight arrives fully equipped — no shop visit needed.</li>
-          <li>We complete the repair at your home or office and road-test the vehicle.</li>
+          <li>We'll review your message and reach out by call or text to discuss your service and provide a quote.</li>
+          <li>Once you're happy with the quote, we'll schedule a time and location that works for you.</li>
+          <li>Our knight comes to you — fully equipped, no shop visit needed.</li>
         </ol>
 
         <!-- Contact -->
