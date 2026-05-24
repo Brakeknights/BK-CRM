@@ -165,11 +165,12 @@ nav { display: flex; align-items: center; gap: 4px; }
 .hero-bg {
   position: absolute;
   inset: 0;
-  background-image: url('/images/van.jpg');
-  background-size: cover;
-  background-repeat: no-repeat;
-  background-position: center center;
-  opacity: 0.25;
+  background-image: url('/images/van.jpg'), url('/images/van.jpg');
+  background-size: auto 85%, cover;
+  background-repeat: no-repeat, no-repeat;
+  background-position: center center, center center;
+  filter: blur(0px) opacity(25%);
+  opacity: 1;
 }
 @media (max-width: 768px) {
   .hero-bg { background-size: cover; }
