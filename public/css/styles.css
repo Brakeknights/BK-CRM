@@ -197,6 +197,7 @@ nav { display: flex; align-items: center; gap: 4px; }
 
 .hero-content { position: relative; z-index: 2; max-width: 680px; padding: 80px 0; }
 
+.badge-icon { width: 1.4em; height: 1.4em; vertical-align: middle; flex-shrink: 0; }
 .hero-badge {
   display: inline-flex;
   align-items: center;
