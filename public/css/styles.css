@@ -522,7 +522,7 @@ footer { background: #060d14; color: #6b7a8d; padding: 48px 0 24px; }
     background: var(--navy-mid);
     border-top: 1px solid rgba(255,255,255,.1);
     box-shadow: 0 8px 24px rgba(0,0,0,.5);
-    padding: 8px 0 16px;
+    padding: 8px 0 calc(16px + env(safe-area-inset-bottom, 0px));
     z-index: 999;
   }
   nav.nav-open .nav-item { width: 100%; }
