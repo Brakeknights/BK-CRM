@@ -111,7 +111,7 @@ app.post('/api/contact', async (req, res) => {
       from: '"Brake Knights Website" <greetings@brakeknights.com>',
       to: 'greetings@brakeknights.com',
       replyTo: email || 'greetings@brakeknights.com',
-      subject: `New Service Request: ${firstName} ${lastName} — ${phone}`,
+      subject: `New Service Request: ${firstName} ${lastName}`,
       html: internalHtml
     });
 
