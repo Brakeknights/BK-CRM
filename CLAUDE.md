@@ -67,8 +67,8 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] About page mobile fix — background photo too large, text blurry and too large on mobile
 - [ ] Homepage hero CTA redesign — user has specific vision; discuss before building
 - [ ] Upload 5 phone photos and add to the site
-- [ ] Set `SMTP_PASS` env var in Hostinger hPanel → Hosting → Manage → Node.js → Environment Variables (value = greetings@brakeknights.com email password) — **user action required**
-- [ ] Automated customer confirmation email — branded reply sent to customer on form submission (confirm receipt, booking details)
+- [x] Set `SMTP_PASS` env var in Hostinger hPanel — done ✅
+- [x] Automated customer confirmation email — quote inquiry framing, 3-step what's next, tested and working ✅
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 - [ ] Merge feature branch → dev → then master (once remaining items complete)
 
