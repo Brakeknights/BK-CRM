@@ -578,7 +578,7 @@ footer { background: #060d14; color: #6b7a8d; padding: 48px 0 24px; }
     box-shadow: none;
     border-radius: 0;
     min-width: unset;
-    padding: 4px 0;
+    padding: 4px 0 60px;
     max-height: none !important;
     overflow-y: visible !important;
   }
