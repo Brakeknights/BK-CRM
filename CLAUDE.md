@@ -51,10 +51,10 @@ Update this section at the end of each session to stay caught up next time.
 
 - Working branch: `claude/stoic-maxwell-n9CYe`
 - Next steps:
-  1. Mobile menu still has issues per user — get details next session and fix
-  2. Hero badge: Option B (solid gold bg, navy text) is committed but not approved — user needs to pick Option A (dark backdrop, gold text) or Option B
-  3. Van photo for hero: user wants to use it but couldn't share via iCloud. Ask them to try Imgur (imgur.com → upload → copy direct link) next session
-  4. SEO improvements live on dev, not yet on master
+  1. Hero badge: Option B (solid gold bg, navy text) is committed but not approved — user needs to pick Option A (dark backdrop, gold text) or Option B
+  2. Van photo for hero: user wants to use it but couldn't share via iCloud. Ask them to try Imgur (imgur.com → upload → copy direct link) next session
+  3. Fix About page on mobile: background photo too large, font too large and blurry
+  4. Feature branch ready for review → merge to dev → then master
 
 ## To-Do List
 
@@ -65,7 +65,7 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Fix warranty language everywhere
 - [x] Build all subpages (about, contact, services, location, legal)
 - [x] Build 6 service detail pages
-- [x] Build 30 location pages
+- [x] Build 32 location pages (synced to live site — added Oakton, Fairfax City, Fairfax Station, Annandale, Merrifield, Clifton; removed Woodbridge, Lorton, Dale City)
 - [x] Rewrite About page with authentic knight-themed content
 - [x] Add Google Map embed to homepage
 - [x] Add live Google Reviews section to homepage (Elfsight widget, ID: 76cf70b9-2bf0-4d45-a110-c5e3b0e7de57, confirmed working on dev)
@@ -73,13 +73,14 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Fix mobile hamburger menu (was broken — now opens/closes with collapsible submenus)
 - [x] Add knight-on-horse background image to homepage hero (100% auto, 32% opacity)
 - [x] Context usage indicator — confirmed built-in (small circle, bottom-right, hover to see %)
+- [x] Fix Location nav dropdown: trimmed to 10 cities (Purcellville first), removed "View All Areas" button (Safari overlap bug)
+- [x] Sync areaServed schema across all 45 pages to match current 32-city service area
 
 ### Pending
-- [ ] Upload 5 phone photos and add to site
-- [ ] Fix remaining mobile menu issues (user to report specifics)
 - [ ] Decide on hero badge style (Option A vs B)
-- [ ] Add van photo to homepage hero (need direct image URL)
+- [ ] Add van photo to homepage hero (need direct image URL via Imgur)
 - [ ] Fix About page on mobile: background photo too large, font too large and blurry
+- [ ] Upload 5 phone photos and add to site
 - [ ] Review and approve feature branch → merge to dev → then master
 
 ## Contact
