@@ -165,25 +165,11 @@ nav { display: flex; align-items: center; gap: 4px; }
 .hero-bg {
   position: absolute;
   inset: 0;
-  display: none;
-}
-@media (max-width: 768px) {
-  .hero-bg { background-size: cover; }
-}
-
-.hero-van {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 50%;
-  height: auto;
-  opacity: 0.55;
-  z-index: 1;
-  pointer-events: none;
-}
-@media (max-width: 768px) {
-  .hero-van { display: none; }
+  background-image: url('/images/van.jpg');
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center center;
+  opacity: 0.35;
 }
 
 .hero-content { position: relative; z-index: 2; max-width: 680px; padding: 80px 0; }
