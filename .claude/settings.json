@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE 'git push origin dev|git merge.*dev|git checkout dev'; then echo '{\"decision\": \"block\", \"reason\": \"STOP — do not push to dev without explicit user approval. Wait for the user to say push to dev.\"}'; exit 2; fi"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
