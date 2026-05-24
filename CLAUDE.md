@@ -49,18 +49,20 @@ There is NO shortcut. There is NO exception. Not even "just a small fix."
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/stoic-maxwell-n9CYe`
+- Working branch: `claude/stoic-maxwell-n9CYe` — merged to `dev`, NOT yet merged to `master`
 - Next steps:
-  1. Hero badge: Option B (solid gold bg, navy text) is committed but not approved — user needs to pick Option A (dark backdrop, gold text) or Option B
-  2. Van photo for hero: user wants to use it but couldn't share via iCloud. Ask them to try Imgur (imgur.com → upload → copy direct link) next session
-  3. Fix About page on mobile: background photo too large, font too large and blurry
-  4. Feature branch ready for review → merge to dev → then master
+  1. User was mid-process setting `SMTP_PASS` in Hostinger hPanel (was on dev.brakeknights.com dashboard, clicked Environment Variables in sidebar) — needs to be completed and tested
+  2. Hero badge: Option B (solid gold bg, navy text) is on the feature branch — needs decision: Option A or Option B
+  3. Van photo for hero: need a hosted image URL (user unable to share via iCloud — suggest Google Photos, Dropbox, or Facebook business page)
+  4. About page mobile fix: background photo too large, text blurry and too large on mobile
+  5. Once SMTP_PASS is set: test the contact form on dev.brakeknights.com to confirm emails arrive at greetings@brakeknights.com
 
 ## To-Do List
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Set `SMTP_PASS` env var in Hostinger hPanel → Hosting → Manage → Node.js → Environment Variables (value = greetings@brakeknights.com email password) — **user action required**
+- [ ] Set `SMTP_PASS` env var in Hostinger hPanel → dev.brakeknights.com dashboard → Environment Variables in left sidebar (value = greetings@brakeknights.com email password), then restart app — **user action required, was mid-process**
+- [ ] Test contact form on dev.brakeknights.com after SMTP_PASS is set — confirm email arrives at greetings@brakeknights.com
 - [ ] Hero badge style — Option A (dark backdrop, gold text) or Option B (solid gold bg, navy text)? Option B is currently on the feature branch — **decision needed**
 - [ ] Van photo — need a hosted image URL to add to homepage hero — **decision needed**
 - [ ] About page mobile fix — background photo too large, text blurry and too large on mobile
@@ -68,7 +70,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 - [ ] Homepage hero CTA redesign — user has specific vision; discuss before building
 - [ ] Upload 5 phone photos and add to the site
-- [ ] Approve feature branch (`claude/stoic-maxwell-n9CYe`) → merge to dev → then master
+- [ ] Merge dev → master when user approves
 
 ### Completed
 - [x] Rebuild homepage
@@ -91,6 +93,8 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Fix stale nearby-area links: /brake-repair-fairfax → /brake-repair-fairfax-city (Burke, Centreville, Springfield, Vienna)
 - [x] Fix broken links to deleted pages — Springfield & Alexandria → Annandale; Manassas → Gainesville
 - [x] Fix Services page footer — added missing mailto: link
+- [x] Fix nearby area consistency across all 32 location pages — Manassas duplicate removed, Purcellville 4th city added
+- [x] Merge feature branch `claude/stoic-maxwell-n9CYe` → dev
 
 ## Contact
 greetings@brakeknights.com
