@@ -539,24 +539,20 @@ footer { background: #060d14; color: #6b7a8d; padding: 48px 0 24px; }
     transition: transform .25s;
     font-size: 1rem;
   }
-  /* Suppress desktop hover effects inside mobile nav */
-  nav.nav-open .nav-item:hover .dropdown {
-    display: none;
-  }
-  nav.nav-open .nav-item:hover .caret {
-    transform: none;
-  }
+  /* Nuclear override: kill ALL hover-based dropdown/caret behavior on touch devices */
+  .nav-item:hover .dropdown { display: none !important; }
+  .nav-item:hover .caret { transform: none !important; }
   nav.nav-open .nav-item.submenu-open .caret {
-    transform: rotate(180deg);
+    transform: rotate(180deg) !important;
   }
   nav.nav-open .dropdown {
     display: none;
   }
   nav.nav-open .nav-item.submenu-open .dropdown {
-    position: static;
+    position: static !important;
     opacity: 1;
     visibility: visible;
-    display: flex;
+    display: flex !important;
     flex-direction: column;
     background: rgba(0,0,0,.25);
     box-shadow: none;
