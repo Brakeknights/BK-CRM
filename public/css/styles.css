@@ -264,6 +264,23 @@ nav { display: flex; align-items: center; gap: 4px; }
 
 .btn-outline:hover { border-color: var(--white); background: rgba(255,255,255,.08); }
 
+.btn-secondary {
+  display: inline-block;
+  background: transparent;
+  color: var(--white);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 14px 28px;
+  border-radius: 8px;
+  border: 2px solid rgba(255,255,255,.3);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  text-decoration: none;
+}
+.btn-secondary:hover { border-color: var(--white); background: rgba(255,255,255,.08); }
+
+.hero-cta { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-top: 24px; }
+
 /* ── SECTION COMMON ── */
 section { padding: 72px 0; }
 
