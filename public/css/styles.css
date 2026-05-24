@@ -186,9 +186,9 @@ nav { display: flex; align-items: center; gap: 4px; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: var(--gold);
-  border: 1px solid var(--gold);
-  color: var(--navy);
+  background: rgba(10, 20, 40, 0.65);
+  border: 1px solid #c9a84c;
+  color: #c9a84c;
   font-size: 1rem;
   font-weight: 700;
   padding: 8px 18px;
@@ -196,6 +196,7 @@ nav { display: flex; align-items: center; gap: 4px; }
   margin-bottom: 20px;
   text-transform: uppercase;
   letter-spacing: .5px;
+  backdrop-filter: blur(4px);
 }
 
 .hero-content h1 {
