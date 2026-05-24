@@ -53,7 +53,7 @@ ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
 Update this section at the end of each session to stay caught up next time.
 
 - Working branch: `claude/gallant-edison-TMDeb` (also `claude/awesome-wright-cEFDs` — same code)
-- `dev` branch created and deployed to dev.brakeknights.com ✅
+- `dev` branch live and auto-deploying to dev.brakeknights.com via Hostinger git integration ✅
 - Next steps:
   1. About page mobile fix — background photo too large, text blurry on mobile
   2. Hero CTA redesign — user has specific vision, discuss before building
@@ -75,10 +75,11 @@ Update this section at the end of each session to stay caught up next time.
 ### Completed
 - [x] Van photo added to homepage hero — `/images/van.jpg`, 16:9 crop, cover sizing, 18% opacity, hidden on mobile
 - [x] Hero badge — Option B (solid blue bg, navy text)
-- [x] Hero subtitle added — "We Come To You, At Your Home or Office!" — 1.6rem (Option 1)
+- [x] Hero subtitle added — "We Come To You, At Your Home or Office!" — 2.6rem
 - [x] Hero text improved — larger h1, brighter paragraph text, text shadows for legibility
 - [x] Hero gradient overlay — darkens left side for text contrast
-- [x] `dev` git branch created — matches feature branch, deployed to dev.brakeknights.com via archive MCP
+- [x] `dev` git branch created — Hostinger configured to auto-deploy from `dev`, Node 22
+- [x] Fix deployment reversion — added `engines: node>=22` to package.json, exclude `.claude/` from archive
 
 ### Previously Completed
 - [x] Rebuild homepage
