@@ -166,9 +166,9 @@ nav { display: flex; align-items: center; gap: 4px; }
   position: absolute;
   inset: 0;
   background-image: url('/images/van.jpg');
-  background-size: auto 70%;
+  background-size: cover;
   background-repeat: no-repeat;
-  background-position: center right 8%;
+  background-position: center center;
   opacity: 0.25;
 }
 @media (max-width: 768px) {
