@@ -79,6 +79,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Fix remaining mobile menu issues (user to report specifics)
 - [ ] Decide on hero badge style (Option A vs B)
 - [ ] Add van photo to homepage hero (need direct image URL)
+- [ ] Fix About page on mobile: background photo too large, font too large and blurry
 - [ ] Review and approve feature branch → merge to dev → then master
 
 ## Contact
