@@ -10,10 +10,11 @@ Built with Node.js/Express, deployed on Hostinger.
 - Live site must never be broken — always preview on dev first
 
 ## Branch & Deployment Workflow
-- `dev` branch → auto-deploys to **dev.brakeknights.com** (sandbox/preview)
-- `master` branch → auto-deploys to **brakeknights.com** (live site)
+- `dev` branch → deploys to **dev.brakeknights.com** via Hostinger MCP archive upload
+- `master` branch → deploys to **brakeknights.com** (live site)
 - All changes go on `dev` first. Only merge to `master` when the user approves.
 - Never push directly to `master` without explicit user approval.
+- **IMPORTANT:** Hostinger has a git auto-deploy configured. To prevent it from overwriting archive deployments, always deploy to dev via `hosting_deployJsApplication` MCP tool (archive method), NOT by triggering git deploys. The `dev` git branch should always match what's on dev.brakeknights.com.
 
 ## Hostinger MCP
 A Hostinger MCP server is configured in `.mcp.json`.
@@ -51,33 +52,33 @@ ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/gallant-edison-TMDeb`
+- Working branch: `claude/gallant-edison-TMDeb` (also `claude/awesome-wright-cEFDs` — same code)
+- `dev` branch created and deployed to dev.brakeknights.com ✅
 - Next steps:
-  1. Hero subtitle size — user choosing between Option 1 (1.6rem), Option 2 (1.9rem), Option 3 (2.2rem) — decision pending
-  2. About page mobile fix still pending
-  3. Hero CTA redesign — user has specific vision, discuss before building
-  4. Upload 5 phone photos
-  5. Once all approved → push to dev → then master
+  1. About page mobile fix — background photo too large, text blurry on mobile
+  2. Hero CTA redesign — user has specific vision, discuss before building
+  3. Upload 5 phone photos
+  4. Once all approved → push to dev → then master
 
 ## To-Do List
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Hero subtitle size — pick Option 1 (1.6rem), 2 (1.9rem), or 3 (2.2rem) — **decision needed**
 - [ ] About page mobile fix — background photo too large, text blurry and too large on mobile
 - [ ] Homepage hero CTA redesign — user has specific vision; discuss before building
 - [ ] Upload 5 phone photos and add to the site
 - [ ] Set `SMTP_PASS` env var in Hostinger hPanel → Hosting → Manage → Node.js → Environment Variables (value = greetings@brakeknights.com email password) — **user action required**
 - [ ] Automated customer confirmation email — branded reply sent to customer on form submission (confirm receipt, booking details)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
-- [ ] Merge feature branch (`claude/gallant-edison-TMDeb`) → dev → then master
+- [ ] Merge feature branch → dev → then master (once remaining items complete)
 
 ### Completed
 - [x] Van photo added to homepage hero — `/images/van.jpg`, 16:9 crop, cover sizing, 18% opacity, hidden on mobile
-- [x] Hero badge — Option B (solid blue bg, navy text), on dev
-- [x] Hero subtitle added — "We Come To You, At Your Home or Office!" on feature branch
+- [x] Hero badge — Option B (solid blue bg, navy text)
+- [x] Hero subtitle added — "We Come To You, At Your Home or Office!" — 1.6rem (Option 1)
 - [x] Hero text improved — larger h1, brighter paragraph text, text shadows for legibility
 - [x] Hero gradient overlay — darkens left side for text contrast
+- [x] `dev` git branch created — matches feature branch, deployed to dev.brakeknights.com via archive MCP
 
 ### Previously Completed
 - [x] Rebuild homepage
