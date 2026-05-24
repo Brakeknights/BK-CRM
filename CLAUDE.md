@@ -78,9 +78,15 @@ Update this section at the end of each session to stay caught up next time.
 
 ### Pending
 - [ ] Decide on hero badge style (Option A vs B)
-- [ ] Add van photo to homepage hero (need direct image URL via Imgur)
+- [ ] Add van photo to homepage hero (need direct image URL)
 - [ ] Fix About page on mobile: background photo too large, font too large and blurry
 - [ ] Upload 5 phone photos and add to site
+- [ ] Fix contact form — wire to actually send emails to greetings@brakeknights.com (Formspree, EmailJS, or Hostinger SMTP — decide on method)
+- [ ] Fix stale nearby-area links: /brake-repair-fairfax → /brake-repair-fairfax-city (Vienna, Centreville, Burke, Springfield, Merrifield, Fairfax Station, Clifton)
+- [ ] Fix stale links to deleted pages: Springfield & Alexandria → lorton, Manassas → dale-city
+- [ ] Fix Services page footer missing mailto: email link
+- [ ] BIG FEATURE: Automated customer email response on contact form submission (confirm receipt, include booking details, branded reply)
+- [ ] Homepage hero CTA redesign (big build — user has specific vision, discuss before implementing)
 - [ ] Review and approve feature branch → merge to dev → then master
 
 ## Contact
