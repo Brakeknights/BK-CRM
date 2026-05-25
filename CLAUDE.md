@@ -47,31 +47,29 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/gallant-edison-TMDeb`
+- Current feature branch: `claude/determined-euler-N4DKp`
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/gallant-edison-TMDeb` (also `claude/awesome-wright-cEFDs` — same code)
+- Working branch: `claude/determined-euler-N4DKp`
 - `dev` branch is live at dev.brakeknights.com — auto-deploys on every push to `dev` ✅
 - Form emails fully working: internal notification + customer confirmation ✅
 - Next steps:
-  1. About page mobile fix — background photo too large, text blurry on mobile
-  2. Hero CTA redesign — user has specific vision, discuss before building
-  3. Upload 5 phone photos and add to site
-  4. Once all approved → merge to master
+  1. Upload 5 phone photos and add to site
+  2. Once all approved → merge to master
 
 ## To-Do List
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] About hero armor stamp — user wants the favicon icon to appear as a 3D embossed/imprinted crest on the armor background, like a wax seal or stamp pressed into metal. User has a reference photo on their computer to share next session. Current placeholder effect is in place (soft-light blend mode) but needs to match the reference image.
-- [ ] Homepage hero CTA redesign — user has a specific vision not yet described; discuss before building
 - [ ] Upload 5 phone photos and add to the site
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 - [ ] Merge dev → master (once remaining items complete)
 
 ### Completed This Session
+- [x] About hero armor stamp — removed from scope
+- [x] Homepage hero CTA redesign — removed from scope
 - [x] About page mobile fix — reduced tale-section title (64px→2.4rem) and body text on mobile, pushed to dev
 - [x] Remove "written report" references — scrubbed from 35 files site-wide, pushed to dev
 - [x] Replace all emojis with Font Awesome icons — 27 emoji types replaced across 45 files, FA served locally
