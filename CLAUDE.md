@@ -123,6 +123,7 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
+- [ ] Fix price comparison table on homepage — update to match the corrected prices/wait times already done on services page (Starting at $X format, BK: 1-2hr, Shop: 2-4hr, Dealer: 3-5hr)
 - [ ] Upload 5 phone photos and add to the site
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 - [ ] Merge dev → master (once remaining items complete)
