@@ -300,13 +300,12 @@
     <div class="section-label">Our Location</div>
     <h2 class="section-title">Find Brake Knights on the Map</h2>
     <p class="section-sub">We're a mobile service based in Sterling, VA. We come to you, but here's where to find us on Google.</p>
-    <div style="border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);margin-top:32px;">
-      <iframe
-        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3106.68!2d-77.4232136!3d39.0192921!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89b63923f07630ad%3A0x2a309038b82ea8d8!2sBrake%20Knights!5e0!3m2!1sen!2sus!4v1716505200000!5m2!1sen!2sus"
-        width="100%" height="420" style="border:0;display:block;"
-        allowfullscreen loading="lazy" referrerpolicy="no-referrer-when-downgrade"
-        title="Brake Knights location on Google Maps">
-      </iframe>
+    <div id="map-container-contact" style="border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);margin-top:32px;background:var(--navy-mid);height:420px;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="loadMap('map-container-contact','https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3106.68!2d-77.4232136!3d39.0192921!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89b63923f07630ad%3A0x2a309038b82ea8d8!2sBrake%20Knights!5e0!3m2!1sen!2sus!4v1716505200000!5m2!1sen!2sus',420)">
+      <div style="text-align:center;color:var(--white);pointer-events:none;">
+        <i class="fa-solid fa-map-location-dot" style="font-size:2.5rem;color:var(--royal-blue);margin-bottom:12px;display:block;"></i>
+        <div style="font-weight:700;font-size:1rem;margin-bottom:4px;">Brake Knights — Sterling, VA</div>
+        <div style="font-size:.875rem;opacity:.7;">Tap to view map</div>
+      </div>
     </div>
   </div>
 </section>
@@ -453,6 +452,22 @@
       navItem.classList.toggle('submenu-open');
     });
   });
+
+  function loadMap(containerId, src, height) {
+    var c = document.getElementById(containerId);
+    var iframe = document.createElement('iframe');
+    iframe.src = src;
+    iframe.width = '100%';
+    iframe.height = height;
+    iframe.style.cssText = 'border:0;display:block;';
+    iframe.allowFullscreen = true;
+    iframe.referrerPolicy = 'no-referrer-when-downgrade';
+    iframe.title = 'Brake Knights location on Google Maps';
+    c.style.cssText = 'border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);margin-top:32px;height:' + height + 'px;';
+    c.onclick = null;
+    c.innerHTML = '';
+    c.appendChild(iframe);
+  }
 </script>
 
 </body>
