@@ -1,6 +1,7 @@
 @import url('/css/fa.min.css');
 
 .fa-solid, .fa-brands { vertical-align: -0.1em; }
+a .fa-solid, a .fa-brands, a .fa-regular, button .fa-solid, button .fa-brands { pointer-events: none; }
 .btn-primary .fa-solid, .btn-primary .fa-brands,
 .btn-secondary .fa-solid, .btn-secondary .fa-brands,
 .btn-outline .fa-solid, .btn-outline .fa-brands,
