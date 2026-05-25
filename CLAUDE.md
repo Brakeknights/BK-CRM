@@ -27,8 +27,22 @@ The API token is entered securely at session start — never hardcode it.
 - `package.json` + `package-lock.json` — Node.js dependencies
 
 ## Screenshots with Playwright
-- Always use `element.offsetTop` to scroll to a section — never `getBoundingClientRect().top + window.scrollY` (that value changes as the page scrolls and will land on the wrong section)
-- Always use `offsetTop` pattern: `const y = await page.evaluate(() => document.querySelector('#section-id').offsetTop); await page.evaluate((y) => window.scrollTo(0, y), y);`
+⛔ HARD RULE: ALWAYS use `locator().scrollIntoViewIfNeeded()` to scroll before screenshots. NEVER use `window.scrollTo()` or `offsetTop` — headless Playwright does not guarantee the scroll fires before the capture, causing screenshots of the wrong section. This wastes the user's time and is not acceptable.
+
+✅ CORRECT pattern — use this every time:
+```javascript
+const el = page.locator('#section-id'); // or any CSS selector
+await el.scrollIntoViewIfNeeded();
+await page.waitForTimeout(400);
+await page.screenshot({ path: '/tmp/screenshot.png' });
+```
+
+❌ NEVER do this:
+```javascript
+const y = await page.evaluate(() => document.querySelector('#id').offsetTop);
+await page.evaluate(y => window.scrollTo(0, y), y); // unreliable in headless mode
+```
+
 - Never merge to `dev` without explicit user approval — commit and push to the feature branch only
 
 ## Dev Workflow Rules — ABSOLUTE NON-NEGOTIABLE
