@@ -405,6 +405,12 @@ section { padding: 72px 0; }
 .step-content h3 { font-size: 1.05rem; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
 .step-content p { color: var(--gray); font-size: .925rem; }
 
+/* ── WORK PHOTO GRID ── */
+.photo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 40px; }
+.work-photo { border-radius: 12px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.12); margin: 0; }
+.work-photo img { width: 100%; height: 260px; object-fit: cover; display: block; }
+.work-photo figcaption { background: var(--navy); color: #8fa8c0; font-size: .8rem; padding: 10px 14px; line-height: 1.4; }
+
 /* ── WHY CHOOSE ── */
 .why-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
 .why-photo { border-radius: 16px; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,.15); }
@@ -555,6 +561,7 @@ footer { background: #060d14; color: #6b7a8d; padding: 48px 0 24px; }
   .areas-cols { grid-template-columns: 1fr; }
   .service-detail-grid { grid-template-columns: 1fr; }
   .service-sidebar { position: static; }
+  .photo-grid { grid-template-columns: 1fr; }
   .about-grid { grid-template-columns: 1fr; }
   .process-grid { grid-template-columns: 1fr; gap: 32px; }
   .location-counties { grid-template-columns: repeat(2, 1fr); }
