@@ -5,7 +5,7 @@ a .fa-solid, a .fa-brands, a .fa-regular, button .fa-solid, button .fa-brands { 
 
 /* ── CUSTOM BRAKE WARNING ICON ── */
 .fa-brake-fluid {
-  display: inline-block; width: .875em; height: 1em;
+  display: inline-block; width: 1em; height: 1em;
   vertical-align: -.125em; line-height: 1;
 }
 .fa-brake-fluid::before {
