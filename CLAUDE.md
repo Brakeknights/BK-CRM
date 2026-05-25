@@ -102,23 +102,28 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Upload 5 phone photos and add to the site
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
-- [ ] Merge dev → master (once remaining items complete)
+- [ ] Merge dev → master (once remaining checklist items complete)
 
 ### Completed This Session
-- [x] iOS "Allow Phone" dialog fix — format-detection meta added to all 45 pages, all tel: links converted to E.164 (+1) format, Google Maps iframes replaced with click-to-load on index.html and contact.html; deployed to dev
+- [x] Fix brake warning icon on iOS Safari — switched from URL mask-image to inline data URI; deployed to dev
+- [x] Swap homepage tech photo to gray shirt photo (photo2.jpg); deployed to dev
+- [x] Update homepage price comparison table — "Starting at $X" format, corrected wait times (Dealer 3–5hr, Shop 2–4hr, BK 1–1.5hr); deployed to dev
 
-### Previously Completed This Session
+### Previously Completed
+- [x] iOS "Allow Phone" dialog fix — format-detection meta added to all 45 pages, all tel: links converted to E.164 (+1) format, Google Maps iframes replaced with click-to-load on index.html and contact.html; deployed to dev
+- [x] Add custom brake warning light icon (SVG) — replaces fa-flask across all 45 pages; deployed to dev
+- [x] Add real work photos to 3 service pages (caliper, rotor, inspection) and homepage
+- [x] Fix inspection page hero buttons — Call primary, Request Service outline, correct order
 - [x] About hero armor stamp — removed from scope
 - [x] Homepage hero CTA redesign — removed from scope
-- [x] About page mobile fix — reduced tale-section title (64px→2.4rem) and body text on mobile, pushed to dev
-- [x] Remove "written report" references — scrubbed from 35 files site-wide, pushed to dev
+- [x] About page mobile fix — reduced tale-section title (64px→2.4rem) and body text on mobile
+- [x] Remove "written report" references — scrubbed from 35 files site-wide
 - [x] Replace all emojis with Font Awesome icons — 27 emoji types replaced across 45 files, FA served locally
-- [x] Fix all em dashes site-wide — replaced with correct punctuation (colon, comma, semicolon, period) in all content; title separators left intact
-- [x] Hero badge icon — using favicon.png (helmet + rotor logo icon) instead of chess knight or emoji
+- [x] Fix all em dashes site-wide — replaced with correct punctuation
+- [x] Hero badge icon — using favicon.png (helmet + rotor logo icon)
 - [x] Fix btn-secondary missing CSS — "Request Service" button was unstyled on all service pages
-- [x] Fix hero CTA button text — "Call 703-977-4475" → "Call Us" on all service pages (number belongs in header only)
+- [x] Fix hero CTA button text — "Call 703-977-4475" → "Call Us" on all service pages
 
 ### Previously Completed
 - [x] Hero subtitle size — settled at 2.6rem
