@@ -47,17 +47,20 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/determined-euler-N4DKp`
+- Current feature branch: `claude/amazing-goodall-b5XE9`
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/determined-euler-N4DKp`
+- Working branch: `claude/amazing-goodall-b5XE9`
 - `dev` branch is live at dev.brakeknights.com — auto-deploys on every push to `dev` ✅
 - Form emails fully working: internal notification + customer confirmation ✅
+- iOS "Allow Phone" dialog fix deployed to dev: format-detection meta on all 45 pages, E.164 tel: links, Google Maps iframes converted to click-to-load on index.html and contact.html ✅
 - Next steps:
-  1. Upload 5 phone photos and add to site
-  2. Once all approved → merge to master
+  1. User to test iOS phone dialog fix on real iPhone — waiting for report
+  2. Upload 5 phone photos and add to site
+  3. Remaining pre-launch checklist items
+  4. Once all approved → merge to master
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -104,6 +107,9 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Merge dev → master (once remaining items complete)
 
 ### Completed This Session
+- [x] iOS "Allow Phone" dialog fix — format-detection meta added to all 45 pages, all tel: links converted to E.164 (+1) format, Google Maps iframes replaced with click-to-load on index.html and contact.html; deployed to dev
+
+### Previously Completed This Session
 - [x] About hero armor stamp — removed from scope
 - [x] Homepage hero CTA redesign — removed from scope
 - [x] About page mobile fix — reduced tale-section title (64px→2.4rem) and body text on mobile, pushed to dev
@@ -114,7 +120,7 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Fix btn-secondary missing CSS — "Request Service" button was unstyled on all service pages
 - [x] Fix hero CTA button text — "Call 703-977-4475" → "Call Us" on all service pages (number belongs in header only)
 
-### Previously Completed This Session
+### Previously Completed
 - [x] Hero subtitle size — settled at 2.6rem
 - [x] Van hero background on mobile — decided to keep hidden (16:9 image doesn't suit portrait mobile)
 - [x] `dev` git branch set up — Hostinger auto-deploys from it, Node 22, stable
