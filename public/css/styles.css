@@ -461,7 +461,7 @@ section { padding: 72px 0; }
 .pricing-table tr:last-child td { border-bottom: none; }
 .pricing-table tbody tr:nth-child(even) { background: var(--off-white); }
 .price-highlight { color: var(--blue); font-weight: 700; }
-.best-price { color: #1a7a3a; font-weight: 800; background: #e8f7ec; border-radius: 6px; padding: 4px 10px; }
+.best-price { color: #1a7a3a; font-weight: 800; }
 
 /* ── AREAS ── */
 .areas-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
