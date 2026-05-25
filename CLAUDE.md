@@ -69,9 +69,11 @@ Update this section at the end of each session to stay caught up next time.
 - Working branch: `claude/determined-euler-N4DKp`
 - `dev` branch is live at dev.brakeknights.com — auto-deploys on every push to `dev` ✅
 - Form emails fully working: internal notification + customer confirmation ✅
+- All QA fixes from this session are pushed to dev and confirmed working
 - Next steps:
-  1. Upload 5 phone photos and add to site
-  2. Once all approved → merge to master
+  1. User to finish manual mobile checklist items (hamburger menu, spot-checks, legal pages)
+  2. Upload 5 phone photos and add to site
+  3. Once all approved → merge to master
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -84,7 +86,7 @@ Update this section at the end of each session to stay caught up next time.
 
 ### Content Accuracy
 - [ ] Phone number (703-977-4475) in header and footer — correct
-- [ ] Phone number does NOT appear inside CTA buttons (buttons should say "Call Us" only)
+- [ ] Phone number does NOT appear inside CTA buttons (all say "Call" now — confirm on real device)
 - [ ] Service area list on site matches the actual 32 cities served
 - [ ] Legal pages (privacy policy, terms) — no placeholder or dummy text
 
@@ -94,6 +96,9 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Spot-check one location page on mobile — looks correct
 - [x] Font Awesome icons rendering correctly — 40 icons confirmed rendering on homepage
 - [x] Google Reviews widget showing on homepage
+- [x] All content icons updated to royal blue site-wide (service, why, pillar icons)
+- [x] Value props icons: unique icons, royal blue color
+- [x] Pricing table: aligned, "Starting at $X" format, correct wait times
 
 ### Technical
 - [x] Browser console on homepage — no real JS errors (2 HTTPS cert warnings are localhost-only, resolve on live site)
@@ -101,11 +106,16 @@ Update this section at the end of each session to stay caught up next time.
 - [x] `sitemap.xml` exists and lists all major pages — created, serving correctly
 - [x] `robots.txt` exists and is correct — created, serving correctly
 - [x] Homepage title/meta fixed — was "Sterling, VA", now "Northern Virginia" across title, description, OG, and Twitter tags
+- [x] Google Maps embed fixed — removed loading=lazy (was blocking map on mobile)
+- [x] iOS auto-call block fixed — pointer-events:none on FA icons inside tel: links
+- [x] All call buttons say "Call" only — no phone number inside buttons (header is the only exception)
+- [x] Book Inspection button fixed — now links to /contact instead of tel:
+- [x] CSS cache-busting added — styles.css?v=2 across all 45 pages
+- [x] Stale PR #1 closed — was incorrectly targeting master instead of dev
 
 ### SEO
-- [ ] Homepage title tag and meta description are accurate and unique
-- [ ] About, Contact, Services pages have unique titles and meta descriptions
 - [ ] Homepage JSON-LD schema passes Google's Rich Results Test
+- [x] Homepage title/description/OG/Twitter all say "Northern Virginia" (not "Sterling, VA")
 
 ---
 
@@ -127,6 +137,20 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Hero badge icon — using favicon.png (helmet + rotor logo icon) instead of chess knight or emoji
 - [x] Fix btn-secondary missing CSS — "Request Service" button was unstyled on all service pages
 - [x] Fix hero CTA button text — "Call 703-977-4475" → "Call Us" on all service pages (number belongs in header only)
+- [x] Pre-launch QA checklist created and partially completed
+- [x] Homepage SEO fixed — title/meta/OG/Twitter all changed from "Sterling, VA" to "Northern Virginia"
+- [x] sitemap.xml created — all 45 pages listed
+- [x] robots.txt created — points to sitemap
+- [x] Google Maps fix — removed loading=lazy so map loads on mobile
+- [x] Book Inspection button — fixed href from tel: to /contact
+- [x] iOS auto-call block — fixed with pointer-events:none on FA icons inside links
+- [x] All call buttons changed to "Call" only across 42 files (header still shows full number)
+- [x] Value props icons — fixed duplicate shield (→ handshake), brightened to royal blue
+- [x] All content icons updated to royal blue site-wide (service-icon, why-icon, pillar-icon, service detail headings)
+- [x] CSS cache-busting — styles.css?v=2 added across all 45 pages
+- [x] Pricing table fixed — aligned, "Starting at $X", updated wait times (BK: 1-2hr, Shop: 2-4hr, Dealer: 3-5hr)
+- [x] Screenshot rule locked in CLAUDE.md — must use scrollIntoViewIfNeeded() always
+- [x] Stale PR #1 closed — was incorrectly targeting master directly
 
 ### Previously Completed This Session
 - [x] Hero subtitle size — settled at 2.6rem
