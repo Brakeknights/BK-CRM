@@ -62,8 +62,8 @@ Update this section at the end of each session to stay caught up next time.
 ## Pre-Launch Checklist (Before Merging to Master)
 
 ### Functional
-- [ ] Submit a test contact form on dev — confirm internal notification arrives at greetings@brakeknights.com
-- [ ] Submit a test contact form on dev — confirm customer confirmation email arrives
+- [x] Submit a test contact form on dev — confirm internal notification arrives at greetings@brakeknights.com
+- [x] Submit a test contact form on dev — confirm customer confirmation email arrives
 - [ ] Click every nav link (desktop + mobile) — no 404s
 - [ ] Click every footer link — no 404s
 - [ ] Test mobile hamburger menu on a real phone — opens, closes, submenus expand/collapse
