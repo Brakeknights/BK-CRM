@@ -107,6 +107,9 @@ Update this section at the end of each session to stay caught up next time.
 
 ### Pending
 - [ ] Sync feature branch with dev: `git checkout claude/amazing-goodall-b5XE9 && git merge dev`
+- [ ] Add "View All Service Areas" CTA button to homepage hero section — links to the locations/cities page
+- [ ] Change "Hours of Operation" heading to "Hours of Valor" on all pages that show it (footer + any standalone section)
+- [ ] Google map click-to-load is intentional and fine for SEO — no action needed (confirmed: crawler never loads iframes; load speed benefit outweighs auto-load; local SEO driven by schema + GBP, not the embed)
 - [ ] Remaining pre-launch checklist items (see below)
 - [ ] Merge dev → master via GitHub UI (once all checklist items complete)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
