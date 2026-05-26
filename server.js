@@ -38,7 +38,7 @@ app.post('/api/contact', async (req, res) => {
   const internalHtml = `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #ddd;border-radius:8px;">
       <div style="background:#0a1f3d;padding:16px 20px;border-radius:6px 6px 0 0;margin:-20px -20px 20px;">
-        <h2 style="color:#c9a84c;margin:0;font-size:1.3rem;">⚔️ New Service Request — Brake Knights</h2>
+        <h2 style="color:#c9a84c;margin:0;font-size:1.3rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;border-radius:4px;"> New Service Request — Brake Knights</h2>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:0.95rem;">
         <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;width:130px;">Name</td><td style="padding:8px 12px;">${firstName} ${lastName}</td></tr>
@@ -59,7 +59,7 @@ app.post('/api/contact', async (req, res) => {
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">
       <!-- Header -->
       <div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">
-        <h1 style="color:#ffffff;margin:0 0 4px;font-size:1.5rem;letter-spacing:-0.5px;">⚔️ Brake Knights</h1>
+        <h1 style="color:#ffffff;margin:0 0 4px;font-size:1.5rem;letter-spacing:-0.5px;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:32px;height:32px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>
         <p style="color:#8aadcf;margin:0;font-size:0.9rem;">Mobile Brake Service — Northern Virginia</p>
       </div>
 
