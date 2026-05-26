@@ -8,6 +8,20 @@ a .fa-solid, a .fa-brands, a .fa-regular, button .fa-solid, button .fa-brands { 
 [class*="eapps-google-reviews"] [class*="title"],
 [class*="eapps-google-reviews"] [class*="header"] { display: none !important; }
 
+/* ── CUSTOM STEERING WHEEL VIBRATION ICON ── */
+.fa-steering-wheel {
+  display: inline-block; width: 1.3em; height: 1.3em;
+  vertical-align: -.2em; line-height: 1;
+}
+.fa-steering-wheel::before {
+  content: ''; display: block; width: 100%; height: 100%;
+  background-color: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSI+CiAgPCEtLSBMZWZ0IHZlcnRpY2FsIHNxdWlnZ2xlcyAoMikgLS0+CiAgPHBhdGggZD0iTSA0IDguNSBRIDMgMTAuNSA0IDEyLjUgUSA1IDE0LjUgNCAxNi41IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTSAyLjIgOC41IFEgMS4yIDEwLjUgMi4yIDEyLjUgUSAzLjIgMTQuNSAyLjIgMTYuNSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gUmlnaHQgdmVydGljYWwgc3F1aWdnbGVzICgyKSAtLT4KICA8cGF0aCBkPSJNIDIwIDguNSBRIDIxIDEwLjUgMjAgMTIuNSBRIDE5IDE0LjUgMjAgMTYuNSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik0gMjEuOCA4LjUgUSAyMi44IDEwLjUgMjEuOCAxMi41IFEgMjAuOCAxNC41IDIxLjggMTYuNSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gU3RlZXJpbmcgd2hlZWwgcmltIC0tPgogIDxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjUuNSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPCEtLSBTcG9rZXMgYXQgMTIsIDQsIDggbydjbG9jayAtLT4KICA8bGluZSB4MT0iMTIiIHkxPSIxMC41IiB4Mj0iMTIiIHkyPSI2LjUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8bGluZSB4MT0iMTMuMiIgeTE9IjEyLjc1IiB4Mj0iMTYuNzciIHkyPSIxNC43NSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxsaW5lIHgxPSIxMC44IiB5MT0iMTIuNzUiIHgyPSI3LjIzIiB5Mj0iMTQuNzUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8IS0tIEh1YiAtLT4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxLjUiIGZpbGw9ImJsYWNrIi8+Cjwvc3ZnPgo=");
+  -webkit-mask-repeat: no-repeat; -webkit-mask-size: contain; -webkit-mask-position: center;
+  mask-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSI+CiAgPCEtLSBMZWZ0IHZlcnRpY2FsIHNxdWlnZ2xlcyAoMikgLS0+CiAgPHBhdGggZD0iTSA0IDguNSBRIDMgMTAuNSA0IDEyLjUgUSA1IDE0LjUgNCAxNi41IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTSAyLjIgOC41IFEgMS4yIDEwLjUgMi4yIDEyLjUgUSAzLjIgMTQuNSAyLjIgMTYuNSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gUmlnaHQgdmVydGljYWwgc3F1aWdnbGVzICgyKSAtLT4KICA8cGF0aCBkPSJNIDIwIDguNSBRIDIxIDEwLjUgMjAgMTIuNSBRIDE5IDE0LjUgMjAgMTYuNSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik0gMjEuOCA4LjUgUSAyMi44IDEwLjUgMjEuOCAxMi41IFEgMjAuOCAxNC41IDIxLjggMTYuNSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDwhLS0gU3RlZXJpbmcgd2hlZWwgcmltIC0tPgogIDxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjUuNSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPCEtLSBTcG9rZXMgYXQgMTIsIDQsIDggbydjbG9jayAtLT4KICA8bGluZSB4MT0iMTIiIHkxPSIxMC41IiB4Mj0iMTIiIHkyPSI2LjUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8bGluZSB4MT0iMTMuMiIgeTE9IjEyLjc1IiB4Mj0iMTYuNzciIHkyPSIxNC43NSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxsaW5lIHgxPSIxMC44IiB5MT0iMTIuNzUiIHgyPSI3LjIzIiB5Mj0iMTQuNzUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMS44IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8IS0tIEh1YiAtLT4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxLjUiIGZpbGw9ImJsYWNrIi8+Cjwvc3ZnPgo=");
+  mask-repeat: no-repeat; mask-size: contain; mask-position: center;
+}
+
 /* ── CUSTOM BRAKE WARNING ICON ── */
 .fa-brake-fluid {
   display: inline-block; width: 1.3em; height: 1.3em;
@@ -566,7 +580,8 @@ footer { background: #060d14; color: #6b7a8d; padding: 48px 0 24px; }
 
 /* ── MOBILE ── */
 @media (max-width: 900px) {
-  nav, .fb-link { display: none; }
+  nav { display: none; }
+  .fb-link { display: none; }
   .hamburger { display: flex; }
   .logo img { height: auto; width: 120px; max-width: none; }
   .header-inner { justify-content: space-between; }
