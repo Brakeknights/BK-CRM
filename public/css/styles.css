@@ -157,6 +157,9 @@ nav { display: flex; align-items: center; gap: 4px; }
 .fb-link { color: #90a4b8; font-size: .85rem; transition: color .15s; }
 .fb-link:hover { color: #4a90d9; }
 
+.google-review-link { color: #f5c518; font-size: .85rem; transition: color .15s; }
+.google-review-link:hover { color: #ffd700; }
+
 .btn-call {
   background: var(--royal-blue);
   color: var(--white);
@@ -582,6 +585,7 @@ footer { background: #060d14; color: #6b7a8d; padding: 48px 0 24px; }
 @media (max-width: 900px) {
   nav { display: none; }
   .fb-link { display: none; }
+  .google-review-link { display: none; }
   .hamburger { display: flex; }
   .logo img { height: auto; width: 120px; max-width: none; }
   .header-inner { justify-content: space-between; }
