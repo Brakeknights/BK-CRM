@@ -549,7 +549,7 @@ section { padding: 72px 0; }
 
 /* ── FOOTER ── */
 footer { background: #060d14; color: #6b7a8d; padding: 48px 0 24px; }
-.footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 48px; margin-bottom: 40px; }
+.footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 48px; margin-bottom: 40px; }
 .footer-brand .logo { margin-bottom: 14px; }
 .footer-brand .logo img { height: 287px; width: auto; }
 .footer-brand p { font-size: .875rem; line-height: 1.7; color: #4a5a6a; }
