@@ -59,12 +59,12 @@ Update this section at the end of each session to stay caught up next time.
 - Working branch: `claude/amazing-goodall-b5XE9`
 - `dev` branch is live at dev.brakeknights.com — auto-deploys on every push to `dev` ✅
 - Form emails fully working: internal notification + customer confirmation ✅
-- iOS "Allow Phone" dialog fix deployed to dev: format-detection meta on all 45 pages, E.164 tel: links, Google Maps iframes converted to click-to-load on index.html and contact.html ✅
+- **WARNING: dev branch is ahead of the feature branch.** Several changes were committed directly to `dev` this session (steering wheel icon base64 fix, photo swap, price table, hours footer, image compression, mobile header centering, icon updates). The feature branch does NOT have these commits. Before new work, sync the feature branch: `git checkout claude/amazing-goodall-b5XE9 && git merge dev`
+- Pre-push hook in place — direct pushes to `master` are now blocked at the git level ✅
 - Next steps:
-  1. User to test iOS phone dialog fix on real iPhone — waiting for report
-  2. Upload 5 phone photos and add to site
-  3. Remaining pre-launch checklist items
-  4. Once all approved → merge to master
+  1. Sync feature branch with dev (see warning above)
+  2. Remaining pre-launch checklist items (see below)
+  3. Once all approved → merge to master via GitHub UI (direct push is now blocked)
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -106,13 +106,27 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
+- [ ] Sync feature branch with dev: `git checkout claude/amazing-goodall-b5XE9 && git merge dev`
+- [ ] Remaining pre-launch checklist items (see below)
+- [ ] Merge dev → master via GitHub UI (once all checklist items complete)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
-- [ ] Merge dev → master (once remaining checklist items complete)
 
 ### Completed This Session
+- [x] Fix steering wheel icon not rendering on desktop — switched mask-image from URL-encoded to base64 data URI; deployed to dev
+- [x] Add pre-push hook (.githooks/pre-push) — blocks direct pushes to master at git level
+- [x] Add session startup checklist to CLAUDE.md
 - [x] Fix brake warning icon on iOS Safari — switched from URL mask-image to inline data URI; deployed to dev
 - [x] Swap homepage tech photo to gray shirt photo (photo2.jpg); deployed to dev
 - [x] Update homepage price comparison table — "Starting at $X" format, corrected wait times (Dealer 3–5hr, Shop 2–4hr, BK 1–1.5hr); deployed to dev
+- [x] Compress all images for faster mobile load (ImageMagick, max 1600px, quality 82); deployed to dev
+- [x] Add hours of operation column to footer on all 45 pages; deployed to dev
+- [x] Hide Elfsight widget built-in title on mobile; deployed to dev
+- [x] Center call button in mobile header; deployed to dev
+- [x] Remove Facebook icon from mobile header entirely; deployed to dev
+- [x] Change Hours of Operation icon from chess knight to clock (fa-clock); deployed to dev
+- [x] Replace brake warning light icon with custom brake fluid SVG icon on homepage; deployed to dev
+- [x] Create custom steering wheel + vibration squiggles SVG icon (fa-steering-wheel); deployed to dev
+- [x] Update vibration warning text to "Vibrations or pulsing"; deployed to dev
 
 ### Previously Completed
 - [x] iOS "Allow Phone" dialog fix — format-detection meta added to all 45 pages, all tel: links converted to E.164 (+1) format, Google Maps iframes replaced with click-to-load on index.html and contact.html; deployed to dev
