@@ -3,6 +3,11 @@
 .fa-solid, .fa-brands { vertical-align: -0.1em; }
 a .fa-solid, a .fa-brands, a .fa-regular, button .fa-solid, button .fa-brands { pointer-events: none; }
 
+/* ── HIDE ELFSIGHT WIDGET'S BUILT-IN TITLE (we use our own section heading) ── */
+.eapps-google-reviews-title,
+[class*="eapps-google-reviews"] [class*="title"],
+[class*="eapps-google-reviews"] [class*="header"] { display: none !important; }
+
 /* ── CUSTOM BRAKE WARNING ICON ── */
 .fa-brake-fluid {
   display: inline-block; width: 1.3em; height: 1.3em;
