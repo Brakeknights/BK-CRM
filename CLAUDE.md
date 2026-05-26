@@ -30,6 +30,9 @@ The API token is entered securely at session start — never hardcode it.
 - `public/index.html` — frontend HTML
 - `package.json` + `package-lock.json` — Node.js dependencies
 
+## Writing & Punctuation Rules
+- No em dashes (—) unless grammatically required (e.g., true parenthetical aside). Use a colon for introducing lists/explanations, a comma for brief pauses, or rewrite the sentence. This applies to all copy: HTML, emails, CLAUDE.md, everywhere.
+
 ## Screenshots with Playwright
 - Always use `element.offsetTop` to scroll to a section — never `getBoundingClientRect().top + window.scrollY` (that value changes as the page scrolls and will land on the wrong section)
 - Always use `offsetTop` pattern: `const y = await page.evaluate(() => document.querySelector('#section-id').offsetTop); await page.evaluate((y) => window.scrollTo(0, y), y);`
