@@ -84,9 +84,9 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Legal pages (privacy policy, terms) — reviewed, no placeholder or dummy text
 
 ### Visual / Rendering
-- [ ] Spot-check homepage on mobile — layout, text size, images all correct
-- [ ] Spot-check one service page on mobile — buttons styled, no broken layout
-- [ ] Spot-check one location page on mobile — looks correct
+- [x] Spot-check homepage on mobile — layout, text size, images all correct
+- [x] Spot-check one service page on mobile — buttons styled, no broken layout
+- [x] Spot-check one location page on mobile — looks correct
 - [x] Font Awesome icons rendering correctly — 40 icons confirmed rendering on homepage
 - [x] Google Reviews widget showing on homepage
 
