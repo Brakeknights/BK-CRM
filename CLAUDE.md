@@ -2,7 +2,7 @@
 
 ## Session Startup Checklist (Run These First, Every Session)
 1. `git config core.hooksPath .githooks` — activates the master push block
-2. `git branch --show-current` — confirm you are on `claude/amazing-goodall-b5XE9` (or the current feature branch); if not, switch: `git checkout claude/amazing-goodall-b5XE9`
+2. `git branch --show-current` — confirm you are on `claude/magical-goldberg-ifJrV` (or the current feature branch); if not, switch: `git checkout claude/magical-goldberg-ifJrV`
 
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
@@ -54,20 +54,20 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/amazing-goodall-b5XE9`
+- Current feature branch: `claude/magical-goldberg-ifJrV`
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/amazing-goodall-b5XE9`
+- Working branch: `claude/magical-goldberg-ifJrV` — in sync with `dev` ✅
 - `dev` branch is live at dev.brakeknights.com — auto-deploys on every push to `dev` ✅
 - Form emails fully working: internal notification + customer confirmation ✅
-- **WARNING: dev branch is ahead of the feature branch.** Several changes were committed directly to `dev` this session (steering wheel icon base64 fix, photo swap, price table, hours footer, image compression, mobile header centering, icon updates). The feature branch does NOT have these commits. Before new work, sync the feature branch: `git checkout claude/amazing-goodall-b5XE9 && git merge dev`
 - Pre-push hook in place — direct pushes to `master` are now blocked at the git level ✅
+- Images and CSS now served with `Cache-Control: no-cache` — stale browser cache is a solved problem ✅
+- CSS version is at `?v=3` across all 45 pages
 - Next steps:
-  1. Sync feature branch with dev (see warning above)
-  2. Remaining pre-launch checklist items (see below)
-  3. Once all approved → merge to master via GitHub UI (direct push is now blocked)
+  1. Finish remaining pre-launch checklist items (7 remaining — see below)
+  2. Once all approved → merge to master via GitHub UI (direct push is now blocked)
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -109,29 +109,21 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Sync feature branch with dev: `git checkout claude/amazing-goodall-b5XE9 && git merge dev`
 - [ ] Add "View All Service Areas" CTA button to homepage hero section — links to the locations/cities page
-- [x] Change "Hours of Operation" heading to "Hours of Valor" on all pages that show it (footer + any standalone section)
-- [ ] Remaining pre-launch checklist items (see below)
+- [ ] Remaining pre-launch checklist items (7 left — see below)
 - [ ] Merge dev → master via GitHub UI (once all checklist items complete)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 
 ### Completed This Session
-- [x] Fix steering wheel icon not rendering on desktop — switched mask-image from URL-encoded to base64 data URI; deployed to dev
-- [x] Add pre-push hook (.githooks/pre-push) — blocks direct pushes to master at git level
-- [x] Add session startup checklist to CLAUDE.md
-- [x] Fix brake warning icon on iOS Safari — switched from URL mask-image to inline data URI; deployed to dev
-- [x] Swap homepage tech photo to gray shirt photo (photo2.jpg); deployed to dev
-- [x] Update homepage price comparison table — "Starting at $X" format, corrected wait times (Dealer 3–5hr, Shop 2–4hr, BK 1–1.5hr); deployed to dev
-- [x] Compress all images for faster mobile load (ImageMagick, max 1600px, quality 82); deployed to dev
-- [x] Add hours of operation column to footer on all 45 pages; deployed to dev
-- [x] Hide Elfsight widget built-in title on mobile; deployed to dev
-- [x] Center call button in mobile header; deployed to dev
-- [x] Remove Facebook icon from mobile header entirely; deployed to dev
-- [x] Change Hours of Operation icon from chess knight to clock (fa-clock); deployed to dev
-- [x] Replace brake warning light icon with custom brake fluid SVG icon on homepage; deployed to dev
-- [x] Create custom steering wheel + vibration squiggles SVG icon (fa-steering-wheel); deployed to dev
-- [x] Update vibration warning text to "Vibrations or pulsing"; deployed to dev
+- [x] Add 3 worn rotor photos to brake pad/rotor replacement page (5-photo grid, 3-column layout); deployed to dev
+- [x] Add 2 mobile service photos to About page ("Mobile Service in Action" section); deployed to dev
+- [x] Add hero background photo (driveway + van-tools images) to all service and location pages via .page-hero CSS; deployed to dev
+- [x] Fix caliper photo display: portrait images now use object-fit:contain at 360px with navy bg; deployed to dev
+- [x] Fix browser cache for all rotated images: added ?v=2 to brembo, rotor, and 4 caliper image srcs
+- [x] Fix browser cache for CSS: bumped styles.css to ?v=3 across all 45 pages; deployed to dev
+- [x] Add Cache-Control: no-cache for /images in server.js — automatic for all future image uploads ✅
+- [x] Add Cache-Control: no-cache for /css in server.js — automatic for all future CSS changes ✅
+- [x] Verify and check off mobile hamburger menu from pre-launch checklist
 
 ### Previously Completed
 - [x] iOS "Allow Phone" dialog fix — format-detection meta added to all 45 pages, all tel: links converted to E.164 (+1) format, Google Maps iframes replaced with click-to-load on index.html and contact.html; deployed to dev
