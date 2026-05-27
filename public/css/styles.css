@@ -215,14 +215,14 @@ nav { display: flex; align-items: center; gap: 4px; }
 .hero-bg {
   position: absolute;
   inset: 0;
-  background-image: url('/images/van.jpg');
+  background-image: url('/images/mobile-service-job-driveway.jpeg');
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center center;
   opacity: 0.18;
 }
 @media (max-width: 768px) {
-  .hero-bg { display: none; }
+  .hero-bg { display: block; }
 }
 
 #hero::after {
