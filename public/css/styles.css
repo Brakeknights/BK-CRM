@@ -231,7 +231,7 @@ nav { display: flex; align-items: center; gap: 4px; }
   opacity: 0.18;
 }
 @media (max-width: 768px) {
-  .hero-bg { display: block; background-image: url('/images/mobile-service-van-tools.jpeg'); background-size: 99.99%; background-position: center center; }
+  .hero-bg { display: block; background-image: url('/images/mobile-service-van-tools.jpeg'); background-size: 99.99%; background-position: center center; opacity: 0.28; }
 }
 
 #hero::after {

@@ -2,7 +2,7 @@
 
 ## Session Startup Checklist (Run These First, Every Session)
 1. `git config core.hooksPath .githooks` — activates the master push block
-2. `git branch --show-current` — confirm you are on `claude/magical-goldberg-ifJrV` (or the current feature branch); if not, switch: `git checkout claude/magical-goldberg-ifJrV`
+2. `git branch --show-current` — confirm you are on `claude/loving-cerf-c6lME` (or the current feature branch); if not, switch: `git checkout claude/loving-cerf-c6lME`
 
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
@@ -54,20 +54,20 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/magical-goldberg-ifJrV`
+- Current feature branch: `claude/loving-cerf-c6lME`
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/magical-goldberg-ifJrV` — in sync with `dev` ✅
+- Working branch: `claude/loving-cerf-c6lME` — in sync with `dev` ✅
 - `dev` branch is live at dev.brakeknights.com — auto-deploys on every push to `dev` ✅
 - Form emails fully working: internal notification + customer confirmation ✅
 - Pre-push hook in place — direct pushes to `master` are now blocked at the git level ✅
 - Images and CSS now served with `Cache-Control: no-cache` — stale browser cache is a solved problem ✅
 - CSS version is at `?v=3` across all 45 pages
 - Next steps:
-  1. Finish remaining pre-launch checklist items (7 remaining — see below)
-  2. Once all approved → merge to master via GitHub UI (direct push is now blocked)
+  1. Finish remaining pre-launch checklist items (2 remaining — see below)
+  2. Once all approved, merge to master via GitHub UI (direct push is now blocked)
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -79,15 +79,15 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Test mobile hamburger menu on a real phone — opens, closes, submenus expand/collapse
 
 ### Content Accuracy
-- [ ] Phone number (703-977-4475) in header and footer — correct
-- [ ] Phone number does NOT appear inside CTA buttons (buttons should say "Call Us" only)
+- [x] Phone number (703-977-4475) in header and footer — correct
+- [x] Phone number does NOT appear inside CTA buttons — header button intentionally shows number (local service best practice), hero CTA says "Call" only
 - [ ] Service area list on site matches the actual 32 cities served
-- [ ] Legal pages (privacy policy, terms) — no placeholder or dummy text
+- [x] Legal pages (privacy policy, terms) — reviewed, no placeholder or dummy text
 
 ### Visual / Rendering
-- [ ] Spot-check homepage on mobile — layout, text size, images all correct
-- [ ] Spot-check one service page on mobile — buttons styled, no broken layout
-- [ ] Spot-check one location page on mobile — looks correct
+- [x] Spot-check homepage on mobile — layout, text size, images all correct
+- [x] Spot-check one service page on mobile — buttons styled, no broken layout
+- [x] Spot-check one location page on mobile — looks correct
 - [x] Font Awesome icons rendering correctly — 40 icons confirmed rendering on homepage
 - [x] Google Reviews widget showing on homepage
 
@@ -99,8 +99,8 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Homepage title/meta fixed — was "Sterling, VA", now "Northern Virginia" across title, description, OG, and Twitter tags
 
 ### SEO
-- [ ] Homepage title tag and meta description are accurate and unique
-- [ ] About, Contact, Services pages have unique titles and meta descriptions
+- [x] Homepage title tag and meta description are accurate and unique
+- [x] About, Contact, Services pages have unique titles and meta descriptions — reviewed and confirmed
 - [ ] Homepage JSON-LD schema passes Google's Rich Results Test
 
 ---
@@ -109,21 +109,37 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Add "View All Service Areas" CTA button to homepage hero section — links to the locations/cities page
-- [ ] Remaining pre-launch checklist items (7 left — see below)
+- [ ] Service area list on site matches the actual 32 cities served
+- [ ] Homepage JSON-LD schema passes Google's Rich Results Test
 - [ ] Merge dev → master via GitHub UI (once all checklist items complete)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 
 ### Completed This Session
+- [x] Increase mobile hero photo opacity from 0.18 to 0.28
+- [x] Mark mobile hamburger menu, homepage mobile, service page mobile, and location page mobile spot-checks as verified
+
+### Previously Completed
 - [x] Add 3 worn rotor photos to brake pad/rotor replacement page (5-photo grid, 3-column layout); deployed to dev
 - [x] Add 2 mobile service photos to About page ("Mobile Service in Action" section); deployed to dev
 - [x] Add hero background photo (driveway + van-tools images) to all service and location pages via .page-hero CSS; deployed to dev
 - [x] Fix caliper photo display: portrait images now use object-fit:contain at 360px with navy bg; deployed to dev
 - [x] Fix browser cache for all rotated images: added ?v=2 to brembo, rotor, and 4 caliper image srcs
 - [x] Fix browser cache for CSS: bumped styles.css to ?v=3 across all 45 pages; deployed to dev
-- [x] Add Cache-Control: no-cache for /images in server.js — automatic for all future image uploads ✅
-- [x] Add Cache-Control: no-cache for /css in server.js — automatic for all future CSS changes ✅
-- [x] Verify and check off mobile hamburger menu from pre-launch checklist
+- [x] Add Cache-Control: no-cache for /images in server.js
+- [x] Add Cache-Control: no-cache for /css in server.js
+- [x] Update copyright to 2026 across all 45 pages
+- [x] Rewrite homepage H1: "Based Out of Sterling..." → "Mobile Brake Repair Across Northern Virginia"
+- [x] Rewrite homepage hero body copy: removed duplication, added warranty mention, fixed em dash to colon
+- [x] Add no-em-dash rule to CLAUDE.md
+- [x] Update brake inspection checklist wording: rotor surface condition, caliper assessment of functionality
+- [x] Fix Hours of Valor icon on contact page: chess knight → clock (was missed in previous session)
+- [x] Replace sword emoji with favicon logo image in notification and confirmation emails
+- [x] Rotate new-rotor.jpeg 90 degrees clockwise
+- [x] Rotate all 4 caliper photos 90 degrees clockwise (seized-caliper-melted-pads, seized-caliper-removed, cracked-caliper-piston, caliper-piston-seal-torn)
+- [x] Shorten all figcaptions site-wide: single line, no em dashes (caliper, inspection, pad/rotor, homepage)
+- [x] Add 5 new job photos: worn-rotor-rusted-hub, worn-rotor-grooved-edge, new-rotor-installed-hub, mobile-service-job-driveway, mobile-service-van-tools
+- [x] Update desktop hero background to mobile-service-job-driveway.jpeg
+- [x] Add mobile hero background: mobile-service-van-tools.jpeg at 99.99% size, cover on mobile
 
 ### Previously Completed
 - [x] iOS "Allow Phone" dialog fix — format-detection meta added to all 45 pages, all tel: links converted to E.164 (+1) format, Google Maps iframes replaced with click-to-load on index.html and contact.html; deployed to dev
