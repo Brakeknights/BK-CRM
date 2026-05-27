@@ -75,7 +75,7 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Submit a test contact form on dev — confirm customer confirmation email arrives
 - [x] Click every nav link (desktop + mobile) — no 404s (all 45 pages return 200)
 - [x] Click every footer link — no 404s
-- [ ] Test mobile hamburger menu on a real phone — opens, closes, submenus expand/collapse
+- [x] Test mobile hamburger menu on a real phone — opens, closes, submenus expand/collapse
 
 ### Content Accuracy
 - [x] Phone number (703-977-4475) in header and footer — correct
@@ -111,7 +111,6 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Place worn rotor photos (worn-rotor-rusted-hub.jpeg, worn-rotor-grooved-edge.jpeg, new-rotor-installed-hub.jpeg) on pad/rotor replacement page
 - [ ] Place van/job photos (mobile-service-job-driveway.jpeg, mobile-service-van-tools.jpeg) on About page
 - [ ] Service area list on site matches the actual 32 cities served
-- [ ] Test mobile hamburger menu on a real phone
 - [ ] Homepage JSON-LD schema passes Google's Rich Results Test
 - [ ] Merge dev → master via GitHub UI (once all checklist items complete)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
