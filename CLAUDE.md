@@ -81,7 +81,7 @@ Update this section at the end of each session to stay caught up next time.
 ### Content Accuracy
 - [x] Phone number (703-977-4475) in header and footer — correct
 - [x] Phone number does NOT appear inside CTA buttons — header button intentionally shows number (local service best practice), hero CTA says "Call" only
-- [ ] Service area list on site matches the actual 32 cities served
+- [x] Service area list on site matches the actual 32 cities served
 - [x] Legal pages (privacy policy, terms) — reviewed, no placeholder or dummy text
 
 ### Visual / Rendering
@@ -101,7 +101,7 @@ Update this section at the end of each session to stay caught up next time.
 ### SEO
 - [x] Homepage title tag and meta description are accurate and unique
 - [x] About, Contact, Services pages have unique titles and meta descriptions — reviewed and confirmed
-- [ ] Homepage JSON-LD schema passes Google's Rich Results Test
+- [x] Homepage JSON-LD schema passes Google's Rich Results Test
 
 ---
 
@@ -109,13 +109,16 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Service area list on site matches the actual 32 cities served
-- [ ] Homepage JSON-LD schema passes Google's Rich Results Test
+- [x] Homepage JSON-LD schema passes Google's Rich Results Test
 - [ ] Merge dev → master via GitHub UI (once all checklist items complete)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 
 ### Completed This Session
-- [x] Increase mobile hero photo opacity from 0.18 to 0.28
+- [x] Fix homepage area list: added 8 missing cities (Annandale, Burke, Springfield, Oakton, Merrifield, Fairfax City, Fairfax Station, Clifton)
+- [x] Fix JSON-LD schema: moved Brake Inspection price to outer Offer, added image property to AutoRepair schema
+- [x] Increase mobile hero photo opacity from 0.18 to 0.35
+- [x] Fix mobile homepage hero background-size to cover, matching location pages
+- [x] Remove min-height on homepage hero for mobile to match location page zoom level
 - [x] Mark mobile hamburger menu, homepage mobile, service page mobile, and location page mobile spot-checks as verified
 
 ### Previously Completed
