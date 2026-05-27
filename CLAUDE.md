@@ -76,7 +76,7 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Submit a test contact form on dev — confirm customer confirmation email arrives
 - [x] Click every nav link (desktop + mobile) — no 404s (all 45 pages return 200)
 - [x] Click every footer link — no 404s
-- [ ] Test mobile hamburger menu on a real phone — opens, closes, submenus expand/collapse
+- [x] Test mobile hamburger menu on a real phone — opens, closes, submenus expand/collapse
 
 ### Content Accuracy
 - [ ] Phone number (703-977-4475) in header and footer — correct
