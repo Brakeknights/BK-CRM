@@ -2,7 +2,7 @@
 
 ## Session Startup Checklist (Run These First, Every Session)
 1. `git config core.hooksPath .githooks` — activates the master push block
-2. `git branch --show-current` — confirm you are on `claude/amazing-goodall-b5XE9` (or the current feature branch); if not, switch: `git checkout claude/amazing-goodall-b5XE9`
+2. `git branch --show-current` — confirm you are on `claude/wonderful-knuth-Dmf4i` (or the current feature branch); if not, switch: `git checkout claude/wonderful-knuth-Dmf4i`
 
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
@@ -54,20 +54,19 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/amazing-goodall-b5XE9`
+- Current feature branch: `claude/wonderful-knuth-Dmf4i`
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/amazing-goodall-b5XE9`
+- Working branch: `claude/wonderful-knuth-Dmf4i` — in sync with `dev` ✅
 - `dev` branch is live at dev.brakeknights.com — auto-deploys on every push to `dev` ✅
 - Form emails fully working: internal notification + customer confirmation ✅
-- **WARNING: dev branch is ahead of the feature branch.** Several changes were committed directly to `dev` this session (steering wheel icon base64 fix, photo swap, price table, hours footer, image compression, mobile header centering, icon updates). The feature branch does NOT have these commits. Before new work, sync the feature branch: `git checkout claude/amazing-goodall-b5XE9 && git merge dev`
 - Pre-push hook in place — direct pushes to `master` are now blocked at the git level ✅
 - Next steps:
-  1. Sync feature branch with dev (see warning above)
-  2. Remaining pre-launch checklist items (see below)
-  3. Once all approved → merge to master via GitHub UI (direct push is now blocked)
+  1. Remaining pre-launch checklist items (see below)
+  2. Place remaining new job photos on site (worn rotor photos on pad/rotor page; van photos on About page)
+  3. Once all checklist items complete → merge to master via GitHub UI
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -79,10 +78,10 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Test mobile hamburger menu on a real phone — opens, closes, submenus expand/collapse
 
 ### Content Accuracy
-- [ ] Phone number (703-977-4475) in header and footer — correct
-- [ ] Phone number does NOT appear inside CTA buttons (buttons should say "Call Us" only)
+- [x] Phone number (703-977-4475) in header and footer — correct
+- [x] Phone number does NOT appear inside CTA buttons — header button intentionally shows number (local service best practice), hero CTA says "Call" only
 - [ ] Service area list on site matches the actual 32 cities served
-- [ ] Legal pages (privacy policy, terms) — no placeholder or dummy text
+- [x] Legal pages (privacy policy, terms) — reviewed, no placeholder or dummy text
 
 ### Visual / Rendering
 - [ ] Spot-check homepage on mobile — layout, text size, images all correct
@@ -99,8 +98,8 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Homepage title/meta fixed — was "Sterling, VA", now "Northern Virginia" across title, description, OG, and Twitter tags
 
 ### SEO
-- [ ] Homepage title tag and meta description are accurate and unique
-- [ ] About, Contact, Services pages have unique titles and meta descriptions
+- [x] Homepage title tag and meta description are accurate and unique
+- [x] About, Contact, Services pages have unique titles and meta descriptions — reviewed and confirmed
 - [ ] Homepage JSON-LD schema passes Google's Rich Results Test
 
 ---
@@ -109,29 +108,28 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Sync feature branch with dev: `git checkout claude/amazing-goodall-b5XE9 && git merge dev`
-- [ ] Add "View All Service Areas" CTA button to homepage hero section — links to the locations/cities page
-- [x] Change "Hours of Operation" heading to "Hours of Valor" on all pages that show it (footer + any standalone section)
-- [ ] Remaining pre-launch checklist items (see below)
+- [ ] Place worn rotor photos (worn-rotor-rusted-hub.jpeg, worn-rotor-grooved-edge.jpeg, new-rotor-installed-hub.jpeg) on pad/rotor replacement page
+- [ ] Place van/job photos (mobile-service-job-driveway.jpeg, mobile-service-van-tools.jpeg) on About page
+- [ ] Service area list on site matches the actual 32 cities served
+- [ ] Test mobile hamburger menu on a real phone
+- [ ] Homepage JSON-LD schema passes Google's Rich Results Test
 - [ ] Merge dev → master via GitHub UI (once all checklist items complete)
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 
 ### Completed This Session
-- [x] Fix steering wheel icon not rendering on desktop — switched mask-image from URL-encoded to base64 data URI; deployed to dev
-- [x] Add pre-push hook (.githooks/pre-push) — blocks direct pushes to master at git level
-- [x] Add session startup checklist to CLAUDE.md
-- [x] Fix brake warning icon on iOS Safari — switched from URL mask-image to inline data URI; deployed to dev
-- [x] Swap homepage tech photo to gray shirt photo (photo2.jpg); deployed to dev
-- [x] Update homepage price comparison table — "Starting at $X" format, corrected wait times (Dealer 3–5hr, Shop 2–4hr, BK 1–1.5hr); deployed to dev
-- [x] Compress all images for faster mobile load (ImageMagick, max 1600px, quality 82); deployed to dev
-- [x] Add hours of operation column to footer on all 45 pages; deployed to dev
-- [x] Hide Elfsight widget built-in title on mobile; deployed to dev
-- [x] Center call button in mobile header; deployed to dev
-- [x] Remove Facebook icon from mobile header entirely; deployed to dev
-- [x] Change Hours of Operation icon from chess knight to clock (fa-clock); deployed to dev
-- [x] Replace brake warning light icon with custom brake fluid SVG icon on homepage; deployed to dev
-- [x] Create custom steering wheel + vibration squiggles SVG icon (fa-steering-wheel); deployed to dev
-- [x] Update vibration warning text to "Vibrations or pulsing"; deployed to dev
+- [x] Update copyright to 2026 across all 45 pages
+- [x] Rewrite homepage H1: "Based Out of Sterling..." → "Mobile Brake Repair Across Northern Virginia"
+- [x] Rewrite homepage hero body copy: removed duplication, added warranty mention, fixed em dash to colon
+- [x] Add no-em-dash rule to CLAUDE.md
+- [x] Update brake inspection checklist wording: rotor surface condition, caliper assessment of functionality
+- [x] Fix Hours of Valor icon on contact page: chess knight → clock (was missed in previous session)
+- [x] Replace sword emoji with favicon logo image in notification and confirmation emails
+- [x] Rotate new-rotor.jpeg 90 degrees clockwise
+- [x] Rotate all 4 caliper photos 90 degrees clockwise (seized-caliper-melted-pads, seized-caliper-removed, cracked-caliper-piston, caliper-piston-seal-torn)
+- [x] Shorten all figcaptions site-wide: single line, no em dashes (caliper, inspection, pad/rotor, homepage)
+- [x] Add 5 new job photos: worn-rotor-rusted-hub, worn-rotor-grooved-edge, new-rotor-installed-hub, mobile-service-job-driveway, mobile-service-van-tools
+- [x] Update desktop hero background to mobile-service-job-driveway.jpeg
+- [x] Add mobile hero background: mobile-service-van-tools.jpeg at 99.99% size, cover on mobile
 
 ### Previously Completed
 - [x] iOS "Allow Phone" dialog fix — format-detection meta added to all 45 pages, all tel: links converted to E.164 (+1) format, Google Maps iframes replaced with click-to-load on index.html and contact.html; deployed to dev
