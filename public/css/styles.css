@@ -178,7 +178,9 @@ nav { display: flex; align-items: center; gap: 4px; }
 
 /* ── PAGE HERO BANNER (inner pages) ── */
 .page-hero {
-  background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+  background:
+    linear-gradient(135deg, rgba(5,15,40,0.84) 0%, rgba(15,50,100,0.72) 100%),
+    url('/images/knight-on-horse.jpg') center/cover no-repeat;
   padding: 64px 0;
   color: var(--white);
 }
