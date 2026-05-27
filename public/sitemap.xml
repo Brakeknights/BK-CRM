@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Main pages -->
+  <url><loc>https://brakeknights.com/</loc><priority>1.0</priority></url>
+  <url><loc>https://brakeknights.com/about</loc><priority>0.8</priority></url>
+  <url><loc>https://brakeknights.com/services</loc><priority>0.8</priority></url>
+  <url><loc>https://brakeknights.com/contact</loc><priority>0.8</priority></url>
+  <url><loc>https://brakeknights.com/location</loc><priority>0.7</priority></url>
+  <!-- Service pages -->
+  <url><loc>https://brakeknights.com/brake-pad-rotor-replacement</loc><priority>0.9</priority></url>
+  <url><loc>https://brakeknights.com/brake-caliper-repair-replacement</loc><priority>0.9</priority></url>
+  <url><loc>https://brakeknights.com/brake-inspection</loc><priority>0.9</priority></url>
+  <url><loc>https://brakeknights.com/brake-fluid-flush</loc><priority>0.8</priority></url>
+  <url><loc>https://brakeknights.com/brake-hose-replacement</loc><priority>0.8</priority></url>
+  <url><loc>https://brakeknights.com/drum-brake-shoe-replacement</loc><priority>0.8</priority></url>
+  <!-- Location pages -->
+  <url><loc>https://brakeknights.com/brake-repair-aldie</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-alexandria</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-annandale</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-arlington</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-ashburn</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-brambleton</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-broadlands</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-burke</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-centreville</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-chantilly</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-clifton</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-dulles</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-fairfax-city</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-fairfax-station</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-falls-church</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-gainesville</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-great-falls</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-haymarket</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-herndon</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-lansdowne</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-leesburg</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-manassas</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-mclean</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-merrifield</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-oakton</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-purcellville</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-reston</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-south-riding</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-springfield</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-sterling</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-tysons</loc><priority>0.7</priority></url>
+  <url><loc>https://brakeknights.com/brake-repair-vienna</loc><priority>0.7</priority></url>
+  <!-- Legal -->
+  <url><loc>https://brakeknights.com/privacy-policy</loc><priority>0.3</priority></url>
+  <url><loc>https://brakeknights.com/terms-and-conditions</loc><priority>0.3</priority></url>
+</urlset>
