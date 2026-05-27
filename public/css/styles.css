@@ -178,9 +178,18 @@ nav { display: flex; align-items: center; gap: 4px; }
 
 /* ── PAGE HERO BANNER (inner pages) ── */
 .page-hero {
-  background: linear-gradient(135deg, var(--navy) 0%, var(--blue) 100%);
+  background:
+    linear-gradient(135deg, rgba(5,15,40,0.86) 0%, rgba(15,50,100,0.74) 100%),
+    url('/images/mobile-service-job-driveway.jpeg') center/cover no-repeat;
   padding: 64px 0;
   color: var(--white);
+}
+@media (max-width: 768px) {
+  .page-hero {
+    background:
+      linear-gradient(135deg, rgba(5,15,40,0.86) 0%, rgba(15,50,100,0.74) 100%),
+      url('/images/mobile-service-van-tools.jpeg') center/cover no-repeat;
+  }
 }
 
 .page-hero .section-label { color: var(--royal-blue-light); margin-bottom: 12px; }
