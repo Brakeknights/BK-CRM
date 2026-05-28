@@ -389,7 +389,8 @@ section { padding: 72px 0; }
 .form-group label { font-size: .85rem; font-weight: 600; color: #90a8c0; }
 
 .form-group input,
-.form-group textarea {
+.form-group textarea,
+.form-group select {
   background: rgba(255,255,255,.08);
   border: 1px solid rgba(255,255,255,.15);
   color: var(--white);
@@ -401,10 +402,12 @@ section { padding: 72px 0; }
   transition: border-color .15s;
 }
 
+.form-group select option { background: #0a1f3d; color: var(--white); }
 .form-group input::placeholder,
 .form-group textarea::placeholder { color: #506070; }
 .form-group input:focus,
-.form-group textarea:focus { border-color: var(--royal-blue); }
+.form-group textarea:focus,
+.form-group select:focus { border-color: var(--royal-blue); }
 .form-group textarea { resize: vertical; min-height: 100px; }
 
 .form-legal { font-size: .78rem; color: #607080; margin-top: 12px; line-height: 1.6; }
