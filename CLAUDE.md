@@ -63,16 +63,20 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/gallant-ptolemy-9gZLb`
+- Current feature branch: `claude/brave-mendel-LJ0Ym`
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/gallant-ptolemy-9gZLb` — in sync with `dev` and `master` ✅
+- Working branch: `claude/brave-mendel-LJ0Ym` — in sync with `dev` and `master` ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Form emails fully working on both dev and live: internal notification + customer confirmation ✅
 - Pre-push hook in place — direct pushes to `master` blocked; override with "go master" keyword ✅
+- "go skill" keyword added — pushes tooling-only changes to both dev and master in one shot ✅
+- Session startup hook shows pending dev-vs-master commits at session start ✅
+- Screenshot skill in place — `node scripts/screenshot.js [path] [selector]` ✅
+- Playwright Chromium installed by session hook — no mid-task download delays ✅
 - Google Search Console verified (DNS TXT record) and sitemap submitted ✅
 - Images and CSS served with `Cache-Control: no-cache` ✅
 - CSS version is at `?v=3` across all 45 pages
@@ -124,6 +128,12 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
 
 ### Completed This Session
+- [x] Add "Preferred Contact Method" dropdown (Call, Text, Email) to both contact forms — live on master
+- [x] Style select dropdown to match other form fields
+- [x] Add dev-vs-master pending commit check to session startup hook
+- [x] Add "go skill" keyword: merges tooling changes to both dev and master in one shot
+- [x] Add screenshot skill: scripts/screenshot.js + .claude/skills/screenshot/SKILL.md
+- [x] Install Playwright Chromium via session startup hook — no more mid-task downloads
 - [x] Remove rotor-caliper image from brake inspection page (mobile rotation issue — tabled for better photo)
 - [x] Set up "go master" override keyword in pre-push hook
 - [x] Launch brakeknights.com — new Node.js site deployed from master branch via Hostinger
