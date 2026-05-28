@@ -1,8 +1,8 @@
 # Brakeknights Project
 
 ## Session Startup Checklist (Run These First, Every Session)
-1. `git config core.hooksPath .githooks` — activates the master push block
-2. `git branch --show-current` — confirm you are on `claude/gallant-ptolemy-9gZLb` (or the current feature branch); if not, switch: `git checkout claude/gallant-ptolemy-9gZLb`
+1. `git config core.hooksPath .githooks` — activates the master push block (also runs automatically via session-start hook)
+2. `git branch --show-current` — confirm you are on the current feature branch (not dev or master); if not, switch: `git checkout claude/gallant-ptolemy-9gZLb` (replace with current session's branch name)
 
 ## Master Push Override
 The pre-push hook blocks all pushes to master by default.
@@ -71,6 +71,8 @@ Update this section at the end of each session to stay caught up next time.
 - Google Search Console verified (DNS TXT record) and sitemap submitted ✅
 - Images and CSS served with `Cache-Control: no-cache` ✅
 - CSS version is at `?v=3` across all 45 pages
+- Session-start hook auto-runs `git config core.hooksPath .githooks` ✅
+- GitHub default branch set to `dev` ✅
 - Next steps:
   1. Add a good rotor-caliper photo to the brake inspection page (tabled — image rotation issue)
   2. Automated quote system (tabled — pricing structure discussion ready to resume)
@@ -126,6 +128,8 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Fix email DNS records on brakeknights.com (SPF/DMARC via "Connect automatically")
 - [x] Verify Google Search Console for brakeknights.com (DNS TXT record)
 - [x] Submit sitemap to Google Search Console
+- [x] Auto-configure git hooks path in session-start hook
+- [x] Set GitHub default branch to `dev`
 
 ### Previously Completed
 - [x] Add 3 worn rotor photos to brake pad/rotor replacement page (5-photo grid, 3-column layout); deployed to dev
