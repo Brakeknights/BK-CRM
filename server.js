@@ -19,7 +19,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/contact', async (req, res) => {
-  const { firstName, lastName, phone, email, vehicle, message, source } = req.body;
+  const { firstName, lastName, phone, email, vehicle, preferredContact, message, source } = req.body;
 
   if (!firstName || !lastName || !phone) {
     return res.status(400).json({ success: false, error: 'Missing required fields' });
@@ -51,7 +51,8 @@ app.post('/api/contact', async (req, res) => {
         <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Phone</td><td style="padding:8px 12px;"><a href="tel:${phone}">${phone}</a></td></tr>
         <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Email</td><td style="padding:8px 12px;"><a href="mailto:${email}">${email || 'Not provided'}</a></td></tr>
         <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Vehicle</td><td style="padding:8px 12px;">${vehicle || 'Not provided'}</td></tr>
-        <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Message</td><td style="padding:8px 12px;">${message || 'None'}</td></tr>
+        <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Preferred Contact</td><td style="padding:8px 12px;">${preferredContact || 'Not specified'}</td></tr>
+        <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Message</td><td style="padding:8px 12px;">${message || 'None'}</td></tr>
         <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Source</td><td style="padding:8px 12px;">${source || 'Website'}</td></tr>
       </table>
       <div style="margin-top:20px;padding:12px;background:#fff8e1;border-left:4px solid #c9a84c;border-radius:4px;font-size:0.85rem;color:#555;">
@@ -83,6 +84,7 @@ app.post('/api/contact', async (req, res) => {
             <tr><td style="padding:5px 0;color:#888;width:90px;">Name</td><td style="padding:5px 0;">${firstName} ${lastName}</td></tr>
             <tr><td style="padding:5px 0;color:#888;">Phone</td><td style="padding:5px 0;">${phone}</td></tr>
             ${vehicle ? `<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">${vehicle}</td></tr>` : ''}
+            ${preferredContact ? `<tr><td style="padding:5px 0;color:#888;">Preferred Contact</td><td style="padding:5px 0;">${preferredContact}</td></tr>` : ''}
             ${message ? `<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Notes</td><td style="padding:5px 0;">${message}</td></tr>` : ''}
           </table>
         </div>

@@ -286,6 +286,15 @@
             <input type="text" id="vehicle" name="vehicle" placeholder="e.g. 2019 Honda Accord">
           </div>
           <div class="form-group">
+            <label for="preferred-contact">Preferred Contact Method *</label>
+            <select id="preferred-contact" name="preferred_contact" required>
+              <option value="" disabled selected>Select one...</option>
+              <option value="Call">Call</option>
+              <option value="Text">Text</option>
+              <option value="Email">Email</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label for="message">Message</label>
             <textarea id="message" name="message" rows="5" placeholder="Describe the brake issue or service you need..."></textarea>
           </div>
@@ -417,13 +426,14 @@
     btn.textContent = 'Sending…';
     btn.disabled = true;
     const data = {
-      firstName: document.getElementById('first-name')?.value,
-      lastName:  document.getElementById('last-name')?.value,
-      phone:     document.getElementById('phone')?.value,
-      email:     document.getElementById('email')?.value,
-      vehicle:   document.getElementById('vehicle')?.value,
-      message:   document.getElementById('message')?.value,
-      source:    window.location.pathname
+      firstName:        document.getElementById('first-name')?.value,
+      lastName:         document.getElementById('last-name')?.value,
+      phone:            document.getElementById('phone')?.value,
+      email:            document.getElementById('email')?.value,
+      vehicle:          document.getElementById('vehicle')?.value,
+      preferredContact: document.getElementById('preferred-contact')?.value,
+      message:          document.getElementById('message')?.value,
+      source:           window.location.pathname
     };
     try {
       const res = await fetch('/api/contact', {
