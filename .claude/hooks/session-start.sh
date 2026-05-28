@@ -8,6 +8,7 @@ fi
 cd "$CLAUDE_PROJECT_DIR"
 git config core.hooksPath .githooks
 npm install
+npx playwright install chromium --with-deps --quiet 2>/dev/null || true
 
 # Show commits on dev not yet merged to master
 git fetch origin master dev --quiet 2>/dev/null || true
