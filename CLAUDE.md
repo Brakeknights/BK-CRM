@@ -8,6 +8,11 @@
 The pre-push hook blocks all pushes to master by default.
 To override: user says **"go master"** in chat. Claude then runs the push with `MASTER_OVERRIDE="go master"` set as an env var.
 
+## Skill/Tooling Push Override
+For changes that are dev tooling only (skills, hooks, scripts — nothing that affects the live site):
+User says **"go skill"** in chat. Claude merges the feature branch to BOTH `dev` and `master` in one operation, using `MASTER_OVERRIDE="go skill"`.
+No dev preview needed for tooling-only changes.
+
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
 Built with Node.js/Express, deployed on Hostinger.
