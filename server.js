@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const nodemailer = require('nodemailer');
+const { verifyConnection } = require('./square');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +17,12 @@ app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] })
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/api/square/verify', async (req, res) => {
+  const result = await verifyConnection();
+  const ok = result.customers === 'ok' && result.bookings === 'ok';
+  res.status(ok ? 200 : 502).json(result);
 });
 
 app.post('/api/contact', async (req, res) => {
