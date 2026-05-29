@@ -13,7 +13,7 @@ async function verifyConnection() {
   const results = {};
 
   try {
-    await client.customers.list();
+    await client.locations.list();
     results.customers = 'ok';
   } catch (err) {
     results.customers = err.message || 'error';
