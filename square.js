@@ -29,16 +29,31 @@ async function verifyConnection() {
   return { environment: useSandbox ? 'sandbox' : 'production', ...results };
 }
 
-async function createOrFindSquareCustomer({ firstName, lastName, phone, email, vehicle, note }) {
-  // Search by email first, then phone
-  const filters = [];
-  if (email) filters.push({ emailAddress: { exact: email } });
-  if (phone) filters.push({ phoneNumber: { exact: phone } });
+function toE164(phone) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits[0] === '1') return `+${digits}`;
+  return null;
+}
 
-  for (const filter of filters) {
-    const search = await client.customers.search({ query: { filter } });
-    const existing = search.customers?.[0];
-    if (existing) return { action: 'found', customerId: existing.id };
+async function createOrFindSquareCustomer({ firstName, lastName, phone, email, vehicle, note }) {
+  const e164Phone = phone ? toE164(phone) : null;
+
+  // Search by email first, then phone — each in its own try/catch so one failure doesn't abort
+  if (email) {
+    try {
+      const search = await client.customers.search({ query: { filter: { emailAddress: { exact: email } } } });
+      const existing = search.customers?.[0];
+      if (existing) return { action: 'found', customerId: existing.id };
+    } catch (_) {}
+  }
+
+  if (e164Phone) {
+    try {
+      const search = await client.customers.search({ query: { filter: { phoneNumber: { exact: e164Phone } } } });
+      const existing = search.customers?.[0];
+      if (existing) return { action: 'found', customerId: existing.id };
+    } catch (_) {}
   }
 
   // Not found — create new customer
@@ -48,7 +63,7 @@ async function createOrFindSquareCustomer({ firstName, lastName, phone, email, v
     referenceId: `bk-web-${Date.now()}`,
   };
   if (email) body.emailAddress = email;
-  if (phone) body.phoneNumber = phone;
+  if (e164Phone) body.phoneNumber = e164Phone;
   if (vehicle || note) {
     const parts = [];
     if (vehicle) parts.push(`Vehicle: ${vehicle}`);
