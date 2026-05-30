@@ -63,12 +63,55 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/brave-mendel-LJ0Ym`
+- Current feature branch: `claude/dazzling-planck-U9GXQ`
+
+## Square Integration — Platform Build Plan
+
+The long-term vision is a fully owned Brake Knights business platform. Square is used only as the payment processor and appointment calendar backend. All customer communication (quotes, confirmations, receipts, follow-ups) flows through our own system. Eventually white-labeled and sold to other service businesses.
+
+### Architecture Decision
+- Admin tools live at `brakeknights.com/admin` (password-protected, same server as public site)
+- Square handles: payment processing, appointment calendar, sales reporting
+- Our system handles: all customer-facing emails, CRM, quotes, job summaries, follow-up automation
+
+### Square Env Vars (set in Hostinger hPanel for brakeknights.com)
+- `SQUARE_APP_ID` — production app ID
+- `SQUARE_ACCESS_TOKEN` — production access token
+- `SQUARE_SANDBOX_APP_ID` — sandbox app ID
+- `SQUARE_SANDBOX_ACCESS_TOKEN` — sandbox access token
+- Connection verified: `brakeknights.com/api/square/verify` returns `{"environment":"production","customers":"ok","bookings":"ok"}`
+
+### Square Module
+- `square.js` — initializes SquareClient from env vars, exports `client` and `verifyConnection()`
+- Defaults to production when `SQUARE_ACCESS_TOKEN` is present and `SQUARE_ENV` is not `sandbox`
+
+### Platform Build Phases
+
+**Phase 2 (current — in progress):** When a customer submits the contact form, automatically create or find them as a Square customer. Foundation of the CRM.
+
+**Phase 3:** Quote tool — owner enters service + price + proposed time, system sends a branded quote email to the customer.
+
+**Phase 4:** Booking confirmation — once price/time agreed, owner books in Square, our system sends a full branded confirmation email: service, price, date, time, address.
+
+**Phase 5:** Job summary + custom receipt — after payment, owner triggers a branded receipt with a proper Technician Notes section (Square's native receipt has no custom notes section).
+
+**Phase 6:** Follow-up automation — notes entered on the job summary trigger timed reminder emails to owner and customer (e.g. "rear brakes have 6 months left" → reminder email sent at that time).
+
+**Phase 7:** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, all owned by Brake Knights.
+
+**Phase 8:** Automated quotes — instant quote emails based on vehicle type and service selected (requires pricing table to be finalized first).
+
+**Phase 9:** White-label packaging — multi-tenant architecture, per-brand configuration, reseller infrastructure for other service businesses.
+
+### Current Customer Flow (for context)
+- Customer calls/texts → verbal price + schedule discussion → owner books in Square → Square sends confirmation (date/time only, no price)
+- Customer submits form → owner replies by email with price → customer confirms → owner books in Square → Square sends confirmation (date/time only, no price)
+- Payment: credit card via Square POS app on phone; cash/Zelle recorded manually in Square for sales tracking
 
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/brave-mendel-LJ0Ym` — in sync with `dev` and `master` ✅
+- Working branch: `claude/dazzling-planck-U9GXQ` — in sync with `dev` and `master` ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Form emails fully working on both dev and live: internal notification + customer confirmation ✅
@@ -80,9 +123,10 @@ Update this section at the end of each session to stay caught up next time.
 - Google Search Console verified (DNS TXT record) and sitemap submitted ✅
 - Images and CSS served with `Cache-Control: no-cache` ✅
 - CSS version is at `?v=3` across all 45 pages
+- Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Next steps:
-  1. Add a good rotor-caliper photo to the brake inspection page (tabled — image rotation issue)
-  2. Automated quote system (tabled — pricing structure discussion ready to resume)
+  1. Phase 2: auto-create Square customer when contact form is submitted
+  2. Add a good rotor-caliper photo to the brake inspection page (tabled — image rotation issue)
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -124,10 +168,29 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
+- [ ] Phase 2: auto-create Square customer when contact form is submitted
+- [ ] Phase 3: owner quote tool — enter service + price + time, fire branded quote email
+- [ ] Phase 4: branded booking confirmation email (service, price, date, time, address)
+- [ ] Phase 5: branded job summary + custom receipt with Technician Notes section
+- [ ] Phase 6: follow-up automation from job notes (timed reminder emails)
+- [ ] Phase 7: admin CRM dashboard at brakeknights.com/admin
+- [ ] Phase 8: automated quotes (requires pricing table to be finalized)
+- [ ] Phase 9: white-label packaging for other service businesses
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
-- [ ] Automated quote system — vehicle tier pricing, auto-stop rules, quote delivery via email (tabled — pricing structure discussion ready to resume)
+- [ ] Finalize pricing table by vehicle type (required before Phase 8)
+- [ ] CRM improvement: tag submission source (homepage vs contact page) in Square customer note
+- [ ] CRM improvement: replace flat note field with structured data fields once Phase 7 CRM is built
+- [ ] CRM improvement: add visible alert/logging if Square customer sync fails on a form submission
 
 ### Completed This Session
+- [x] Phase 2: auto-create Square customer when contact form is submitted — live on master
+- [x] Square Developer setup complete — sandbox + production credentials generated
+- [x] Square env vars saved in Hostinger hPanel for brakeknights.com
+- [x] Install Square Node.js SDK (`square` npm package)
+- [x] Create `square.js` connection module — SquareClient initialized from env vars
+- [x] Add `GET /api/square/verify` endpoint — confirms Locations + Bookings API connectivity
+- [x] Verify endpoint confirmed working on live site: both APIs return "ok" in production
+- [x] Full platform build plan documented (Phases 2-9)
 - [x] Add "Preferred Contact Method" dropdown (Call, Text, Email) to both contact forms — live on master
 - [x] Style select dropdown to match other form fields
 - [x] Add dev-vs-master pending commit check to session startup hook

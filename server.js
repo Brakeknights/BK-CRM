@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const nodemailer = require('nodemailer');
-const { verifyConnection } = require('./square');
+const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +24,7 @@ app.get('/api/square/verify', async (req, res) => {
   const ok = result.customers === 'ok' && result.bookings === 'ok';
   res.status(ok ? 200 : 502).json(result);
 });
+
 
 app.post('/api/contact', async (req, res) => {
   const { firstName, lastName, phone, email, vehicle, preferredContact, message, source } = req.body;
@@ -141,6 +142,11 @@ app.post('/api/contact', async (req, res) => {
     }
 
     res.json({ success: true });
+
+    // Create or find Square customer — runs after response so it never blocks the form
+    createOrFindSquareCustomer({ firstName, lastName, phone, email, vehicle, note: message })
+      .then(r => console.log(`Square customer ${r.action}: ${r.customerId}`))
+      .catch(err => console.error('Square customer sync error:', err.message));
   } catch (err) {
     console.error('Email send error:', err.code, err.message);
     res.status(500).json({ success: false, error: 'Failed to send email' });
