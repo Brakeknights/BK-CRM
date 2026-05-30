@@ -25,21 +25,6 @@ app.get('/api/square/verify', async (req, res) => {
   res.status(ok ? 200 : 502).json(result);
 });
 
-app.get('/api/square/test-customer', async (req, res) => {
-  try {
-    const result = await createOrFindSquareCustomer({
-      firstName: 'Test',
-      lastName: 'Customer',
-      phone: '+17035550001',
-      email: 'test-bk@example.com',
-      vehicle: '2020 Toyota Camry',
-      note: 'Test submission from dev site'
-    });
-    res.json({ success: true, ...result });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message, detail: err.body || null });
-  }
-});
 
 app.post('/api/contact', async (req, res) => {
   const { firstName, lastName, phone, email, vehicle, preferredContact, message, source } = req.body;
