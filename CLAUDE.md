@@ -97,7 +97,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 
 **Phase 6:** Follow-up automation — notes entered on the job summary trigger timed reminder emails to owner and customer (e.g. "rear brakes have 6 months left" → reminder email sent at that time).
 
-**Phase 7:** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, all owned by Brake Knights.
+**Phase 7:** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, and a lead pipeline. The pipeline shows every new form submission as a lead card that can be moved through stages: New Lead → Quoted → Confirmed → Completed → Follow-Up Scheduled. Each card shows customer info, vehicle, notes, and allows the owner to add internal notes as the job progresses.
 
 **Phase 8:** Automated quotes — instant quote emails based on vehicle type and service selected (requires pricing table to be finalized first).
 
@@ -124,8 +124,9 @@ Update this section at the end of each session to stay caught up next time.
 - Images and CSS served with `Cache-Control: no-cache` ✅
 - CSS version is at `?v=3` across all 45 pages
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
+- Phase 2 complete: form submissions auto-create or find Square customer, duplicate detection by email then phone, phone normalized to E.164 ✅
 - Next steps:
-  1. Phase 2: auto-create Square customer when contact form is submitted
+  1. Phase 3: owner quote tool — enter service + price + time, fire branded quote email
   2. Add a good rotor-caliper photo to the brake inspection page (tabled — image rotation issue)
 
 ## Pre-Launch Checklist (Before Merging to Master)
@@ -168,12 +169,11 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Phase 2: auto-create Square customer when contact form is submitted
 - [ ] Phase 3: owner quote tool — enter service + price + time, fire branded quote email
 - [ ] Phase 4: branded booking confirmation email (service, price, date, time, address)
 - [ ] Phase 5: branded job summary + custom receipt with Technician Notes section
 - [ ] Phase 6: follow-up automation from job notes (timed reminder emails)
-- [ ] Phase 7: admin CRM dashboard at brakeknights.com/admin
+- [ ] Phase 7: full CRM dashboard at brakeknights.com/admin including lead pipeline (New Lead → Quoted → Confirmed → Completed → Follow-Up Scheduled) with customer profiles, vehicle history, job history, owner notes per lead
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
