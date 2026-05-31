@@ -290,14 +290,14 @@
             <label for="service">Service Requested *</label>
             <select id="service" name="service" required onchange="handleServiceChange(this)">
               <option value="" disabled selected>Select a service...</option>
-              <option value="Front Pads Only">Front Pads Only</option>
-              <option value="Rear Pads Only">Rear Pads Only</option>
+              <option value="Front Pads">Front Pads</option>
+              <option value="Rear Pads">Rear Pads</option>
               <option value="Front and Rear Pads">Front and Rear Pads</option>
               <option value="Front Pads and Rotors">Front Pads and Rotors</option>
               <option value="Rear Pads and Rotors">Rear Pads and Rotors</option>
               <option value="Front and Rear Pads and Rotors">Front and Rear Pads and Rotors</option>
-              <option value="Front Rotors Only">Front Rotors Only</option>
-              <option value="Rear Rotors Only">Rear Rotors Only</option>
+              <option value="Front Rotors">Front Rotors</option>
+              <option value="Rear Rotors">Rear Rotors</option>
               <option value="Front and Rear Rotors">Front and Rear Rotors</option>
               <option value="Drums and Shoes">Drums and Shoes</option>
               <option value="Front Pads, Rotors, and Drums and Shoes">Front Pads, Rotors, and Drums and Shoes</option>
@@ -306,7 +306,6 @@
               <option value="Caliper Replacement">Caliper Replacement</option>
               <option value="Brake Hose Replacement">Brake Hose Replacement</option>
               <option value="Describe Issue / Not Sure">Describe Issue / Not Sure</option>
-              <option value="Other">Other</option>
             </select>
           </div>
           <div class="form-group" id="message-group" style="display:none;">
@@ -450,7 +449,7 @@
     const group = document.getElementById('message-group');
     const textarea = document.getElementById('message');
     const label = document.getElementById('message-label');
-    const freeform = val === 'Describe Issue / Not Sure' || val === 'Other';
+    const freeform = val === 'Describe Issue / Not Sure';
     group.style.display = val ? 'block' : 'none';
     if (freeform) {
       label.textContent = 'Describe your issue *';
