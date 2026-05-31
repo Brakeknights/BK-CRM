@@ -450,7 +450,7 @@
     const textarea = document.getElementById('message');
     const label = document.getElementById('message-label');
     const freeform = val === 'Describe Issue / Not Sure';
-    group.style.display = val ? 'block' : 'none';
+    group.style.display = val ? 'flex' : 'none';
     if (freeform) {
       label.textContent = 'Describe your issue *';
       textarea.placeholder = 'Tell us what you\'re experiencing...';
