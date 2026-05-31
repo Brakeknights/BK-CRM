@@ -18,6 +18,52 @@ function fmt(n) {
   return Number(n || 0).toFixed(2);
 }
 
+var WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// Upcoming bookable days as <option>s. Value is ISO (YYYY-MM-DD), label shows
+// weekday + date. Sundays are skipped (closed). Covers the next ~6 weeks.
+function buildDateOptions() {
+  var opts = '<option value="" disabled selected>Select a day…</option>';
+  var d = new Date();
+  d.setHours(0, 0, 0, 0);
+  for (var added = 0, days = 0; added < 35 && days < 60; days++) {
+    var day = new Date(d.getTime() + days * 86400000);
+    if (day.getDay() === 0) continue; // closed Sundays
+    var iso = day.getFullYear() + '-'
+      + String(day.getMonth() + 1).padStart(2, '0') + '-'
+      + String(day.getDate()).padStart(2, '0');
+    var label = WEEKDAYS[day.getDay()] + ', ' + MONTHS[day.getMonth()] + ' ' + day.getDate();
+    opts += '<option value="' + iso + '">' + label + '</option>';
+    added++;
+  }
+  return opts;
+}
+
+// Time slots in 30-minute increments, 9:00 AM through 6:00 PM inclusive.
+function buildTimeOptions() {
+  var opts = '<option value="" disabled selected>Select a time…</option>';
+  for (var mins = 9 * 60; mins <= 18 * 60; mins += 30) {
+    var h24 = Math.floor(mins / 60);
+    var m = mins % 60;
+    var ampm = h24 < 12 ? 'AM' : 'PM';
+    var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    var label = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+    opts += '<option value="' + label + '">' + label + '</option>';
+  }
+  return opts;
+}
+
+// Format a stored ISO date (YYYY-MM-DD) as "Friday, June 5, 2026".
+// Falls back to the raw value if it isn't an ISO date.
+function formatPrefDate(val) {
+  if (!val) return '—';
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
+  if (!m) return val;
+  var dt = new Date(+m[1], +m[2] - 1, +m[3]);
+  return WEEKDAYS[dt.getDay()] + ', ' + MONTHS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+}
+
 function transporter() {
   return nodemailer.createTransport({
     host: 'smtp.hostinger.com',
@@ -128,15 +174,9 @@ router.get('/:id/:token', function(req, res) {
     + '<form method="POST" action="/quote/' + q.id + '/' + q.accept_token + '/accept">'
     + '<div class="row2">'
     + '<div class="form-group"><label>Preferred date</label>'
-    + '<input type="date" name="prefDate" required></div>'
+    + '<select name="prefDate" required>' + buildDateOptions() + '</select></div>'
     + '<div class="form-group"><label>Preferred time</label>'
-    + '<select name="prefTime" required>'
-    + '<option value="" disabled selected>Select…</option>'
-    + '<option value="Morning (9am–12pm)">Morning (9am–12pm)</option>'
-    + '<option value="Midday (12pm–3pm)">Midday (12pm–3pm)</option>'
-    + '<option value="Afternoon (3pm–6pm)">Afternoon (3pm–6pm)</option>'
-    + '<option value="Flexible / Any time">Flexible / Any time</option>'
-    + '</select></div>'
+    + '<select name="prefTime" required>' + buildTimeOptions() + '</select></div>'
     + '</div>'
     + '<div class="form-group"><label>Service address</label>'
     + '<input type="text" name="prefLocation" placeholder="Where should we meet you? Home or work address" required></div>'
@@ -219,7 +259,7 @@ function acceptedConfirmation(q) {
     + '<h2>Your Request</h2>'
     + '<div class="qline"><span>Service</span><span>' + esc(q.service || 'Brake Service') + '</span></div>'
     + '<div class="qline"><span>Total</span><span>$' + fmt(q.total) + '</span></div>'
-    + '<div class="qline"><span>Preferred date</span><span>' + esc(q.pref_date || '—') + '</span></div>'
+    + '<div class="qline"><span>Preferred date</span><span>' + esc(formatPrefDate(q.pref_date)) + '</span></div>'
     + '<div class="qline"><span>Preferred time</span><span>' + esc(q.pref_time || '—') + '</span></div>'
     + '<div class="qline"><span>Location</span><span style="text-align:right;max-width:60%;">' + esc(q.pref_location || '—') + '</span></div>'
     + '</div>'
@@ -241,7 +281,7 @@ function ownerAcceptedEmail(q) {
     + '<div style="background:#e3f0ff;border-left:4px solid #4169e1;border-radius:4px;padding:14px;margin-top:16px;">'
     + '<p style="margin:0 0 8px;font-weight:bold;color:#0a1f3d;">Requested Scheduling</p>'
     + '<table style="width:100%;border-collapse:collapse;font-size:0.92rem;color:#444;">'
-    + '<tr><td style="padding:4px 0;color:#888;width:120px;">Date</td><td style="padding:4px 0;">' + esc(q.pref_date || '—') + '</td></tr>'
+    + '<tr><td style="padding:4px 0;color:#888;width:120px;">Date</td><td style="padding:4px 0;">' + esc(formatPrefDate(q.pref_date)) + '</td></tr>'
     + '<tr><td style="padding:4px 0;color:#888;">Time</td><td style="padding:4px 0;">' + esc(q.pref_time || '—') + '</td></tr>'
     + '<tr><td style="padding:4px 0;color:#888;vertical-align:top;">Location</td><td style="padding:4px 0;">' + esc(q.pref_location || '—') + '</td></tr>'
     + (q.scheduling_notes ? '<tr><td style="padding:4px 0;color:#888;vertical-align:top;">Notes</td><td style="padding:4px 0;">' + esc(q.scheduling_notes) + '</td></tr>' : '')
@@ -266,7 +306,7 @@ function customerAcceptedEmail(q) {
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
     + '<tr><td style="padding:5px 0;color:#888;width:120px;">Service</td><td style="padding:5px 0;">' + esc(q.service) + '</td></tr>'
     + '<tr><td style="padding:5px 0;color:#888;">Total</td><td style="padding:5px 0;font-weight:700;">$' + fmt(q.total) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;">Preferred date</td><td style="padding:5px 0;">' + esc(q.pref_date || '—') + '</td></tr>'
+    + '<tr><td style="padding:5px 0;color:#888;">Preferred date</td><td style="padding:5px 0;">' + esc(formatPrefDate(q.pref_date)) + '</td></tr>'
     + '<tr><td style="padding:5px 0;color:#888;">Preferred time</td><td style="padding:5px 0;">' + esc(q.pref_time || '—') + '</td></tr>'
     + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(q.pref_location || '—') + '</td></tr>'
     + '</table></div>'
