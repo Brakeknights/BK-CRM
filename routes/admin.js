@@ -37,10 +37,11 @@ function statusBadge(status) {
   const styles = {
     new:       'background:#e3f0ff;color:#1a6fc4;',
     quoted:    'background:#fff8e1;color:#b8860b;',
+    follow_up: 'background:#fce8ff;color:#8b2fc9;',
     booked:    'background:#e6f9ee;color:#1a7a3a;',
     completed: 'background:#f0f0f0;color:#555;',
   };
-  const labels = { new: 'New', quoted: 'Quoted', booked: 'Booked', completed: 'Completed' };
+  const labels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', booked: 'Booked', completed: 'Completed' };
   const style = styles[status] || styles.new;
   const label = labels[status] || status;
   return '<span style="' + style + 'padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;letter-spacing:0.3px;white-space:nowrap;">' + label + '</span>';
@@ -187,6 +188,7 @@ router.get('/', requireAuth, function(req, res) {
     ['all',       'All',       total],
     ['new',       'New',       counts.new       || 0],
     ['quoted',    'Quoted',    counts.quoted    || 0],
+    ['follow_up', 'Follow Up', counts.follow_up || 0],
     ['booked',    'Booked',    counts.booked    || 0],
     ['completed', 'Completed', counts.completed || 0],
   ];
