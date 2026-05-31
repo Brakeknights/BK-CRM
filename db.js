@@ -51,12 +51,13 @@ const quoteCols = db.prepare("PRAGMA table_info(quotes)").all().map(c => c.name)
 const addQuoteCol = (name, def) => {
   if (!quoteCols.includes(name)) db.exec(`ALTER TABLE quotes ADD COLUMN ${name} ${def}`);
 };
-addQuoteCol('accept_token',     'TEXT');
-addQuoteCol('accepted_at',      'TEXT');
-addQuoteCol('pref_date',        'TEXT');
-addQuoteCol('pref_time',        'TEXT');
-addQuoteCol('pref_location',    'TEXT');
-addQuoteCol('scheduling_notes', 'TEXT');
+addQuoteCol('accept_token',        'TEXT');
+addQuoteCol('accepted_at',         'TEXT');
+addQuoteCol('pref_date',           'TEXT');
+addQuoteCol('pref_time',           'TEXT');
+addQuoteCol('pref_location',       'TEXT');
+addQuoteCol('scheduling_notes',    'TEXT');
+addQuoteCol('quote_followup_sent', 'INTEGER DEFAULT 0');
 
 const leadCols = db.prepare("PRAGMA table_info(leads)").all().map(c => c.name);
 const addLeadCol = (name, def) => {

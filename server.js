@@ -185,6 +185,62 @@ app.listen(PORT, () => {
   console.log(`Brakeknights server running on port ${PORT}`);
 });
 
+// Returns the current hour (0-23) in Eastern Time, accounting for DST automatically.
+function easternHour() {
+  return parseInt(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: 'America/New_York' }).format(new Date()), 10);
+}
+
+// Unaccepted quote reminder: if a sent quote has not been accepted after 4 hours,
+// send a reminder to the owner. Suppressed overnight — only fires 9 AM to 9 PM ET.
+setInterval(function() {
+  if (!process.env.SMTP_PASS) return;
+  var h = easternHour();
+  if (h < 9 || h >= 21) return; // outside business hours — check again next hour
+
+  var pending = db.prepare(
+    "SELECT q.*, l.first_name, l.last_name, l.phone, l.email, l.service AS lead_service "
+    + "FROM quotes q JOIN leads l ON l.id = q.lead_id "
+    + "WHERE q.accepted_at IS NULL AND q.sent_at IS NOT NULL AND q.quote_followup_sent = 0 "
+    + "AND (julianday('now') - julianday(q.sent_at)) * 24 >= 4"
+  ).all();
+  if (pending.length === 0) return;
+
+  var transporter = nodemailer.createTransport({
+    host: 'smtp.hostinger.com',
+    port: 465,
+    secure: true,
+    auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS }
+  });
+
+  pending.forEach(function(q) {
+    var name = q.first_name + ' ' + q.last_name;
+    var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+      + '<div style="background:#0a1f3d;padding:14px 20px;"><h2 style="color:#6b8ff5;margin:0;font-size:1.1rem;">Reminder: Quote Not Yet Accepted</h2></div>'
+      + '<div style="padding:20px;">'
+      + '<p style="margin:0 0 14px;color:#444;font-size:0.95rem;"><strong>' + name + '</strong> was sent a quote over 4 hours ago and hasn\'t accepted yet.</p>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:0.92rem;">'
+      + '<tr><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;width:120px;">Phone</td><td style="padding:6px 10px;"><a href="tel:' + q.phone + '">' + q.phone + '</a></td></tr>'
+      + (q.email ? '<tr style="background:#f9f9f9;"><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Email</td><td style="padding:6px 10px;">' + q.email + '</td></tr>' : '')
+      + (q.service ? '<tr><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Service</td><td style="padding:6px 10px;">' + q.service + '</td></tr>' : '')
+      + '<tr style="background:#f9f9f9;"><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Total</td><td style="padding:6px 10px;">$' + Number(q.total || 0).toFixed(2) + '</td></tr>'
+      + '</table>'
+      + '<div style="margin-top:16px;text-align:center;">'
+      + '<a href="https://brakeknights.com/admin/quote/' + q.lead_id + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:12px 28px;border-radius:8px;">Open in Admin</a>'
+      + '</div>'
+      + '<p style="margin:14px 0 0;font-size:0.83rem;color:#aaa;text-align:center;">This reminder fires once per quote. Follow up manually if needed.</p>'
+      + '</div></div>';
+
+    db.prepare('UPDATE quotes SET quote_followup_sent = 1 WHERE id = ?').run(q.id);
+
+    transporter.sendMail({
+      from:    '"BK Admin" <greetings@brakeknights.com>',
+      to:      'greetings@brakeknights.com',
+      subject: 'Follow up: ' + name + ' hasn\'t accepted their quote yet',
+      html
+    }).catch(function(err) { console.error('Quote follow-up reminder error:', err.message); });
+  });
+}, 60 * 60 * 1000); // check every hour
+
 // Auto follow-up: if a lead has been in quote_accepted for 48h with no further action,
 // send a reminder email to the owner and mark followup_sent so it only fires once.
 setInterval(function() {
