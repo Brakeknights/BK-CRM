@@ -45,4 +45,17 @@ db.exec(`
   );
 `);
 
+// ─── Migrations (idempotent — safe to run against existing dev/prod data) ──────
+// Adds Phase 3C customer-acceptance + scheduling columns to the quotes table.
+const quoteCols = db.prepare("PRAGMA table_info(quotes)").all().map(c => c.name);
+const addQuoteCol = (name, def) => {
+  if (!quoteCols.includes(name)) db.exec(`ALTER TABLE quotes ADD COLUMN ${name} ${def}`);
+};
+addQuoteCol('accept_token',     'TEXT');
+addQuoteCol('accepted_at',      'TEXT');
+addQuoteCol('pref_date',        'TEXT');
+addQuoteCol('pref_time',        'TEXT');
+addQuoteCol('pref_location',    'TEXT');
+addQuoteCol('scheduling_notes', 'TEXT');
+
 module.exports = db;
