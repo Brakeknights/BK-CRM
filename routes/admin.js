@@ -171,6 +171,17 @@ router.get('/logout', function(req, res) {
   res.redirect('/admin/login');
 });
 
+// ─── Status update ────────────────────────────────────────────────────────────
+
+router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var validStatuses = ['new', 'quoted', 'follow_up', 'booked', 'completed'];
+  var status = req.body.status;
+  if (!validStatuses.includes(status)) return res.status(400).send('Invalid status');
+  db.prepare('UPDATE leads SET status = ? WHERE id = ?').run(status, req.params.id);
+  var back = req.body.back || '/admin';
+  res.redirect(back);
+});
+
 // ─── Lead list ───────────────────────────────────────────────────────────────
 
 router.get('/', requireAuth, function(req, res) {
@@ -216,10 +227,20 @@ router.get('/', requireAuth, function(req, res) {
           + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
           + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
           + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
-          + '<div style="display:flex;gap:8px;margin-top:12px;">'
-          + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128222; Call</a>'
-          + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy" style="flex:1;padding:9px;">Open Quote Tool</a>'
+          + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;">'
+          + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
+          + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;">Open Quote</a>'
           + '</div>'
+          + '<form method="POST" action="/admin/lead/' + l.id + '/status" style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
+          + '<input type="hidden" name="back" value="/admin?status=' + status + '">'
+          + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
+          + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
+          + ['new','quoted','follow_up','booked','completed'].map(function(s) {
+              var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', booked:'Booked', completed:'Completed' }[s];
+              return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + label + '</option>';
+            }).join('')
+          + '</select>'
+          + '</form>'
           + '</div>';
       }).join('');
 
@@ -273,7 +294,18 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
     + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
     + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : '')
-    + '</div></div>'
+    + '</div>'
+    + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
+    + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
+    + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
+    + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:7px 10px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.88rem;color:#1a2a3a;background:#fff;">'
+    + ['new','quoted','follow_up','booked','completed'].map(function(s) {
+        var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', booked:'Booked', completed:'Completed' }[s];
+        return '<option value="' + s + '"' + (lead.status === s ? ' selected' : '') + '>' + label + '</option>';
+      }).join('')
+    + '</select>'
+    + '</form>'
+    + '</div>'
 
     // Quote form
     + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf">'
