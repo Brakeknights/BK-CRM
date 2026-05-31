@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 const db = require('../db');
 const PRICING = require('../pricing');
 
@@ -36,7 +37,7 @@ function timeAgo(dateStr) {
 function statusBadge(status) {
   const styles = {
     new:       'background:#e3f0ff;color:#1a6fc4;',
-    quoted:    'background:#fff8e1;color:#b8860b;',
+    quoted:    'background:#dde7fb;color:#3a4fb8;',
     follow_up: 'background:#fce8ff;color:#8b2fc9;',
     booked:    'background:#e6f9ee;color:#1a7a3a;',
     completed: 'background:#f0f0f0;color:#555;',
@@ -56,7 +57,7 @@ const CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f4f8;min-height:100vh;color:#1a2a3a}
 .topbar{background:#0a1f3d;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.topbar-brand{color:#c9a84c;font-weight:700;font-size:0.95rem;letter-spacing:.5px;display:flex;align-items:center;gap:8px;text-decoration:none}
+.topbar-brand{color:#6b8ff5;font-weight:700;font-size:0.95rem;letter-spacing:.5px;display:flex;align-items:center;gap:8px;text-decoration:none}
 .topbar-brand img{width:22px;height:22px;border-radius:4px}
 .topbar-logout{color:#8aadcf;font-size:0.82rem;text-decoration:none}
 .topbar-logout:hover{color:#fff}
@@ -66,7 +67,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .btn{display:block;width:100%;padding:12px;border:none;border-radius:8px;font-size:0.95rem;font-weight:600;cursor:pointer;text-align:center;text-decoration:none;transition:opacity .15s}
 .btn:hover{opacity:.88}
 .btn-navy{background:#0a1f3d;color:#fff}
-.btn-gold{background:#c9a84c;color:#0a1f3d}
+.btn-blue{background:#4169e1;color:#fff}
 .btn-outline{background:transparent;border:2px solid #0a1f3d;color:#0a1f3d}
 .btn-sm{padding:9px 14px;font-size:0.85rem;width:auto;display:inline-block}
 .filter-tabs{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;padding-bottom:2px}
@@ -411,7 +412,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
     + '<button type="button" class="btn btn-outline" onclick="togglePreview()" id="prevBtn">Preview Email</button>'
     + '<div id="previewBox" style="display:none;"></div>'
-    + '<button type="submit" class="btn btn-gold" style="margin-top:10px;">Send Quote</button>'
+    + '<button type="submit" class="btn btn-blue" style="margin-top:10px;">Send Quote</button>'
     + '</form>'
 
     + '<script>'
@@ -514,14 +515,21 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var vin           = req.body.vin            || null;
   var internalNotes = req.body.internalNotes  || null;
 
-  db.prepare(
-    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, sent_at, status) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
-  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lead.email ? 'sent' : 'saved');
+  var acceptToken = crypto.randomBytes(24).toString('hex');
+
+  var info = db.prepare(
+    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, accept_token, sent_at, status) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
+  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, acceptToken, lead.email ? 'sent' : 'saved');
 
   db.prepare('UPDATE leads SET status = ? WHERE id = ?').run('quoted', lead.id);
 
   if (!lead.email) return res.redirect('/admin?msg=saved');
+
+  // Absolute base URL so the accept link points back to the same site that sent it
+  // (dev.brakeknights.com on dev, brakeknights.com on prod) without an env var.
+  var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+  var acceptUrl = baseUrl + '/quote/' + info.lastInsertRowid + '/' + acceptToken;
 
   if (!process.env.SMTP_PASS) {
     console.error('SMTP_PASS not set — quote saved but not emailed');
@@ -541,7 +549,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       to:      lead.email,
       replyTo: 'greetings@brakeknights.com',
       subject: 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt)
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl)
     });
 
     res.redirect('/admin?msg=sent');
@@ -553,7 +561,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
 // ─── Quote email (Phase 3C upgrades this to fully branded template) ───────────
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl) {
   var tierLabel   = tier === 'premium' ? 'Premium' : 'Standard';
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
@@ -579,9 +587,16 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '</table></div>'
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
     + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
+    // Primary CTA — accept the quote and pick a preferred time in one step
+    + (acceptUrl
+        ? '<div style="text-align:center;margin:0 0 24px;">'
+          + '<a href="' + acceptUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:1rem;text-decoration:none;padding:15px 34px;border-radius:8px;">Accept Quote &amp; Choose Your Time &rarr;</a>'
+          + '<p style="color:#888;font-size:0.82rem;margin:12px 0 0;">You&rsquo;ll pick a preferred day and time. We&rsquo;ll confirm it or reach out about other openings.</p>'
+          + '</div>'
+        : '')
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
-    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Ready to book? Reply to this email or call/text:</p>'
-    + '<a href="tel:7039774475" style="color:#c9a84c;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Prefer to talk it through? Reply to this email or call/text:</p>'
+    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
     + '</div></div>'
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div>'
     + '</div>';

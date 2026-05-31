@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 const db = require('./db');
 const adminRouter = require('./routes/admin');
+const quoteRouter = require('./routes/quote');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,6 +20,7 @@ app.use(session({
 }));
 
 app.use('/admin', adminRouter);
+app.use('/quote', quoteRouter);
 app.use('/images', express.static(path.join(__dirname, 'public/images'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 }));
@@ -69,7 +71,7 @@ app.post('/api/contact', async (req, res) => {
   const internalHtml = `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #ddd;border-radius:8px;">
       <div style="background:#0a1f3d;padding:16px 20px;border-radius:6px 6px 0 0;margin:-20px -20px 20px;">
-        <h2 style="color:#c9a84c;margin:0;font-size:1.3rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;border-radius:4px;"> New Service Request — Brake Knights</h2>
+        <h2 style="color:#6b8ff5;margin:0;font-size:1.3rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;border-radius:4px;"> New Service Request — Brake Knights</h2>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:0.95rem;">
         <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;width:130px;">Name</td><td style="padding:8px 12px;">${firstName} ${lastName}</td></tr>
@@ -81,7 +83,7 @@ app.post('/api/contact', async (req, res) => {
         <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Message</td><td style="padding:8px 12px;">${message || 'None'}</td></tr>
         <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Source</td><td style="padding:8px 12px;">${source || 'Website'}</td></tr>
       </table>
-      <div style="margin-top:20px;padding:12px;background:#fff8e1;border-left:4px solid #c9a84c;border-radius:4px;font-size:0.85rem;color:#555;">
+      <div style="margin-top:20px;padding:12px;background:#e3f0ff;border-left:4px solid #4169e1;border-radius:4px;font-size:0.85rem;color:#555;">
         Reply directly to this email to respond to the customer.
       </div>
     </div>
