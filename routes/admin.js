@@ -255,16 +255,16 @@ router.get('/square-info', requireAuth, async function(req, res) {
     out.locations = (r.locations || []).map(l => ({ id: l.id, name: l.name, status: l.status }));
   } catch (e) { out.locations = 'ERR: ' + e.message; }
   try {
-    const r = await client.teamMembers.searchTeamMembers({ query: { filter: { statuses: ['ACTIVE'] } } });
-    out.teamMembers = (r.teamMembers || []).map(m => ({ id: m.id, name: (m.displayName || (m.givenName + ' ' + m.familyName)) }));
+    const r = await client.teamMembers.search({ query: { filter: { statuses: ['ACTIVE'] } } });
+    out.teamMembers = (r.teamMembers || []).map(m => ({ id: m.id, name: (m.displayName || ((m.givenName || '') + ' ' + (m.familyName || '')).trim()) }));
   } catch (e) { out.teamMembers = 'ERR: ' + e.message; }
   try {
     const r = await client.catalog.list({ types: 'ITEM' });
-    out.catalogItems = (r.objects || []).filter(o => o.itemData?.productType === 'APPOINTMENTS_SERVICE').map(o => ({
-      id: o.id, name: o.itemData?.name,
+    out.allCatalogItems = (r.objects || []).map(o => ({
+      id: o.id, type: o.type, productType: o.itemData?.productType, name: o.itemData?.name,
       variations: (o.itemData?.variations || []).map(v => ({ id: v.id, name: v.itemVariationData?.name, duration: v.itemVariationData?.serviceDuration }))
     }));
-  } catch (e) { out.catalogItems = 'ERR: ' + e.message; }
+  } catch (e) { out.allCatalogItems = 'ERR: ' + e.message; }
   res.type('json').send(JSON.stringify(out, null, 2));
 });
 
