@@ -8,8 +8,39 @@ const { client: squareClient } = require('../square');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'brakeknights';
 
-const SQUARE_LOCATION_ID  = 'LDDQ81CM33HJH';
-const SQUARE_TEAM_MEMBER  = 'TM2pRrtr9Kh27HGq';
+// Location + team member are auto-discovered from whichever Square environment the
+// token points at (sandbox now, production after upgrade), so no code change is needed
+// to switch. Optional env overrides win; the known production IDs are the last-resort
+// fallback if discovery returns nothing.
+const FALLBACK_LOCATION_ID = 'LDDQ81CM33HJH';
+const FALLBACK_TEAM_MEMBER = 'TM2pRrtr9Kh27HGq';
+var _squareLocationId = null;
+var _squareTeamMemberId = null;
+
+async function getSquareLocationId() {
+  if (_squareLocationId) return _squareLocationId;
+  if (process.env.SQUARE_LOCATION_ID) { _squareLocationId = process.env.SQUARE_LOCATION_ID; return _squareLocationId; }
+  try {
+    var r = await squareClient.locations.list();
+    var locs = r.locations || [];
+    var pick = locs.find(function(l) { return l.status === 'ACTIVE'; }) || locs[0];
+    if (pick && pick.id) { _squareLocationId = pick.id; return _squareLocationId; }
+  } catch (_) {}
+  _squareLocationId = FALLBACK_LOCATION_ID;
+  return _squareLocationId;
+}
+
+async function getSquareTeamMemberId() {
+  if (_squareTeamMemberId) return _squareTeamMemberId;
+  if (process.env.SQUARE_TEAM_MEMBER) { _squareTeamMemberId = process.env.SQUARE_TEAM_MEMBER; return _squareTeamMemberId; }
+  try {
+    var r = await squareClient.teamMembers.search({ query: { filter: { statuses: ['ACTIVE'] } } });
+    var members = r.teamMembers || [];
+    if (members.length && members[0].id) { _squareTeamMemberId = members[0].id; return _squareTeamMemberId; }
+  } catch (_) {}
+  _squareTeamMemberId = FALLBACK_TEAM_MEMBER;
+  return _squareTeamMemberId;
+}
 
 // Cache for the Square catalog service variation (created on first Approve)
 var _squareSvcVar = null;
@@ -326,6 +357,10 @@ router.get('/square-info', requireAuth, async function(req, res) {
     out.teamMembers = (r.teamMembers || []).map(m => ({ id: m.id, name: (m.displayName || ((m.givenName || '') + ' ' + (m.familyName || '')).trim()) }));
   } catch (e) { out.teamMembers = 'ERR: ' + e.message; }
   try {
+    await client.bookings.getBusinessProfile();
+    out.bookingsOnboarded = 'ok';
+  } catch (e) { out.bookingsOnboarded = 'ERR: ' + e.message; }
+  try {
     const r = await client.catalog.list({ types: 'ITEM' });
     out.allCatalogItems = (r.objects || []).map(o => ({
       id: o.id, type: o.type, productType: o.itemData?.productType, name: o.itemData?.name,
@@ -352,10 +387,12 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
     if (startAt) {
       var svcVar = await getSquareSvcVar();
       if (svcVar && svcVar.id) {
-        var seg = { serviceVariationId: svcVar.id, teamMemberId: SQUARE_TEAM_MEMBER, durationMinutes: 90 };
+        var teamMemberId = await getSquareTeamMemberId();
+        var locationId = await getSquareLocationId();
+        var seg = { serviceVariationId: svcVar.id, teamMemberId: teamMemberId, durationMinutes: 90 };
         if (svcVar.version) seg.serviceVariationVersion = svcVar.version;
         var bkBody = {
-          locationId: SQUARE_LOCATION_ID,
+          locationId: locationId,
           startAt: startAt,
           appointmentSegments: [seg],
           customerNote: [lead.first_name + ' ' + lead.last_name, quote.service, quote.pref_location].filter(Boolean).join(' — ')
