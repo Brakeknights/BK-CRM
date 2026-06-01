@@ -407,7 +407,9 @@ router.get('/seed-test-booking', requireAuth, async function(req, res) {
   logHistory(leadId, 'Lead created', 'Sandbox test lead (seed)');
   logHistory(leadId, 'Quote accepted by customer', prefDate + ' at ' + prefTime + ' — ' + prefLocation);
 
-  res.redirect('/admin/quote/' + leadId);
+  // Fire the approval immediately so the seed exercises the full booking path in
+  // one tap (in production the owner clicks Approve from the acceptance email).
+  res.redirect('/admin/quote/' + leadId + '/approve-schedule');
 });
 
 // ─── Approve / deny scheduling ────────────────────────────────────────────────
@@ -601,12 +603,18 @@ router.get('/', requireAuth, function(req, res) {
     + (search ? '<a href="/admin?status=' + esc(status) + '" style="padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;background:#fff;color:#666;text-decoration:none;font-size:0.9rem;white-space:nowrap;">&#10005; Clear</a>' : '')
     + '</form>';
 
+  var isSandbox = process.env.SQUARE_ENV === 'sandbox' || !process.env.SQUARE_ACCESS_TOKEN;
+  var sandboxTestBtn = isSandbox
+    ? '<a href="/admin/seed-test-booking" class="btn btn-outline btn-sm" style="display:block;text-align:center;margin-bottom:12px;border-color:#e0a000;color:#9a6f00;">&#129514; Run sandbox test booking</a>'
+    : '';
+
   res.send(page('Leads',
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Leads</h1>'
     + '<span style="color:#aaa;font-size:0.83rem;">' + total + ' total</span>'
     + '</div>'
     + alert
+    + sandboxTestBtn
     + searchBar
     + '<div class="filter-tabs">' + tabsHtml + '</div>'
     + cardsHtml,
