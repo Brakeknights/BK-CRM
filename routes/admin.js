@@ -145,6 +145,43 @@ function fmtHistoryTime(dateStr) {
     + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
+// Formats a stored ISO date (YYYY-MM-DD) as "Friday, June 5, 2026".
+function fmtPrefDate(val) {
+  if (!val) return '—';
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
+  if (!m) return val;
+  var WD = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var MO = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var dt = new Date(+m[1], +m[2] - 1, +m[3]);
+  return WD[dt.getDay()] + ', ' + MO[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+}
+
+// Renders the scheduling panel for a lead with an accepted quote: a confirmed
+// banner once booked, or the requested time + Approve/Deny actions while pending.
+// Approve/Deny hit the same /approve-schedule and /deny-schedule routes the email
+// buttons use. `compact` trims padding for the leads-list cards. Returns '' when
+// there's nothing to show.
+function schedulingPanel(lead, quote, compact) {
+  if (!quote || !quote.accepted_at || !quote.pref_date) return '';
+  var pad = compact ? '12px' : '16px';
+  if (lead.status === 'booked') {
+    return '<div style="background:#eaf6ee;border:1px solid #bfe3cb;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
+      + '<div style="font-weight:700;color:#1a7a3a;font-size:0.9rem;">&#10003; Appointment confirmed</div>'
+      + '<div style="color:#444;font-size:0.85rem;margin-top:3px;">' + esc(fmtPrefDate(quote.pref_date)) + ' at ' + esc(quote.pref_time || '—') + '</div>'
+      + '</div>';
+  }
+  if (lead.status !== 'quote_accepted') return '';
+  return '<div style="background:#e3f0ff;border:1px solid #b9d4f5;border-left:4px solid #4169e1;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
+    + '<div style="font-weight:700;color:#0a1f3d;font-size:0.9rem;margin-bottom:8px;">Requested Appointment</div>'
+    + '<div style="font-size:0.88rem;color:#1a2a3a;">' + esc(fmtPrefDate(quote.pref_date)) + ' at <strong>' + esc(quote.pref_time || '—') + '</strong></div>'
+    + (quote.pref_location ? '<div style="font-size:0.83rem;color:#666;margin-top:2px;">' + esc(quote.pref_location) + '</div>' : '')
+    + (quote.scheduling_notes ? '<div style="font-size:0.82rem;color:#666;font-style:italic;margin-top:4px;">' + esc(quote.scheduling_notes) + '</div>' : '')
+    + '<div style="display:flex;gap:8px;margin-top:12px;">'
+    + '<a href="/admin/quote/' + lead.id + '/approve-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#1a7a3a;color:#fff;border:none;">&#10003; Approve Time</a>'
+    + '<a href="/admin/quote/' + lead.id + '/deny-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#c0392b;color:#fff;border:none;">&#10005; Not Available</a>'
+    + '</div></div>';
+}
+
 async function notifyStageChange(req, lead, newStatus) {
   if (!process.env.SMTP_PASS) return;
   var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed' };
@@ -517,6 +554,9 @@ router.get('/', requireAuth, function(req, res) {
   var cardsHtml = leads.length === 0
     ? '<div class="empty"><div style="font-size:2rem;margin-bottom:10px;">&#128203;</div>' + emptyMsg + '</div>'
     : leads.map(function(l) {
+        var sched = (l.status === 'quote_accepted' || l.status === 'booked')
+          ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
+          : null;
         return '<div class="card">'
           + '<div class="row-sb">'
           + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
@@ -526,6 +566,7 @@ router.get('/', requireAuth, function(req, res) {
           + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
           + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
           + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
+          + '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>'
           + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;">'
           + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
           + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;">Open Quote</a>'
@@ -595,6 +636,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + quoteAlert
+
+    // Scheduling request / Approve-Deny (pending) or confirmed banner
+    + schedulingPanel(lead, q, false)
 
     // Customer info card
     + '<div class="card">'
