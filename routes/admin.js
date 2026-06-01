@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const PRICING = require('../pricing');
 const { client: squareClient } = require('../square');
+const { toEasternRfc3339 } = require('../datetime');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'brakeknights';
 
@@ -86,24 +87,6 @@ async function getSquareSvcVar() {
   return _squareSvcVar;
 }
 
-// Converts pref_date (YYYY-MM-DD) + pref_time ("9:00 AM") to RFC 3339 in America/New_York
-function parseSquareDateTime(date, time) {
-  if (!date) return null;
-  var t = (time && time !== 'Anytime') ? time : '9:00 AM';
-  var m = /^(\d+):(\d+)\s*(AM|PM)$/i.exec(t);
-  if (!m) return null;
-  var h = parseInt(m[1], 10), min = parseInt(m[2], 10);
-  if (/PM/i.test(m[3]) && h !== 12) h += 12;
-  if (/AM/i.test(m[3]) && h === 12) h = 0;
-  var parts = date.split('-').map(Number);
-  var yr = parts[0], mo = parts[1], dy = parts[2];
-  function nthSun(y, mth, n) { var d = new Date(y, mth - 1, 1).getDay(); return (d === 0 ? 1 : 8 - d) + (n - 1) * 7; }
-  var dstOn  = new Date(yr, 2,  nthSun(yr, 3,  2), 2);
-  var dstOff = new Date(yr, 10, nthSun(yr, 11, 1), 2);
-  var target = new Date(yr, mo - 1, dy, h, min);
-  var off = (target >= dstOn && target < dstOff) ? '-04:00' : '-05:00';
-  return date + 'T' + String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0') + ':00' + off;
-}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -383,7 +366,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
 
   // Square calendar booking
   try {
-    var startAt = parseSquareDateTime(quote.pref_date, quote.pref_time);
+    var startAt = toEasternRfc3339(quote.pref_date, quote.pref_time);
     if (startAt) {
       var svcVar = await getSquareSvcVar();
       if (svcVar && svcVar.id) {
@@ -423,6 +406,8 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         var dt = new Date(+m[1], +m[2]-1, +m[3]);
         return WEEKDAYS[dt.getDay()] + ', ' + MONTHS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
       }
+      var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+      var calendarUrl = baseUrl + '/quote/' + quote.id + '/' + quote.accept_token + '/calendar.ics';
       var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
         + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
         + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
@@ -438,6 +423,10 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(quote.pref_time || '—') + '</td></tr>'
         + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(quote.pref_location || '—') + '</td></tr>'
         + '</table></div>'
+        + '<div style="text-align:center;margin:0 0 24px;">'
+        + '<a href="' + calendarUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">&#128197; Add to Calendar</a>'
+        + '<p style="color:#888;font-size:0.8rem;margin:10px 0 0;">Works with Apple Calendar, Google Calendar, and Outlook.</p>'
+        + '</div>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'

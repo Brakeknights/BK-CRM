@@ -2,6 +2,17 @@ const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
 const db = require('../db');
+const { toEasternRfc3339 } = require('../datetime');
+
+// Formats a JS Date as an ICS UTC timestamp, e.g. 20260608T160000Z.
+function icsUtc(d) {
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+// Escapes text for an ICS field (commas, semicolons, backslashes, newlines).
+function icsEscape(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -146,6 +157,45 @@ function loadQuote(id, token) {
   if (!q || !q.accept_token || q.accept_token !== token) return null;
   return q;
 }
+
+// ─── Calendar file (.ics) ─────────────────────────────────────────────────────
+// Token-protected so it works straight from the confirmation email. Universal:
+// adds the appointment on Apple Calendar, Google Calendar, and Outlook.
+router.get('/:id/:token/calendar.ics', function(req, res) {
+  var q = loadQuote(req.params.id, req.params.token);
+  if (!q || !q.pref_date) return res.status(404).send('Appointment not found.');
+
+  var startRfc = toEasternRfc3339(q.pref_date, q.pref_time);
+  if (!startRfc) return res.status(404).send('Appointment time unavailable.');
+  var start = new Date(startRfc);
+  var end = new Date(start.getTime() + 90 * 60 * 1000); // 90-minute service window
+
+  var summary = 'Brake Knights — ' + (q.service || 'Brake Service');
+  var desc = 'Mobile brake service' + (q.service ? ' (' + q.service + ')' : '')
+    + '. Total: $' + fmt(q.total) + '. Questions? Call or text 703-977-4475.';
+
+  var ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Brake Knights//Appointments//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:bk-quote-' + q.id + '@brakeknights.com',
+    'DTSTAMP:' + icsUtc(new Date()),
+    'DTSTART:' + icsUtc(start),
+    'DTEND:' + icsUtc(end),
+    'SUMMARY:' + icsEscape(summary),
+    'LOCATION:' + icsEscape(q.pref_location || ''),
+    'DESCRIPTION:' + icsEscape(desc),
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+
+  res.set('Content-Type', 'text/calendar; charset=utf-8');
+  res.set('Content-Disposition', 'attachment; filename="brakeknights-appointment.ics"');
+  res.send(ics);
+});
 
 // ─── Accept page (GET) ────────────────────────────────────────────────────────
 
