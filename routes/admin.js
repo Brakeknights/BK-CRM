@@ -59,7 +59,7 @@ async function getSquareSvcVar() {
       return _squareSvcVar;
     }
   } catch (_) {}
-  var result = await squareClient.catalog.upsert({
+  var result = await squareClient.catalog.object.upsert({
     idempotencyKey: 'bk-mobile-brake-service-v1',
     object: {
       type: 'ITEM',
