@@ -165,7 +165,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .svc-clear-btn{margin-top:7px;padding:6px 12px;border:1.5px solid #dde3ea;border-radius:6px;background:#fff;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;}
 .svc-clear-btn:hover{border-color:#c0c8d8;color:#555;}
 .svc-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-height:0;}
-.svc-tag{display:inline-flex;align-items:center;gap:5px;background:#4169e1;color:#fff;border-radius:20px;padding:4px 10px 4px 12px;font-size:0.78rem;font-weight:600;}
+.svc-tag{display:inline-flex;align-items:center;gap:5px;background:#4169e1;color:#fff;border-radius:20px;padding:4px 12px 4px 10px;font-size:0.78rem;font-weight:600;}
 .svc-tag-x{cursor:pointer;font-size:0.9rem;line-height:1;opacity:.8;border:none;background:none;color:#fff;padding:0;}
 `;
 
@@ -607,7 +607,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var box=document.getElementById("svcTags");'
     +   'box.innerHTML=names.map(function(n){'
     +     'var abbr=n.replace(/Front/g,"Fr").replace(/Rear/g,"Rr").replace(/Pads/g,"Pads").replace(/Rotors/g,"Rotors").replace(/and /g,"& ").replace(/Brake /g,"").replace(/Fluid /g,"Fluid ").replace(/Replacement/g,"Repl.");'
-    +     'return "<span class=\'svc-tag\'>"+abbr+"<button type=\'button\' class=\'svc-tag-x\' onclick=\'removeTag(this)\' data-val=\'"+n+"\'>&#10005;</button></span>";'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'removeTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+abbr+"</span>";'
     +   '}).join("");'
     + '}'
 
