@@ -391,6 +391,8 @@ section { padding: 72px 0; }
 .form-group input,
 .form-group textarea,
 .form-group select {
+  width: 100%;
+  box-sizing: border-box;
   background: rgba(255,255,255,.08);
   border: 1px solid rgba(255,255,255,.15);
   color: var(--white);

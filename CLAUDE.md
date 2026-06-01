@@ -177,10 +177,13 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
+- [ ] Vehicle year/make/model cascading dropdowns on contact forms (replace free-text vehicle field) — use NHTSA free API (vpic.nhtsa.dot.gov) for model lookup, no data to maintain; tackle after Phase 3B/3C
 - [ ] Finalize pricing table by vehicle type (required before Phase 8)
+- [ ] Provide prices for incomplete services in pricing.js: Brake Fluid Flush, Brake Inspection, Caliper Replacement, Brake Hose Replacement (currently all $0)
 - [ ] CRM improvement: tag submission source (homepage vs contact page) in Square customer note
 - [ ] CRM improvement: replace flat note field with structured data fields once Phase 7 CRM is built
 - [ ] CRM improvement: add visible alert/logging if Square customer sync fails on a form submission
+- [ ] Customer auto-nudge: if a sent quote has not been accepted after X hours, automatically send the customer a gentle follow-up email ("Just checking in — your quote is still available"). Currently manual; add as opt-in feature once Phase 3D is tested in production.
 
 ### Completed This Session
 - [x] Phase 2: auto-create Square customer when contact form is submitted — live on master

@@ -1,12 +1,26 @@
 const express = require('express');
 const path = require('path');
+const session = require('express-session');
 const nodemailer = require('nodemailer');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
+const db = require('./db');
+const adminRouter = require('./routes/admin');
+const quoteRouter = require('./routes/quote');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'bk-dev-secret-change-in-prod',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 8 * 60 * 60 * 1000 }
+}));
+
+app.use('/admin', adminRouter);
+app.use('/quote', quoteRouter);
 app.use('/images', express.static(path.join(__dirname, 'public/images'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 }));
@@ -27,11 +41,19 @@ app.get('/api/square/verify', async (req, res) => {
 
 
 app.post('/api/contact', async (req, res) => {
-  const { firstName, lastName, phone, email, vehicle, preferredContact, message, source } = req.body;
+  const { firstName, lastName, phone, email, vehicle, service, preferredContact, message, source } = req.body;
 
   if (!firstName || !lastName || !phone) {
     return res.status(400).json({ success: false, error: 'Missing required fields' });
   }
+
+  // Save lead to database
+  const lead = db.prepare(
+    'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, message, preferred_contact, source) VALUES (?,?,?,?,?,?,?,?,?)'
+  ).run(firstName, lastName, phone, email || null, vehicle || null, service || null, message || null, preferredContact || null, source || null);
+  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Lead created', ?)").run(
+    lead.lastInsertRowid, [service, vehicle, source].filter(Boolean).join(' — ') || null
+  );
 
   if (!process.env.SMTP_PASS) {
     console.error('SMTP_PASS environment variable is not set');
@@ -48,23 +70,30 @@ app.post('/api/contact', async (req, res) => {
     }
   });
 
+  const baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+  const adminUrl = baseUrl + '/admin/quote/' + lead.lastInsertRowid;
+
   // Internal notification email to Brake Knights
   const internalHtml = `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #ddd;border-radius:8px;">
       <div style="background:#0a1f3d;padding:16px 20px;border-radius:6px 6px 0 0;margin:-20px -20px 20px;">
-        <h2 style="color:#c9a84c;margin:0;font-size:1.3rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;border-radius:4px;"> New Service Request — Brake Knights</h2>
+        <h2 style="color:#6b8ff5;margin:0;font-size:1.3rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;border-radius:4px;"> New Service Request — Brake Knights</h2>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:0.95rem;">
         <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;width:130px;">Name</td><td style="padding:8px 12px;">${firstName} ${lastName}</td></tr>
         <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Phone</td><td style="padding:8px 12px;"><a href="tel:${phone}">${phone}</a></td></tr>
         <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Email</td><td style="padding:8px 12px;"><a href="mailto:${email}">${email || 'Not provided'}</a></td></tr>
         <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Vehicle</td><td style="padding:8px 12px;">${vehicle || 'Not provided'}</td></tr>
-        <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Preferred Contact</td><td style="padding:8px 12px;">${preferredContact || 'Not specified'}</td></tr>
-        <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Message</td><td style="padding:8px 12px;">${message || 'None'}</td></tr>
+        <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Service</td><td style="padding:8px 12px;">${service || 'Not specified'}</td></tr>
+        <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Preferred Contact</td><td style="padding:8px 12px;">${preferredContact || 'Not specified'}</td></tr>
+        <tr><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Message</td><td style="padding:8px 12px;">${message || 'None'}</td></tr>
         <tr style="background:#f9f9f9;"><td style="padding:8px 12px;font-weight:bold;color:#0a1f3d;">Source</td><td style="padding:8px 12px;">${source || 'Website'}</td></tr>
       </table>
-      <div style="margin-top:20px;padding:12px;background:#fff8e1;border-left:4px solid #c9a84c;border-radius:4px;font-size:0.85rem;color:#555;">
+      <div style="margin-top:20px;padding:12px;background:#e3f0ff;border-left:4px solid #4169e1;border-radius:4px;font-size:0.85rem;color:#555;">
         Reply directly to this email to respond to the customer.
+      </div>
+      <div style="margin-top:14px;text-align:center;">
+        <a href="${adminUrl}" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 26px;border-radius:8px;">Open in Admin &rarr;</a>
       </div>
     </div>
   `;
@@ -80,9 +109,12 @@ app.post('/api/contact', async (req, res) => {
 
       <!-- Body -->
       <div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">
-        <h2 style="color:#0a1f3d;margin:0 0 12px;font-size:1.2rem;">Hi ${firstName}, we got your message!</h2>
+        <h2 style="color:#0a1f3d;margin:0 0 12px;font-size:1.2rem;">Greetings ${firstName},</h2>
+        <p style="color:#444;line-height:1.6;margin:0 0 12px;">
+          Thanks for reaching out to Brake Knights. A knight is already reviewing your request.
+        </p>
         <p style="color:#444;line-height:1.6;margin:0 0 24px;">
-          Thanks for reaching out to Brake Knights. We'll review your information and get back to you shortly to discuss your brake service and provide a quote.
+          You'll receive a personalized quote specific to your vehicle and the service you need — typically within a few hours. Every quote is reviewed and sent by us directly, not generated automatically.
         </p>
 
         <!-- Request summary -->
@@ -92,6 +124,7 @@ app.post('/api/contact', async (req, res) => {
             <tr><td style="padding:5px 0;color:#888;width:90px;">Name</td><td style="padding:5px 0;">${firstName} ${lastName}</td></tr>
             <tr><td style="padding:5px 0;color:#888;">Phone</td><td style="padding:5px 0;">${phone}</td></tr>
             ${vehicle ? `<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">${vehicle}</td></tr>` : ''}
+            ${service ? `<tr><td style="padding:5px 0;color:#888;">Service</td><td style="padding:5px 0;">${service}</td></tr>` : ''}
             ${preferredContact ? `<tr><td style="padding:5px 0;color:#888;">Preferred Contact</td><td style="padding:5px 0;">${preferredContact}</td></tr>` : ''}
             ${message ? `<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Notes</td><td style="padding:5px 0;">${message}</td></tr>` : ''}
           </table>
@@ -100,8 +133,8 @@ app.post('/api/contact', async (req, res) => {
         <!-- What to expect -->
         <p style="color:#0a1f3d;font-weight:bold;margin:0 0 10px;font-size:0.95rem;">What happens next?</p>
         <ol style="color:#444;line-height:1.8;margin:0 0 24px;padding-left:20px;font-size:0.9rem;">
-          <li>We'll review your message and reach out by phone, text, or email to discuss your service and provide a quote.</li>
-          <li>Once you're happy with the quote, we'll schedule a time and location that works for you.</li>
+          <li>We review your request and send you a personalized quote by phone, text, or email.</li>
+          <li>Once you approve the quote, we schedule a time and location that works for you.</li>
           <li>Our knight comes to you — fully equipped, no shop visit needed.</li>
         </ol>
 
@@ -144,8 +177,12 @@ app.post('/api/contact', async (req, res) => {
     res.json({ success: true });
 
     // Create or find Square customer — runs after response so it never blocks the form
-    createOrFindSquareCustomer({ firstName, lastName, phone, email, vehicle, note: message })
-      .then(r => console.log(`Square customer ${r.action}: ${r.customerId}`))
+    const squareNote = [service && `Service: ${service}`, vehicle && `Vehicle: ${vehicle}`, message].filter(Boolean).join(' | ');
+    createOrFindSquareCustomer({ firstName, lastName, phone, email, vehicle, note: squareNote })
+      .then(r => {
+        console.log(`Square customer ${r.action}: ${r.customerId}`);
+        db.prepare('UPDATE leads SET square_customer_id = ? WHERE id = ?').run(r.customerId, lead.lastInsertRowid);
+      })
       .catch(err => console.error('Square customer sync error:', err.message));
   } catch (err) {
     console.error('Email send error:', err.code, err.message);
@@ -156,3 +193,104 @@ app.post('/api/contact', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Brakeknights server running on port ${PORT}`);
 });
+
+// Returns the current hour (0-23) in Eastern Time, accounting for DST automatically.
+function easternHour() {
+  return parseInt(new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone: 'America/New_York' }).format(new Date()), 10);
+}
+
+// Unaccepted quote reminder: if a sent quote has not been accepted after 4 hours,
+// send a reminder to the owner. Suppressed overnight — only fires 9 AM to 9 PM ET.
+setInterval(function() {
+  if (!process.env.SMTP_PASS) return;
+  var h = easternHour();
+  if (h < 9 || h >= 21) return; // outside business hours — check again next hour
+
+  var pending = db.prepare(
+    "SELECT q.*, l.first_name, l.last_name, l.phone, l.email, l.service AS lead_service "
+    + "FROM quotes q JOIN leads l ON l.id = q.lead_id "
+    + "WHERE q.accepted_at IS NULL AND q.sent_at IS NOT NULL AND q.quote_followup_sent = 0 "
+    + "AND (julianday('now') - julianday(q.sent_at)) * 24 >= 4"
+  ).all();
+  if (pending.length === 0) return;
+
+  var transporter = nodemailer.createTransport({
+    host: 'smtp.hostinger.com',
+    port: 465,
+    secure: true,
+    auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS }
+  });
+
+  pending.forEach(function(q) {
+    var name = q.first_name + ' ' + q.last_name;
+    var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+      + '<div style="background:#0a1f3d;padding:14px 20px;"><h2 style="color:#6b8ff5;margin:0;font-size:1.1rem;">Reminder: Quote Not Yet Accepted</h2></div>'
+      + '<div style="padding:20px;">'
+      + '<p style="margin:0 0 14px;color:#444;font-size:0.95rem;"><strong>' + name + '</strong> was sent a quote over 4 hours ago and hasn\'t accepted yet.</p>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:0.92rem;">'
+      + '<tr><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;width:120px;">Phone</td><td style="padding:6px 10px;"><a href="tel:' + q.phone + '">' + q.phone + '</a></td></tr>'
+      + (q.email ? '<tr style="background:#f9f9f9;"><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Email</td><td style="padding:6px 10px;">' + q.email + '</td></tr>' : '')
+      + (q.service ? '<tr><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Service</td><td style="padding:6px 10px;">' + q.service + '</td></tr>' : '')
+      + '<tr style="background:#f9f9f9;"><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Total</td><td style="padding:6px 10px;">$' + Number(q.total || 0).toFixed(2) + '</td></tr>'
+      + '</table>'
+      + '<div style="margin-top:16px;text-align:center;">'
+      + '<a href="https://brakeknights.com/admin/quote/' + q.lead_id + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:12px 28px;border-radius:8px;">Open in Admin</a>'
+      + '</div>'
+      + '<p style="margin:14px 0 0;font-size:0.83rem;color:#aaa;text-align:center;">This reminder fires once per quote. Follow up manually if needed.</p>'
+      + '</div></div>';
+
+    db.prepare('UPDATE quotes SET quote_followup_sent = 1 WHERE id = ?').run(q.id);
+
+    transporter.sendMail({
+      from:    '"BK Admin" <greetings@brakeknights.com>',
+      to:      'greetings@brakeknights.com',
+      subject: 'Follow up: ' + name + ' hasn\'t accepted their quote yet',
+      html
+    }).catch(function(err) { console.error('Quote follow-up reminder error:', err.message); });
+  });
+}, 60 * 60 * 1000); // check every hour
+
+// Auto follow-up: if a lead has been in quote_accepted for 48h with no further action,
+// send a reminder email to the owner and mark followup_sent so it only fires once.
+setInterval(function() {
+  if (!process.env.SMTP_PASS) return;
+  var stale = db.prepare(
+    "SELECT * FROM leads WHERE status = 'quote_accepted' AND followup_sent = 0 "
+    + "AND status_updated_at IS NOT NULL "
+    + "AND (julianday('now') - julianday(status_updated_at)) * 24 >= 48"
+  ).all();
+  if (stale.length === 0) return;
+
+  var transporter = nodemailer.createTransport({
+    host: 'smtp.hostinger.com',
+    port: 465,
+    secure: true,
+    auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS }
+  });
+
+  stale.forEach(function(lead) {
+    var name = lead.first_name + ' ' + lead.last_name;
+    var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+      + '<div style="background:#e07000;padding:14px 20px;"><h2 style="color:#fff;margin:0;font-size:1.1rem;">Reminder: Pending Accepted Quote</h2></div>'
+      + '<div style="padding:20px;">'
+      + '<p style="margin:0 0 14px;color:#444;font-size:0.95rem;"><strong>' + lead.first_name + ' ' + lead.last_name + '</strong> accepted their quote 48 hours ago and is still waiting to be scheduled.</p>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:0.92rem;">'
+      + '<tr><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;width:120px;">Phone</td><td style="padding:6px 10px;"><a href="tel:' + lead.phone + '">' + lead.phone + '</a></td></tr>'
+      + (lead.email ? '<tr style="background:#f9f9f9;"><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Email</td><td style="padding:6px 10px;">' + lead.email + '</td></tr>' : '')
+      + (lead.service ? '<tr><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Service</td><td style="padding:6px 10px;">' + lead.service + '</td></tr>' : '')
+      + '</table>'
+      + '<div style="margin-top:16px;text-align:center;">'
+      + '<a href="https://brakeknights.com/admin/quote/' + lead.id + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:12px 28px;border-radius:8px;">Open in Admin</a>'
+      + '</div>'
+      + '</div></div>';
+
+    db.prepare('UPDATE leads SET followup_sent = 1 WHERE id = ?').run(lead.id);
+
+    transporter.sendMail({
+      from:    '"BK Admin" <greetings@brakeknights.com>',
+      to:      'greetings@brakeknights.com',
+      subject: 'Reminder: ' + name + ' — accepted quote not yet scheduled',
+      html
+    }).catch(function(err) { console.error('Follow-up reminder error:', err.message); });
+  });
+}, 60 * 60 * 1000); // check every hour
