@@ -179,6 +179,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
 - [ ] Vehicle year/make/model cascading dropdowns on contact forms (replace free-text vehicle field) — use NHTSA free API (vpic.nhtsa.dot.gov) for model lookup, no data to maintain; tackle after Phase 3B/3C
 - [ ] Finalize pricing table by vehicle type (required before Phase 8)
+- [ ] Provide prices for incomplete services in pricing.js: Brake Fluid Flush, Brake Inspection, Caliper Replacement, Brake Hose Replacement (currently all $0)
 - [ ] CRM improvement: tag submission source (homepage vs contact page) in Square customer note
 - [ ] CRM improvement: replace flat note field with structured data fields once Phase 7 CRM is built
 - [ ] CRM improvement: add visible alert/logging if Square customer sync fails on a form submission
