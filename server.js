@@ -3,6 +3,7 @@ const path = require('path');
 const session = require('express-session');
 const nodemailer = require('nodemailer');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
+const { toEasternRfc3339 } = require('./datetime');
 const db = require('./db');
 const adminRouter = require('./routes/admin');
 const quoteRouter = require('./routes/quote');
@@ -328,3 +329,87 @@ setInterval(function() {
     }).catch(function(err) { console.error('Follow-up reminder error:', err.message); });
   });
 }, 60 * 60 * 1000); // check every hour
+
+// ─── Appointment reminders (customer) ────────────────────────────────────────
+// Branded email reminders for confirmed (booked) appointments, each sent once:
+//   • ~24 hours before the appointment time
+//   • ~2 hours before the appointment time
+// Uses our own emails — disable Square Appointments' automatic reminders to
+// avoid customers getting duplicates. Checks every 15 minutes.
+function buildReminderEmail(q, soonText) {
+  function e(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtDate(val) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val || '');
+    if (!m) return val || '—';
+    var WD = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var MO = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    return WD[dt.getDay()] + ', ' + MO[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+  }
+  var calendarUrl = 'https://brakeknights.com/quote/' + q.id + '/' + q.accept_token + '/calendar.ics';
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
+    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
+    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p></div>'
+    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+    + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Appointment reminder</h2>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Greetings ' + e(q.first_name) + ', this is a friendly reminder that your brake service appointment is coming up ' + soonText + '.</p>'
+    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
+    + '<tr><td style="padding:5px 0;color:#888;width:100px;">Service</td><td style="padding:5px 0;font-weight:600;">' + e(q.service) + '</td></tr>'
+    + '<tr><td style="padding:5px 0;color:#888;">Date</td><td style="padding:5px 0;">' + e(fmtDate(q.pref_date)) + '</td></tr>'
+    + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + e(q.pref_time || '—') + '</td></tr>'
+    + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + e(q.pref_location || '—') + '</td></tr>'
+    + '</table></div>'
+    + '<div style="text-align:center;margin:0 0 24px;">'
+    + '<a href="' + calendarUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">&#128197; Add to Calendar</a>'
+    + '</div>'
+    + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Need to reschedule? Call or text:</p>'
+    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+    + '</div></div>'
+    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
+}
+
+setInterval(function() {
+  if (!process.env.SMTP_PASS) return;
+
+  var rows = db.prepare(
+    "SELECT q.*, l.first_name, l.email AS lead_email "
+    + "FROM quotes q JOIN leads l ON l.id = q.lead_id "
+    + "WHERE l.status = 'booked' AND q.accepted_at IS NOT NULL AND q.pref_date IS NOT NULL "
+    + "AND l.email IS NOT NULL AND (q.reminder_24h_sent = 0 OR q.reminder_2h_sent = 0)"
+  ).all();
+  if (rows.length === 0) return;
+
+  var now = Date.now();
+  var transporter = null;
+  function tx() {
+    if (!transporter) transporter = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+    return transporter;
+  }
+
+  rows.forEach(function(q) {
+    var startRfc = toEasternRfc3339(q.pref_date, q.pref_time);
+    if (!startRfc) return;
+    var start = new Date(startRfc).getTime();
+    if (now >= start) return; // appointment already passed
+
+    // 24h reminder fires in the [start-24h, start-2h) window; 2h reminder from
+    // start-2h onward. They're mutually exclusive per run, so at most one sends.
+    var send24 = !q.reminder_24h_sent && now >= start - 24 * 3600 * 1000 && now < start - 2 * 3600 * 1000;
+    var send2  = !q.reminder_2h_sent  && now >= start - 2 * 3600 * 1000;
+    if (!send24 && !send2) return;
+
+    var col = send2 ? 'reminder_2h_sent' : 'reminder_24h_sent';
+    var soonText = send2 ? 'shortly' : 'soon';
+    db.prepare('UPDATE quotes SET ' + col + ' = 1 WHERE id = ?').run(q.id);
+
+    tx().sendMail({
+      from:    '"Brake Knights" <greetings@brakeknights.com>',
+      to:      q.lead_email,
+      subject: 'Reminder: Your Brake Knights appointment',
+      html:    buildReminderEmail(q, soonText)
+    }).catch(function(err) { console.error('Appointment reminder error:', err.message); });
+  });
+}, 15 * 60 * 1000); // check every 15 minutes

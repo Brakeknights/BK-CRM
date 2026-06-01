@@ -66,6 +66,8 @@ addQuoteCol('pref_time',           'TEXT');
 addQuoteCol('pref_location',       'TEXT');
 addQuoteCol('scheduling_notes',    'TEXT');
 addQuoteCol('quote_followup_sent', 'INTEGER DEFAULT 0');
+addQuoteCol('reminder_24h_sent',   'INTEGER DEFAULT 0');
+addQuoteCol('reminder_2h_sent',    'INTEGER DEFAULT 0');
 
 const leadCols = db.prepare("PRAGMA table_info(leads)").all().map(c => c.name);
 const addLeadCol = (name, def) => {
