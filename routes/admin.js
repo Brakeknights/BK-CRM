@@ -390,6 +390,34 @@ router.get('/square-info', requireAuth, async function(req, res) {
   res.type('json').send(JSON.stringify(out, null, 2));
 });
 
+// ─── Sandbox-only test seed (temporary) ──────────────────────────────────────
+// Creates a lead already in 'quote_accepted' with a pending scheduling request,
+// so the Approve/Deny panel and confirmation/calendar email can be tested in one
+// tap. Sandbox-only; 403 on the live site so it can't create junk leads.
+router.get('/seed-test-lead', requireAuth, function(req, res) {
+  var isSandbox = process.env.SQUARE_ENV === 'sandbox' || !process.env.SQUARE_ACCESS_TOKEN;
+  if (!isSandbox) return res.status(403).send('Seed route is sandbox-only.');
+
+  var d = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000); // 2 days out
+  var prefDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+  var leadInfo = db.prepare(
+    "INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status, status_updated_at) "
+    + "VALUES ('Sandbox', 'Tester', '7039774475', 'greetings@brakeknights.com', '2010 Mazda CX-7', 'Front Pads and Rotors', 'sandbox-test', 'quote_accepted', datetime('now'))"
+  ).run();
+  var leadId = leadInfo.lastInsertRowid;
+
+  db.prepare(
+    "INSERT INTO quotes (lead_id, service, tier, total, accept_token, sent_at, accepted_at, pref_date, pref_time, pref_location, status) "
+    + "VALUES (?, 'Front Pads and Rotors', 'standard', 525.37, ?, datetime('now'), datetime('now'), ?, '11:00 AM', '43850 Heatherstone Ter', 'accepted')"
+  ).run(leadId, crypto.randomBytes(16).toString('hex'), prefDate);
+
+  logHistory(leadId, 'Lead created', 'Sandbox test lead (seed)');
+  logHistory(leadId, 'Quote accepted by customer', prefDate + ' at 11:00 AM — 43850 Heatherstone Ter');
+
+  res.redirect('/admin/quote/' + leadId);
+});
+
 // ─── Approve / deny scheduling ────────────────────────────────────────────────
 
 router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) {
@@ -591,12 +619,18 @@ router.get('/', requireAuth, function(req, res) {
     + (search ? '<a href="/admin?status=' + esc(status) + '" style="padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;background:#fff;color:#666;text-decoration:none;font-size:0.9rem;white-space:nowrap;">&#10005; Clear</a>' : '')
     + '</form>';
 
+  var isSandbox = process.env.SQUARE_ENV === 'sandbox' || !process.env.SQUARE_ACCESS_TOKEN;
+  var sandboxTestBtn = isSandbox
+    ? '<a href="/admin/seed-test-lead" class="btn btn-outline btn-sm" style="display:block;text-align:center;margin-bottom:12px;border-color:#e0a000;color:#9a6f00;">&#129514; Create sandbox test lead (Quote Accepted)</a>'
+    : '';
+
   res.send(page('Leads',
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Leads</h1>'
     + '<span style="color:#aaa;font-size:0.83rem;">' + total + ' total</span>'
     + '</div>'
     + alert
+    + sandboxTestBtn
     + searchBar
     + '<div class="filter-tabs">' + tabsHtml + '</div>'
     + cardsHtml,
