@@ -606,7 +606,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var names=Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;});'
     +   'var box=document.getElementById("svcTags");'
     +   'box.innerHTML=names.map(function(n){'
-    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'removeTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
+    +     'var title=n.replace(/\\b\\w/g,function(c){return c.toUpperCase();});'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'removeTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+title+"</span>";'
     +   '}).join("");'
     + '}'
 
