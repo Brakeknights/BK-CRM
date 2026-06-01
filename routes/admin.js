@@ -828,7 +828,6 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
     +   'var tax=parseFloat(document.getElementById("taxH").value)||0;'
     +   'var tot=parseFloat(document.getElementById("totalH").value)||0;'
-    +   'var tierLabel=tier.charAt(0).toUpperCase()+tier.slice(1);'
     +   'var veh=vehicle?" for your <strong>"+vehicle+"</strong>":"";'
     +   'var toLine=leadEmail||"<em style=\'color:#e07000\'>(no email on file)</em>";'
     +   'var svcListHtml=svcNames.map(function(s){return "<li style=\'padding:3px 0;\'>"+s+"</li>";}).join("");'
@@ -839,7 +838,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+"<div style=\'font-size:0.82rem;color:#888;margin-bottom:8px;\'>Subject: Your Brake Service Quote — Brake Knights</div>"'
     +     '+"<hr class=\'preview-divider\'>"'
     +     '+"<p>Greetings "+firstName+",</p>"'
-    +     '+"<p style=\'margin-top:8px;\'>Here is your <strong>"+tierLabel+"</strong> quote"+veh+":</p>"'
+    +     '+"<p style=\'margin-top:8px;\'>Here is your quote"+veh+":</p>"'
     +     '+"<div style=\'margin:10px 0 4px;font-size:0.8rem;font-weight:700;color:#0a1f3d;text-transform:uppercase;letter-spacing:.4px;\'>Services Included</div>"'
     +     '+"<ul style=\'margin:0 0 12px;padding-left:18px;font-size:0.9rem;color:#1a2a3a;\'>"+svcListHtml+"</ul>"'
     +     '+"<table style=\'width:100%;margin:12px 0;font-size:0.88rem;border-collapse:collapse;\'>"'
@@ -856,7 +855,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("prevBtn").textContent="Hide Preview";'
     + '}'
 
-    + 'calc();'
+    // On load: if this is a brand-new quote (no saved quote yet) with a service
+    // already auto-filled from the lead, populate prices from the pricing table.
+    // Otherwise just total up the saved/edited values without overwriting them.
+    + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
     + 'renderTags();'
     + '</script>';
 
@@ -928,7 +930,6 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 // ─── Quote email (Phase 3C upgrades this to fully branded template) ───────────
 
 function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl) {
-  var tierLabel   = tier === 'premium' ? 'Premium' : 'Standard';
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
   return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">'
@@ -940,7 +941,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '</div>'
     + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
     + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Greetings ' + esc(lead.first_name) + ',</h2>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Here is your <strong>' + tierLabel + '</strong> quote' + vehicleBit + ':</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Here is your quote' + vehicleBit + ':</p>'
     + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
     + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 8px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Services Included</p>'
     + '<ul style="margin:0 0 16px;padding-left:18px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">'
