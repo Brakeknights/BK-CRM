@@ -177,7 +177,7 @@ function page(title, body, req) {
     + '<meta charset="UTF-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
     + '<meta name="robots" content="noindex,nofollow">'
-    + '<title>' + esc(title) + ' — BK Admin</title>'
+    + '<title>BK Admin' + (title && title !== 'Leads' ? ' — ' + esc(title) : '') + '</title>'
     + '<style>' + CSS + '</style>'
     + '</head><body>'
     + '<div class="topbar">'
@@ -244,6 +244,28 @@ router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: fals
   }
   var back = req.body.back || '/admin';
   res.redirect(back);
+});
+
+// ─── Square setup diagnostics (temporary) ────────────────────────────────────
+router.get('/square-info', requireAuth, async function(req, res) {
+  const { client } = require('../square');
+  const out = {};
+  try {
+    const r = await client.locations.list();
+    out.locations = (r.locations || []).map(l => ({ id: l.id, name: l.name, status: l.status }));
+  } catch (e) { out.locations = 'ERR: ' + e.message; }
+  try {
+    const r = await client.teamMembers.searchTeamMembers({ query: { filter: { statuses: ['ACTIVE'] } } });
+    out.teamMembers = (r.teamMembers || []).map(m => ({ id: m.id, name: (m.displayName || (m.givenName + ' ' + m.familyName)) }));
+  } catch (e) { out.teamMembers = 'ERR: ' + e.message; }
+  try {
+    const r = await client.catalog.list({ types: 'ITEM' });
+    out.catalogItems = (r.objects || []).filter(o => o.itemData?.productType === 'APPOINTMENTS_SERVICE').map(o => ({
+      id: o.id, name: o.itemData?.name,
+      variations: (o.itemData?.variations || []).map(v => ({ id: v.id, name: v.itemVariationData?.name, duration: v.itemVariationData?.serviceDuration }))
+    }));
+  } catch (e) { out.catalogItems = 'ERR: ' + e.message; }
+  res.type('json').send(JSON.stringify(out, null, 2));
 });
 
 // ─── Approve / deny scheduling ────────────────────────────────────────────────
