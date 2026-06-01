@@ -4,7 +4,7 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const db = require('../db');
 const PRICING = require('../pricing');
-const { client: squareClient, createOrFindSquareCustomer } = require('../square');
+const { client: squareClient } = require('../square');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'brakeknights';
 
@@ -370,48 +370,6 @@ router.get('/square-info', requireAuth, async function(req, res) {
   res.type('json').send(JSON.stringify(out, null, 2));
 });
 
-// ─── Sandbox-only test seed (temporary) ──────────────────────────────────────
-// Creates a ready-to-approve lead + accepted quote in one tap so the Square
-// booking flow can be tested with a single Approve click. Refuses to run outside
-// sandbox so it can never create junk leads on the live site.
-router.get('/seed-test-booking', requireAuth, async function(req, res) {
-  var isSandbox = process.env.SQUARE_ENV === 'sandbox' || !process.env.SQUARE_ACCESS_TOKEN;
-  if (!isSandbox) return res.status(403).send('Seed route is sandbox-only.');
-
-  // Preferred date: 7 days out at noon, in the pref_date (YYYY-MM-DD) / pref_time format.
-  var d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  var prefDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  var prefTime = '12:00 PM';
-  var prefLocation = '43850 Heatherstone Ter';
-
-  var leadInfo = db.prepare(
-    "INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status) " +
-    "VALUES (?, ?, ?, ?, ?, ?, 'sandbox-test', 'quote_accepted')"
-  ).run('Sandbox', 'Tester', '7039774475', 'greetings@brakeknights.com', '2010 Mazda CX-7', 'Front Pads and Rotors');
-  var leadId = leadInfo.lastInsertRowid;
-
-  // Attach a sandbox Square customer so the booking has a customerId.
-  try {
-    var cust = await createOrFindSquareCustomer({
-      firstName: 'Sandbox', lastName: 'Tester', phone: '7039774475',
-      email: 'greetings@brakeknights.com', vehicle: '2010 Mazda CX-7', note: 'Sandbox test lead'
-    });
-    if (cust && cust.customerId) db.prepare('UPDATE leads SET square_customer_id = ? WHERE id = ?').run(cust.customerId, leadId);
-  } catch (e) { /* booking can still be attempted without a customer */ }
-
-  db.prepare(
-    "INSERT INTO quotes (lead_id, service, tier, total, accept_token, sent_at, accepted_at, pref_date, pref_time, pref_location, status) " +
-    "VALUES (?, 'Front Pads and Rotors', 'standard', 525.37, ?, datetime('now'), datetime('now'), ?, ?, ?, 'accepted')"
-  ).run(leadId, crypto.randomBytes(16).toString('hex'), prefDate, prefTime, prefLocation);
-
-  logHistory(leadId, 'Lead created', 'Sandbox test lead (seed)');
-  logHistory(leadId, 'Quote accepted by customer', prefDate + ' at ' + prefTime + ' — ' + prefLocation);
-
-  // Fire the approval immediately so the seed exercises the full booking path in
-  // one tap (in production the owner clicks Approve from the acceptance email).
-  res.redirect('/admin/quote/' + leadId + '/approve-schedule');
-});
-
 // ─── Approve / deny scheduling ────────────────────────────────────────────────
 
 router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) {
@@ -603,18 +561,12 @@ router.get('/', requireAuth, function(req, res) {
     + (search ? '<a href="/admin?status=' + esc(status) + '" style="padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;background:#fff;color:#666;text-decoration:none;font-size:0.9rem;white-space:nowrap;">&#10005; Clear</a>' : '')
     + '</form>';
 
-  var isSandbox = process.env.SQUARE_ENV === 'sandbox' || !process.env.SQUARE_ACCESS_TOKEN;
-  var sandboxTestBtn = isSandbox
-    ? '<a href="/admin/seed-test-booking" class="btn btn-outline btn-sm" style="display:block;text-align:center;margin-bottom:12px;border-color:#e0a000;color:#9a6f00;">&#129514; Run sandbox test booking</a>'
-    : '';
-
   res.send(page('Leads',
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Leads</h1>'
     + '<span style="color:#aaa;font-size:0.83rem;">' + total + ' total</span>'
     + '</div>'
     + alert
-    + sandboxTestBtn
     + searchBar
     + '<div class="filter-tabs">' + tabsHtml + '</div>'
     + cardsHtml,

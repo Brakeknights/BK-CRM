@@ -133,8 +133,13 @@ Update this section at the end of each session to stay caught up next time.
 - Images and CSS served with `Cache-Control: no-cache` ✅
 - CSS version is at `?v=3` across all 45 pages
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
+- Square auto-booking (Approve → create calendar booking) is **code-complete and validated end-to-end in sandbox** ✅
+  - Location + team member now auto-discovered per environment (sandbox vs production), so no code change needed when production upgrades — see `getSquareLocationId` / `getSquareTeamMemberId` in `routes/admin.js`
+  - Fixed `catalog.upsert` → `catalog.object.upsert` (correct path for the installed Square SDK)
+  - **Only remaining blocker is the Square Appointments subscription tier.** Both sandbox (free) and production (free) return 403 "Merchant subscription does not support write operations" on `bookings.create`. The feature works the moment a paid Appointments plan (Plus/Premium) is active — no further code changes.
+  - The Approve action lives only as a link in the customer-acceptance email (`routes/quote.js`), not in the admin UI — possible future improvement: add an Approve button on the lead page.
 - Next steps:
-  1. Phase 2: auto-create Square customer when contact form is submitted
+  1. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking, or keep manual booking
   2. Add a good rotor-caliper photo to the brake inspection page (tabled — image rotation issue)
 
 ## Pre-Launch Checklist (Before Merging to Master)
