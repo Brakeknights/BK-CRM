@@ -42,7 +42,8 @@ function buildDateOptions() {
 
 // Time slots in 30-minute increments, 9:00 AM through 6:00 PM inclusive.
 function buildTimeOptions() {
-  var opts = '<option value="" disabled selected>Select a time…</option>';
+  var opts = '<option value="" disabled selected>Select a time…</option>'
+    + '<option value="Anytime">Anytime</option>';
   for (var mins = 9 * 60; mins <= 18 * 60; mins += 30) {
     var h24 = Math.floor(mins / 60);
     var m = mins % 60;
@@ -238,6 +239,15 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
   // Reload so the confirmation reflects the saved values.
   var fresh = loadQuote(req.params.id, req.params.token);
 
+  var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+
+  // Log to lead history
+  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(
+    q.lead_id,
+    'Quote accepted by customer',
+    (prefDate || '') + (prefTime ? ' at ' + prefTime : '') + (prefLocation ? ' — ' + prefLocation : '')
+  );
+
   // Fire emails after we have a valid record. Never let email failure break the page.
   if (process.env.SMTP_PASS) {
     try {
@@ -248,7 +258,7 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
         to:      'greetings@brakeknights.com',
         replyTo: q.lead_email || 'greetings@brakeknights.com',
         subject: 'Quote ACCEPTED: ' + q.first_name + ' ' + q.last_name + ' — needs scheduling',
-        html:    ownerAcceptedEmail(fresh)
+        html:    ownerAcceptedEmail(fresh, baseUrl)
       });
       // Customer auto-reply
       if (q.lead_email) {
@@ -289,9 +299,12 @@ function acceptedConfirmation(q) {
     + '<div class="callbar"><span class="muted">Need to change something? Call or text </span><a href="tel:+17039774475">703-977-4475</a></div>';
 }
 
-function ownerAcceptedEmail(q) {
+function ownerAcceptedEmail(q, baseUrl) {
+  var adminUrl   = (baseUrl || 'https://brakeknights.com') + '/admin/quote/' + q.lead_id;
+  var approveUrl = (baseUrl || 'https://brakeknights.com') + '/admin/quote/' + q.lead_id + '/approve-schedule';
+  var denyUrl    = (baseUrl || 'https://brakeknights.com') + '/admin/quote/' + q.lead_id + '/deny-schedule';
   return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
-    + '<div style="background:#1a7a3a;padding:16px 20px;"><h2 style="color:#fff;margin:0;font-size:1.2rem;">&#10003; Quote Accepted — Schedule It</h2></div>'
+    + '<div style="background:#1a7a3a;padding:16px 20px;"><h2 style="color:#fff;margin:0;font-size:1.2rem;">&#10003; Quote Accepted — Review Scheduling Request</h2></div>'
     + '<div style="padding:20px;">'
     + '<table style="width:100%;border-collapse:collapse;font-size:0.95rem;">'
     + '<tr><td style="padding:7px 10px;font-weight:bold;color:#0a1f3d;width:140px;">Customer</td><td style="padding:7px 10px;">' + esc(q.first_name) + ' ' + esc(q.last_name) + '</td></tr>'
@@ -309,7 +322,13 @@ function ownerAcceptedEmail(q) {
     + '<tr><td style="padding:4px 0;color:#888;vertical-align:top;">Location</td><td style="padding:4px 0;">' + esc(q.pref_location || '—') + '</td></tr>'
     + (q.scheduling_notes ? '<tr><td style="padding:4px 0;color:#888;vertical-align:top;">Notes</td><td style="padding:4px 0;">' + esc(q.scheduling_notes) + '</td></tr>' : '')
     + '</table></div>'
-    + '<p style="margin:16px 0 0;font-size:0.88rem;color:#666;">This lead is now marked <strong>Quote Accepted</strong> in the admin panel. Confirm the time or contact the customer about other openings.</p>'
+    + '<div style="margin-top:18px;display:flex;gap:10px;">'
+    + '<a href="' + approveUrl + '" style="flex:1;display:block;background:#1a7a3a;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 10px;border-radius:8px;text-align:center;">&#10003; Approve This Time</a>'
+    + '<a href="' + denyUrl + '" style="flex:1;display:block;background:#c0392b;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 10px;border-radius:8px;text-align:center;">&#10005; Time Not Available</a>'
+    + '</div>'
+    + '<div style="margin-top:10px;text-align:center;">'
+    + '<a href="' + adminUrl + '" style="color:#4169e1;font-size:0.88rem;text-decoration:none;font-weight:600;">Open in Admin &rarr;</a>'
+    + '</div>'
     + '</div></div>';
 }
 

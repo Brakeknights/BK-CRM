@@ -54,6 +54,16 @@ function requireAuth(req, res, next) {
   res.redirect('/admin/login');
 }
 
+function logHistory(leadId, event, detail) {
+  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(leadId, event, detail || null);
+}
+
+function fmtHistoryTime(dateStr) {
+  var d = new Date(dateStr + 'Z');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
 async function notifyStageChange(req, lead, newStatus) {
   if (!process.env.SMTP_PASS) return;
   var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed' };
@@ -154,6 +164,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .svc-check-item:has(input:checked) .svc-box::after{content:'✓';color:#fff;font-size:0.82rem;font-weight:800;line-height:1;}
 .svc-clear-btn{margin-top:7px;padding:6px 12px;border:1.5px solid #dde3ea;border-radius:6px;background:#fff;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;}
 .svc-clear-btn:hover{border-color:#c0c8d8;color:#555;}
+.svc-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-height:0;}
+.svc-tag{display:inline-flex;align-items:center;gap:5px;background:#4169e1;color:#fff;border-radius:20px;padding:4px 10px 4px 12px;font-size:0.78rem;font-weight:600;}
+.svc-tag-x{cursor:pointer;font-size:0.9rem;line-height:1;opacity:.8;border:none;background:none;color:#fff;padding:0;}
 `;
 
 function page(title, body, req) {
@@ -224,11 +237,91 @@ router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: fals
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).send('Lead not found');
   if (lead.status !== status) {
+    var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed' };
     db.prepare("UPDATE leads SET status = ?, status_updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
+    logHistory(lead.id, 'Status changed to ' + (statusLabels[status] || status));
     notifyStageChange(req, lead, status).catch(function(err) { console.error('Stage notification error:', err.message); });
   }
   var back = req.body.back || '/admin';
   res.redirect(back);
+});
+
+// ─── Approve / deny scheduling ────────────────────────────────────────────────
+
+router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
+  if (!quote) return res.redirect('/admin/quote/' + lead.id + '?msg=no_accepted_quote');
+
+  db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+  logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ' — ' + quote.pref_location : ''));
+
+  if (process.env.SMTP_PASS && lead.email) {
+    try {
+      var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      var WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      function fmtDate(val) {
+        if (!val) return '—';
+        var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
+        if (!m) return val;
+        var dt = new Date(+m[1], +m[2]-1, +m[3]);
+        return WEEKDAYS[dt.getDay()] + ', ' + MONTHS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+      }
+      var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
+        + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+        + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
+        + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p></div>'
+        + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+        + '<h2 style="color:#1a7a3a;margin:0 0 16px;">Your appointment is confirmed!</h2>'
+        + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Greetings ' + esc(lead.first_name) + ', your service appointment has been confirmed. See you then!</p>'
+        + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
+        + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
+        + '<tr><td style="padding:5px 0;color:#888;width:100px;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(quote.service) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#888;">Total</td><td style="padding:5px 0;font-weight:700;">$' + fmt(quote.total) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#888;">Date</td><td style="padding:5px 0;">' + esc(fmtDate(quote.pref_date)) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(quote.pref_time || '—') + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(quote.pref_location || '—') + '</td></tr>'
+        + '</table></div>'
+        + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
+        + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
+        + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+        + '</div></div>'
+        + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, subject: 'Your appointment is confirmed — Brake Knights', html });
+    } catch (err) { console.error('Approve schedule email error:', err.message); }
+  }
+  res.redirect('/admin/quote/' + lead.id + '?msg=approved');
+});
+
+router.get('/quote/:id/deny-schedule', requireAuth, async function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
+
+  logHistory(lead.id, 'Time denied', quote ? ((quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '')) : null);
+
+  if (process.env.SMTP_PASS && lead.email) {
+    try {
+      var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
+        + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+        + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
+        + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p></div>'
+        + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+        + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Greetings ' + esc(lead.first_name) + ',</h2>'
+        + '<p style="color:#444;line-height:1.6;margin:0 0 16px;">Unfortunately that date and time is not available. We will reach out to you shortly to discuss available times and confirm your booking.</p>'
+        + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">We apologize for the inconvenience and look forward to getting you scheduled soon.</p>'
+        + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
+        + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Feel free to call or text us directly:</p>'
+        + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+        + '</div></div>'
+        + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, subject: 'Scheduling update — Brake Knights', html });
+    } catch (err) { console.error('Deny schedule email error:', err.message); }
+  }
+  res.redirect('/admin/quote/' + lead.id + '?msg=denied');
 });
 
 // ─── Lead list ───────────────────────────────────────────────────────────────
@@ -353,7 +446,12 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(PRICING.services);
   var noEmail = !lead.email;
 
+  var quoteAlert = '';
+  if (req.query.msg === 'approved') quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
+  if (req.query.msg === 'denied')   quoteAlert = '<div class="alert alert-error" style="background:#fff8e1;color:#7a5a00;border-color:#f0d080;">Time denied. Customer notified — we\'ll reach out to reschedule.</div>';
+
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
+    + quoteAlert
 
     // Customer info card
     + '<div class="card">'
@@ -409,6 +507,24 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '</tbody></table></div></div>'
         : '')
 
+    // Lead history timeline
+    + (function() {
+        var history = db.prepare('SELECT * FROM lead_history WHERE lead_id = ? ORDER BY id ASC').all(lead.id);
+        if (history.length === 0) return '';
+        var rows = history.map(function(h) {
+          return '<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #f4f4f4;">'
+            + '<div style="width:10px;height:10px;border-radius:50%;background:#4169e1;flex-shrink:0;margin-top:5px;"></div>'
+            + '<div><div style="font-size:0.88rem;color:#1a2a3a;font-weight:600;">' + esc(h.event) + '</div>'
+            + (h.detail ? '<div style="font-size:0.82rem;color:#888;margin-top:2px;">' + esc(h.detail) + '</div>' : '')
+            + '<div style="font-size:0.78rem;color:#bbb;margin-top:2px;">' + fmtHistoryTime(h.created_at) + '</div>'
+            + '</div></div>';
+        }).join('');
+        return '<div class="card">'
+          + '<div class="section-title" style="margin-bottom:10px;">Lead History</div>'
+          + '<div style="padding-left:4px;">' + rows + '</div>'
+          + '</div>';
+      })()
+
     // Quote form
     + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf">'
     + '<div class="card">'
@@ -417,6 +533,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Service <span style="color:#bbb;font-weight:400;">(select all that apply)</span></label>'
     + serviceCheckboxes
     + '<button type="button" class="svc-clear-btn" onclick="clearServices()">&#10005; Clear selection</button>'
+    + '<div class="svc-tags" id="svcTags"></div>'
     + '</div>'
 
     + '<div class="form-group"><label>Tier</label>'
@@ -485,12 +602,29 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'updatePrices();'
     + '}'
 
+    + 'function renderTags(){'
+    +   'var names=Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;});'
+    +   'var box=document.getElementById("svcTags");'
+    +   'box.innerHTML=names.map(function(n){'
+    +     'var abbr=n.replace(/Front/g,"Fr").replace(/Rear/g,"Rr").replace(/Pads/g,"Pads").replace(/Rotors/g,"Rotors").replace(/and /g,"& ").replace(/Brake /g,"").replace(/Fluid /g,"Fluid ").replace(/Replacement/g,"Repl.");'
+    +     'return "<span class=\'svc-tag\'>"+abbr+"<button type=\'button\' class=\'svc-tag-x\' onclick=\'removeTag(this)\' data-val=\'"+n+"\'>&#10005;</button></span>";'
+    +   '}).join("");'
+    + '}'
+
+    + 'function removeTag(btn){'
+    +   'var val=btn.getAttribute("data-val");'
+    +   'var cb=Array.from(document.querySelectorAll(".svc-cb")).find(function(c){return c.value===val;});'
+    +   'if(cb){cb.checked=false;}'
+    +   'updatePrices();'
+    + '}'
+
     + 'function clearServices(){'
     +   'document.querySelectorAll(".svc-cb").forEach(function(cb){cb.checked=false;});'
     +   'document.getElementById("svcHidden").value="";'
     +   'document.getElementById("parts").value="0.00";'
     +   'document.getElementById("labor").value="0.00";'
     +   'document.getElementById("ss").value="0.00";'
+    +   'renderTags();'
     +   'calc();'
     + '}'
 
@@ -505,6 +639,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     'if(!p)return;'
     +     'totParts+=p.parts;totLabor+=p.labor;totSS+=p.shopSupplies;'
     +   '});'
+    +   'renderTags();'
     +   'if(names.length===0)return;'
     +   'document.getElementById("parts").value=totParts.toFixed(2);'
     +   'document.getElementById("labor").value=totLabor.toFixed(2);'
@@ -568,6 +703,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '}'
 
     + 'calc();'
+    + 'renderTags();'
     + '</script>';
 
   res.send(page('Quote — ' + lead.first_name + ' ' + lead.last_name, body, req));
@@ -597,7 +733,8 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
     + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
   ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, acceptToken, lead.email ? 'sent' : 'saved');
 
-  db.prepare('UPDATE leads SET status = ? WHERE id = ?').run('quoted', lead.id);
+  db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+  logHistory(lead.id, 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
 
   if (!lead.email) return res.redirect('/admin?msg=saved');
 

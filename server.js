@@ -51,6 +51,9 @@ app.post('/api/contact', async (req, res) => {
   const lead = db.prepare(
     'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, message, preferred_contact, source) VALUES (?,?,?,?,?,?,?,?,?)'
   ).run(firstName, lastName, phone, email || null, vehicle || null, service || null, message || null, preferredContact || null, source || null);
+  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Lead created', ?)").run(
+    lead.lastInsertRowid, [service, vehicle, source].filter(Boolean).join(' — ') || null
+  );
 
   if (!process.env.SMTP_PASS) {
     console.error('SMTP_PASS environment variable is not set');

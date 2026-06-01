@@ -43,6 +43,14 @@ db.exec(`
     internal_notes    TEXT,
     status            TEXT    NOT NULL DEFAULT 'draft'
   );
+
+  CREATE TABLE IF NOT EXISTS lead_history (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id    INTEGER NOT NULL REFERENCES leads(id),
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    event      TEXT    NOT NULL,
+    detail     TEXT
+  );
 `);
 
 // ─── Migrations (idempotent — safe to run against existing dev/prod data) ──────
