@@ -4,8 +4,75 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const db = require('../db');
 const PRICING = require('../pricing');
+const { client: squareClient } = require('../square');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'brakeknights';
+
+const SQUARE_LOCATION_ID  = 'LDDQ81CM33HJH';
+const SQUARE_TEAM_MEMBER  = 'TM2pRrtr9Kh27HGq';
+
+// Cache for the Square catalog service variation (created on first Approve)
+var _squareSvcVar = null;
+
+async function getSquareSvcVar() {
+  if (_squareSvcVar) return _squareSvcVar;
+  try {
+    var r = await squareClient.catalog.list({ types: 'ITEM' });
+    var existing = (r.objects || []).find(function(o) {
+      return o.itemData && o.itemData.name === 'Mobile Brake Service' &&
+             o.itemData.productType === 'APPOINTMENTS_SERVICE';
+    });
+    if (existing && existing.itemData.variations && existing.itemData.variations.length > 0) {
+      var v = existing.itemData.variations[0];
+      _squareSvcVar = { id: v.id, version: v.version };
+      return _squareSvcVar;
+    }
+  } catch (_) {}
+  var result = await squareClient.catalog.upsert({
+    idempotencyKey: 'bk-mobile-brake-service-v1',
+    object: {
+      type: 'ITEM',
+      id: '#MobileBrakeService',
+      itemData: {
+        name: 'Mobile Brake Service',
+        productType: 'APPOINTMENTS_SERVICE',
+        variations: [{
+          type: 'ITEM_VARIATION',
+          id: '#MobileBrakeServiceVar',
+          itemVariationData: {
+            name: 'Standard',
+            pricingType: 'VARIABLE_PRICING',
+            serviceDuration: BigInt(5400000)
+          }
+        }]
+      }
+    }
+  });
+  var vr = result.catalogObject && result.catalogObject.itemData &&
+           result.catalogObject.itemData.variations &&
+           result.catalogObject.itemData.variations[0];
+  _squareSvcVar = { id: vr ? vr.id : null, version: vr ? vr.version : null };
+  return _squareSvcVar;
+}
+
+// Converts pref_date (YYYY-MM-DD) + pref_time ("9:00 AM") to RFC 3339 in America/New_York
+function parseSquareDateTime(date, time) {
+  if (!date) return null;
+  var t = (time && time !== 'Anytime') ? time : '9:00 AM';
+  var m = /^(\d+):(\d+)\s*(AM|PM)$/i.exec(t);
+  if (!m) return null;
+  var h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+  if (/PM/i.test(m[3]) && h !== 12) h += 12;
+  if (/AM/i.test(m[3]) && h === 12) h = 0;
+  var parts = date.split('-').map(Number);
+  var yr = parts[0], mo = parts[1], dy = parts[2];
+  function nthSun(y, mth, n) { var d = new Date(y, mth - 1, 1).getDay(); return (d === 0 ? 1 : 8 - d) + (n - 1) * 7; }
+  var dstOn  = new Date(yr, 2,  nthSun(yr, 3,  2), 2);
+  var dstOff = new Date(yr, 10, nthSun(yr, 11, 1), 2);
+  var target = new Date(yr, mo - 1, dy, h, min);
+  var off = (target >= dstOn && target < dstOff) ? '-04:00' : '-05:00';
+  return date + 'T' + String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0') + ':00' + off;
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -278,6 +345,34 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
 
   db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ' — ' + quote.pref_location : ''));
+
+  // Square calendar booking
+  try {
+    var startAt = parseSquareDateTime(quote.pref_date, quote.pref_time);
+    if (startAt) {
+      var svcVar = await getSquareSvcVar();
+      if (svcVar && svcVar.id) {
+        var seg = { serviceVariationId: svcVar.id, teamMemberId: SQUARE_TEAM_MEMBER, durationMinutes: 90 };
+        if (svcVar.version) seg.serviceVariationVersion = svcVar.version;
+        var bkBody = {
+          locationId: SQUARE_LOCATION_ID,
+          startAt: startAt,
+          appointmentSegments: [seg],
+          customerNote: [lead.first_name + ' ' + lead.last_name, quote.service, quote.pref_location].filter(Boolean).join(' — ')
+        };
+        if (lead.square_customer_id) bkBody.customerId = lead.square_customer_id;
+        var bkResult = await squareClient.bookings.create({
+          idempotencyKey: 'bk-approve-quote-' + quote.id,
+          booking: bkBody
+        });
+        var bkId = bkResult.booking && bkResult.booking.id;
+        logHistory(lead.id, 'Square appointment created', bkId || '');
+      }
+    }
+  } catch (sqErr) {
+    console.error('Square booking error:', sqErr.message);
+    logHistory(lead.id, 'Square booking failed', sqErr.message);
+  }
 
   if (process.env.SMTP_PASS && lead.email) {
     try {
