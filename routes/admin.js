@@ -144,11 +144,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .preview-box h4{color:#0a1f3d;margin-bottom:8px;font-size:0.92rem}
 .preview-divider{border:none;border-top:1px solid #dde3ea;margin:10px 0}
 .svc-check-list{border:1.5px solid #dde3ea;border-radius:8px;overflow-y:auto;max-height:180px;padding:4px 0;}
-.svc-check-item{display:flex;align-items:center;gap:9px;padding:9px 12px;font-size:0.9rem;cursor:pointer;border-bottom:1px solid #f4f4f4;color:#1a2a3a;}
+.svc-check-item{display:flex;align-items:center;gap:10px;padding:10px 12px;font-size:0.9rem;cursor:pointer;border-bottom:1px solid #f4f4f4;color:#1a2a3a;user-select:none;}
 .svc-check-item:last-child{border-bottom:none;}
 .svc-check-item:hover{background:#f0f5ff;}
-.svc-check-item input[type=checkbox]{width:16px;height:16px;flex-shrink:0;cursor:pointer;accent-color:#4169e1;}
+.svc-check-item input[type=checkbox]{display:none;}
+.svc-check-item .svc-box{width:20px;height:20px;border:2px solid #c8d0db;border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:#fff;transition:background .12s,border-color .12s;}
 .svc-check-item:has(input:checked){background:#e8f0fe;color:#1a4fc4;font-weight:600;border-bottom-color:#d4e2fb;}
+.svc-check-item:has(input:checked) .svc-box{background:#4169e1;border-color:#4169e1;}
+.svc-check-item:has(input:checked) .svc-box::after{content:'✓';color:#fff;font-size:0.82rem;font-weight:800;line-height:1;}
 .svc-clear-btn{margin-top:7px;padding:6px 12px;border:1.5px solid #dde3ea;border-radius:6px;background:#fff;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;}
 .svc-clear-btn:hover{border-color:#c0c8d8;color:#555;}
 `;
@@ -342,7 +345,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
         var checked = currentServices.indexOf(s) !== -1 ? ' checked' : '';
-        return '<label class="svc-check-item"><input type="checkbox" class="svc-cb" value="' + esc(s) + '"' + checked + ' onchange="updatePrices()"> ' + esc(s) + '</label>';
+        return '<label class="svc-check-item"><input type="checkbox" class="svc-cb" value="' + esc(s) + '"' + checked + ' onchange="updatePrices()"><span class="svc-box"></span>' + esc(s) + '</label>';
       }).join('')
     + '</div>'
     + '<input type="hidden" name="service" id="svcHidden" value="' + esc(currentService) + '">';
