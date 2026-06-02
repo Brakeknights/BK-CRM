@@ -1039,15 +1039,16 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + service.split(', ').map(function(s) { var sv = PRICING.services[s.trim()]; return (sv && sv.note) ? sv.note : null; }).filter(Boolean).map(function(n) {
         return '<p style="color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:12px 14px;line-height:1.55;margin:0 0 20px;font-size:0.86rem;">' + esc(n) + '</p>';
       }).join('')
-    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
-    // Primary CTA — accept the quote and pick a preferred time in one step
+    // Primary CTA — placed directly under the total (the unique part of the email)
+    // so Gmail never hides it below "show trimmed content".
     + (acceptUrl
-        ? '<div style="text-align:center;margin:0 0 24px;">'
+        ? '<div style="text-align:center;margin:4px 0 24px;">'
           + '<a href="' + acceptUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:1rem;text-decoration:none;padding:15px 34px;border-radius:8px;">Accept Quote &amp; Choose Your Time &rarr;</a>'
           + '<p style="color:#888;font-size:0.82rem;margin:12px 0 0;">You&rsquo;ll pick a preferred day and time. We&rsquo;ll confirm it or reach out about other openings.</p>'
           + '</div>'
         : '')
+    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
     + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Prefer to talk it through? Reply to this email or call/text:</p>'
     + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
