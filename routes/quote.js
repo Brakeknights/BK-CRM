@@ -36,6 +36,35 @@ function fmt(n) {
   return Number(n || 0).toFixed(2);
 }
 
+// Display money with thousands separators, e.g. 1039.5 -> "1,039.50".
+function money(n) {
+  return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Natural list join, e.g. "A, B, and C" (or "A, and B").
+function joinServices(s) {
+  var a = String(s || '').split(', ').map(function(x) { return x.trim(); }).filter(Boolean);
+  if (a.length <= 1) return a[0] || '';
+  return a.slice(0, -1).join(', ') + ', and ' + a[a.length - 1];
+}
+
+// Total on-site minutes across all selected services.
+function totalMinutes(s) {
+  return String(s || '').split(', ').reduce(function(sum, name) {
+    var sv = pricing.services[name.trim()];
+    return sum + ((sv && sv.minutes) || 0);
+  }, 0);
+}
+
+// Friendly duration, e.g. 90 -> "1 hr 30 min".
+function formatDuration(mins) {
+  if (!mins) return '';
+  var h = Math.floor(mins / 60), m = mins % 60;
+  if (h && m) return h + ' hr ' + m + ' min';
+  if (h) return h + ' hr';
+  return m + ' min';
+}
+
 var WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -146,12 +175,12 @@ function quoteSummaryCard(q) {
   var tierLabel  = q.tier === 'premium' ? 'Premium' : 'Standard';
   return '<div class="card">'
     + '<span class="badge">' + tierLabel + ' Quote</span>'
-    + '<div class="svc">' + esc(q.service || 'Brake Service') + '</div>'
+    + '<div class="svc">' + esc(joinServices(q.service) || 'Brake Service') + '</div>'
     + (q.vehicle ? '<p class="muted" style="margin-bottom:14px;">' + esc(q.vehicle) + '</p>' : '<div style="height:6px"></div>')
-    + '<div class="qline"><span>Parts &amp; Labor</span><span>$' + fmt(partsLabor) + '</span></div>'
-    + '<div class="qline"><span>Shop Supplies</span><span>$' + fmt(q.shop_supplies) + '</span></div>'
-    + '<div class="qline"><span style="color:#889;">Tax</span><span style="color:#889;">$' + fmt(q.tax) + '</span></div>'
-    + '<div class="qline qtotal"><span>Total</span><span>$' + fmt(q.total) + '</span></div>'
+    + '<div class="qline"><span>Parts &amp; Labor</span><span>$' + money(partsLabor) + '</span></div>'
+    + '<div class="qline"><span>Shop Supplies</span><span>$' + money(q.shop_supplies) + '</span></div>'
+    + '<div class="qline"><span style="color:#889;">Tax</span><span style="color:#889;">$' + money(q.tax) + '</span></div>'
+    + '<div class="qline qtotal"><span>Total</span><span>$' + money(q.total) + '</span></div>'
     + '</div>';
 }
 
@@ -179,7 +208,7 @@ router.get('/:id/:token/calendar.ics', function(req, res) {
 
   var summary = 'Brake Knights — ' + (q.service || 'Brake Service');
   var desc = 'Mobile brake service' + (q.service ? ' (' + q.service + ')' : '')
-    + '. Total: $' + fmt(q.total) + '. Questions? Call or text 703-977-4475.';
+    + '. Total: $' + money(q.total) + '. Questions? Call or text 703-977-4475.';
 
   var ics = [
     'BEGIN:VCALENDAR',
@@ -240,6 +269,7 @@ router.get('/:id/:token', function(req, res) {
     + quoteSummaryCard(q)
     + '<div class="card">'
     + '<h2>Choose Your Preferred Time</h2>'
+    + (totalMinutes(q.service) ? '<p class="muted" style="margin:-6px 0 14px;">This service takes about <strong style="color:#0a1f3d;">' + formatDuration(totalMinutes(q.service)) + '</strong> on site. Please pick a time that allows for it.</p>' : '')
     + '<form method="POST" action="/quote/' + q.id + '/' + q.accept_token + '/accept">'
     + '<div class="row2">'
     + '<div class="form-group"><label>Preferred date</label>'
@@ -351,8 +381,9 @@ function acceptedConfirmation(q) {
     + '</div>'
     + '<div class="card">'
     + '<h2>Your Requested Time</h2>'
-    + '<div class="qline"><span>Service</span><span>' + esc(q.service || 'Brake Service') + '</span></div>'
-    + '<div class="qline"><span>Total</span><span>$' + fmt(q.total) + '</span></div>'
+    + '<div class="qline"><span>Service</span><span style="text-align:right;max-width:60%;">' + esc(joinServices(q.service) || 'Brake Service') + '</span></div>'
+    + '<div class="qline"><span>Total</span><span>$' + money(q.total) + '</span></div>'
+    + (totalMinutes(q.service) ? '<div class="qline"><span>Estimated time</span><span>about ' + esc(formatDuration(totalMinutes(q.service))) + '</span></div>' : '')
     + '<div class="qline"><span>Preferred date</span><span>' + esc(formatPrefDate(q.pref_date)) + '</span></div>'
     + '<div class="qline"><span>Preferred time</span><span>' + esc(q.pref_time || '—') + '</span></div>'
     + '<div class="qline"><span>Location</span><span style="text-align:right;max-width:60%;">' + esc(q.pref_location || '—') + '</span></div>'
@@ -373,7 +404,7 @@ function ownerAcceptedEmail(q, baseUrl) {
     + '<tr><td style="padding:7px 10px;font-weight:bold;color:#0a1f3d;">Email</td><td style="padding:7px 10px;">' + esc(q.lead_email || '—') + '</td></tr>'
     + (q.vehicle ? '<tr style="background:#f9f9f9;"><td style="padding:7px 10px;font-weight:bold;color:#0a1f3d;">Vehicle</td><td style="padding:7px 10px;">' + esc(q.vehicle) + '</td></tr>' : '')
     + '<tr><td style="padding:7px 10px;font-weight:bold;color:#0a1f3d;">Service</td><td style="padding:7px 10px;">' + esc(q.service) + '</td></tr>'
-    + '<tr style="background:#f9f9f9;"><td style="padding:7px 10px;font-weight:bold;color:#0a1f3d;">Total</td><td style="padding:7px 10px;">$' + fmt(q.total) + '</td></tr>'
+    + '<tr style="background:#f9f9f9;"><td style="padding:7px 10px;font-weight:bold;color:#0a1f3d;">Total</td><td style="padding:7px 10px;">$' + money(q.total) + '</td></tr>'
     + '</table>'
     + '<div style="background:#e3f0ff;border-left:4px solid #4169e1;border-radius:4px;padding:14px;margin-top:16px;">'
     + '<p style="margin:0 0 8px;font-weight:bold;color:#0a1f3d;">Requested Scheduling</p>'
