@@ -321,7 +321,7 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
   if (process.env.SMTP_PASS) {
     try {
       var tx = transporter();
-      // Owner notification
+      // Owner notification — owner reviews and approves the requested time.
       await tx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      'greetings@brakeknights.com',
@@ -329,16 +329,8 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
         subject: 'Quote ACCEPTED: ' + q.first_name + ' ' + q.last_name + ' — needs scheduling',
         html:    ownerAcceptedEmail(fresh, baseUrl)
       });
-      // Customer auto-reply
-      if (q.lead_email) {
-        await tx.sendMail({
-          from:    '"Brake Knights" <greetings@brakeknights.com>',
-          to:      q.lead_email,
-          replyTo: 'greetings@brakeknights.com',
-          subject: 'We received your acceptance — Brake Knights',
-          html:    customerAcceptedEmail(fresh)
-        });
-      }
+      // No customer auto-reply here: the on-screen confirmation already covers it,
+      // and the branded appointment-confirmed email is sent once the owner approves.
     } catch (err) {
       console.error('Acceptance email error:', err.message);
     }
@@ -399,35 +391,6 @@ function ownerAcceptedEmail(q, baseUrl) {
     + '<a href="' + adminUrl + '" style="color:#4169e1;font-size:0.88rem;text-decoration:none;font-weight:600;">Open in Admin &rarr;</a>'
     + '</div>'
     + '</div></div>';
-}
-
-function customerAcceptedEmail(q) {
-  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
-    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
-    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;">'
-    + '<img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;">'
-    + 'Brake Knights</h1>'
-    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p>'
-    + '</div>'
-    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
-    + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Thank you, ' + esc(q.first_name) + '!</h2>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">We&rsquo;ve received your acceptance and your preferred time. A knight will review your request and confirm your appointment, or reach out if we need to find another time that works.</p>'
-    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
-    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 12px;font-size:0.95rem;">Your Request</p>'
-    + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
-    + '<tr><td style="padding:5px 0;color:#888;width:120px;">Service</td><td style="padding:5px 0;">' + esc(q.service) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;">Total</td><td style="padding:5px 0;font-weight:700;">$' + fmt(q.total) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;">Preferred date</td><td style="padding:5px 0;">' + esc(formatPrefDate(q.pref_date)) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;">Preferred time</td><td style="padding:5px 0;">' + esc(q.pref_time || '—') + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(q.pref_location || '—') + '</td></tr>'
-    + '</table></div>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 8px;font-size:0.9rem;">Your time is a request, not yet confirmed. We&rsquo;ll be in touch shortly to lock it in.</p>'
-    + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;margin-top:20px;">'
-    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Need to change something? Call or text:</p>'
-    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
-    + '</div></div>'
-    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div>'
-    + '</div>';
 }
 
 module.exports = router;
