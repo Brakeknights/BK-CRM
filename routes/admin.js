@@ -103,6 +103,42 @@ function fmt(n) {
   return Number(n || 0).toFixed(2);
 }
 
+// Display money with thousands separators, e.g. 1039.5 -> "1,039.50".
+// Use for on-screen/email display only — never for input or hidden field values
+// (those must stay comma-free so parseFloat works).
+function money(n) {
+  return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Natural list join for the service line, e.g. "A, B, and C" (or "A, and B").
+function joinServices(s) {
+  var a = String(s || '').split(', ').map(function(x) { return x.trim(); }).filter(Boolean);
+  if (a.length <= 1) return a[0] || '';
+  return a.slice(0, -1).join(', ') + ', and ' + a[a.length - 1];
+}
+
+// Total on-site minutes across all selected services.
+function totalServiceMinutes(s) {
+  return String(s || '').split(', ').reduce(function(sum, name) {
+    var sv = PRICING.services[name.trim()];
+    return sum + ((sv && sv.minutes) || 0);
+  }, 0);
+}
+
+// Friendly duration, e.g. 90 -> "1 hr 30 min", 60 -> "1 hr", 45 -> "45 min".
+function formatDuration(mins) {
+  if (!mins) return '';
+  var h = Math.floor(mins / 60), m = mins % 60;
+  if (h && m) return h + ' hr ' + m + ' min';
+  if (h) return h + ' hr';
+  return m + ' min';
+}
+
+// JS UTC stamp for calendar links, e.g. 20260608T160000Z.
+function icsUtcStamp(d) {
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr + 'Z').getTime();
   const m = Math.floor(diff / 60000);
@@ -462,6 +498,20 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
       }
       var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
       var calendarUrl = baseUrl + '/quote/' + quote.id + '/' + quote.accept_token + '/calendar.ics';
+      // Direct "Add to Google Calendar" link (opens in the browser — better than the
+      // .ics download on desktop, which hands off to whatever app is the OS default).
+      var gcalUrl = '';
+      var apptStartRfc = toEasternRfc3339(quote.pref_date, quote.pref_time);
+      if (apptStartRfc) {
+        var apptMins = totalServiceMinutes(quote.service) || 60;
+        var gStart = new Date(apptStartRfc);
+        var gEnd = new Date(gStart.getTime() + apptMins * 60000);
+        gcalUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+          + '&text=' + encodeURIComponent('Brake Knights — ' + (quote.service || 'Brake Service'))
+          + '&dates=' + icsUtcStamp(gStart) + '/' + icsUtcStamp(gEnd)
+          + '&details=' + encodeURIComponent('Mobile brake service. Total: $' + money(quote.total) + '. Questions? Call or text 703-977-4475.')
+          + '&location=' + encodeURIComponent(quote.pref_location || '');
+      }
       var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
         + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
         + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
@@ -472,14 +522,15 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
         + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
         + '<tr><td style="padding:5px 0;color:#888;width:100px;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(quote.service) + '</td></tr>'
-        + '<tr><td style="padding:5px 0;color:#888;">Total</td><td style="padding:5px 0;font-weight:700;">$' + fmt(quote.total) + '</td></tr>'
+        + '<tr><td style="padding:5px 0;color:#888;">Total</td><td style="padding:5px 0;font-weight:700;">$' + money(quote.total) + '</td></tr>'
         + '<tr><td style="padding:5px 0;color:#888;">Date</td><td style="padding:5px 0;">' + esc(fmtDate(quote.pref_date)) + '</td></tr>'
         + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(quote.pref_time || '—') + '</td></tr>'
         + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(quote.pref_location || '—') + '</td></tr>'
         + '</table></div>'
         + '<div style="text-align:center;margin:0 0 24px;">'
-        + '<a href="' + calendarUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">&#128197; Add to Calendar</a>'
-        + '<p style="color:#888;font-size:0.8rem;margin:10px 0 0;">Works with Apple Calendar, Google Calendar, and Outlook.</p>'
+        + (gcalUrl ? '<a href="' + gcalUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">&#128197; Add to Google Calendar</a>' : '')
+        + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">&#127822; Apple / Outlook (.ics)</a>'
+        + '<p style="color:#888;font-size:0.8rem;margin:6px 0 0;">Google Calendar opens in your browser. The .ics works with Apple Calendar and Outlook.</p>'
         + '</div>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
@@ -721,7 +772,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
                 + '<td style="padding:7px 8px 7px 0;white-space:nowrap;">' + sentDate + (isLatest ? ' <span style="font-size:0.72rem;background:#e3f0ff;color:#1a6fc4;padding:1px 6px;border-radius:10px;font-weight:700;">Latest</span>' : '') + '</td>'
                 + '<td style="padding:7px 8px;">' + esc(pq.service || '—') + '</td>'
                 + '<td style="padding:7px 8px;">' + tierLabel + '</td>'
-                + '<td style="padding:7px 0 7px 8px;text-align:right;">$' + fmt(pq.total) + '</td>'
+                + '<td style="padding:7px 0 7px 8px;text-align:right;">$' + money(pq.total) + '</td>'
                 + '</tr>';
             }).join('')
           + '</tbody></table></div></div>'
@@ -778,16 +829,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<input class="price-input" type="number" name="shopSupplies" id="ss" min="0" step="0.01" value="' + fmt(q.shop_supplies) + '" oninput="calc()"></div>'
     + '<div class="price-row tax-row">'
     + '<span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="tr" min="0" max="20" step="0.1" value="' + fmt(currentTaxRate) + '" oninput="calc()">%) on Parts + Supplies</span>'
-    + '<span id="taxAmt">$' + fmt(q.tax) + '</span></div>'
+    + '<span id="taxAmt">$' + money(q.tax) + '</span></div>'
     + '</div>'
 
     // Customer-facing totals
     + '<div class="price-section" style="margin-bottom:0;">'
     + '<div class="price-section-header">Customer Quote</div>'
-    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + fmt((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + fmt(q.shop_supplies) + '</span></div>'
-    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + fmt(q.tax) + '</span></div>'
-    + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + fmt(q.total) + '</span></div>'
+    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + money(q.shop_supplies) + '</span></div>'
+    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + money(q.tax) + '</span></div>'
+    + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
     + '</div>'
 
     + '<input type="hidden" name="taxAmt"   id="taxH"   value="' + fmt(q.tax)   + '">'
@@ -880,6 +931,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'if(msgs.length){box.innerHTML=msgs.join("<br><br>");box.style.display="block";}else{box.style.display="none";}'
     + '}'
 
+    + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+
     // Tax is on parts + shop supplies only (not labor — Virginia law)
     + 'function calc(){'
     +   'var parts=parseFloat(document.getElementById("parts").value)||0;'
@@ -888,11 +941,11 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var tr=parseFloat(document.getElementById("tr").value)||0;'
     +   'var tax=(parts+ss)*tr/100;'
     +   'var total=parts+labor+ss+tax;'
-    +   'document.getElementById("taxAmt").textContent="$"+tax.toFixed(2);'
-    +   'document.getElementById("partsLaborDisplay").textContent="$"+(parts+labor).toFixed(2);'
-    +   'document.getElementById("ssDisplay").textContent="$"+ss.toFixed(2);'
-    +   'document.getElementById("taxDisplay").textContent="$"+tax.toFixed(2);'
-    +   'document.getElementById("totalAmt").textContent="$"+total.toFixed(2);'
+    +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
+    +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
+    +   'document.getElementById("ssDisplay").textContent="$"+money(ss);'
+    +   'document.getElementById("taxDisplay").textContent="$"+money(tax);'
+    +   'document.getElementById("totalAmt").textContent="$"+money(total);'
     +   'document.getElementById("taxH").value=tax.toFixed(2);'
     +   'document.getElementById("totalH").value=total.toFixed(2);'
     + '}'
@@ -909,7 +962,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var tot=parseFloat(document.getElementById("totalH").value)||0;'
     +   'var veh=vehicle?" for your <strong>"+vehicle+"</strong>":"";'
     +   'var toLine=leadEmail||"<em style=\'color:#e07000\'>(no email on file)</em>";'
-    +   'var svcListHtml=svcNames.map(function(s){return "<li style=\'padding:3px 0;\'>"+s+"</li>";}).join("");'
+    +   'var svcLine=svcNames.length<=1?(svcNames[0]||"(no service selected)"):svcNames.slice(0,-1).join(", ")+", and "+svcNames[svcNames.length-1];'
+    +   'var totMins=svcNames.reduce(function(a,n){return a+((PRICING[n]&&PRICING[n].minutes)||0);},0);'
+    +   'var durTxt=totMins?(Math.floor(totMins/60)?(Math.floor(totMins/60)+" hr"+(totMins%60?" "+(totMins%60)+" min":"")):(totMins+" min")):"";'
     +   'box.innerHTML='
     +     '"<div class=\'preview-box\'>"'
     +     '+"<h4>Email Preview</h4>"'
@@ -918,13 +973,14 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+"<hr class=\'preview-divider\'>"'
     +     '+"<p>Greetings "+firstName+",</p>"'
     +     '+"<p style=\'margin-top:8px;\'>Here is your quote"+veh+":</p>"'
-    +     '+"<div style=\'margin:10px 0 4px;font-size:0.8rem;font-weight:700;color:#0a1f3d;text-transform:uppercase;letter-spacing:.4px;\'>Services Included</div>"'
-    +     '+"<ul style=\'margin:0 0 12px;padding-left:18px;font-size:0.9rem;color:#1a2a3a;\'>"+svcListHtml+"</ul>"'
+    +     '+"<div style=\'margin:10px 0 4px;font-size:0.8rem;font-weight:700;color:#0a1f3d;text-transform:uppercase;letter-spacing:.4px;\'>Service Requested</div>"'
+    +     '+"<p style=\'margin:0 0 6px;font-size:0.92rem;font-weight:600;color:#1a2a3a;\'>"+svcLine+"</p>"'
+    +     '+(durTxt?"<p style=\'margin:0 0 12px;font-size:0.85rem;color:#555;\'>Estimated time on site: about "+durTxt+"</p>":"")'
     +     '+"<table style=\'width:100%;margin:12px 0;font-size:0.88rem;border-collapse:collapse;\'>"'
-    +     '+"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+(parts+labor).toFixed(2)+"</td></tr>"'
-    +     '+"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+ss.toFixed(2)+"</td></tr>"'
-    +     '+"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+tax.toFixed(2)+"</td></tr>"'
-    +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+tot.toFixed(2)+"</td></tr>"'
+    +     '+"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>"'
+    +     '+"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>"'
+    +     '+"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>"'
+    +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
     +     '+"</table>"'
     +     '+svcNames.map(function(s){return PRICING[s]&&PRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;font-size:0.85rem;\'>"+n+"</p>";}).join("")'
     +     '+"<p>Includes all parts and labor. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong>.</p>"'
@@ -1024,16 +1080,15 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Greetings ' + esc(lead.first_name) + ',</h2>'
     + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Here is your quote' + vehicleBit + ':</p>'
     + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
-    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 8px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Services Included</p>'
-    + '<ul style="margin:0 0 16px;padding-left:18px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">'
-    + service.split(', ').map(function(s) { return '<li style="padding:3px 0;">' + esc(s.trim()) + '</li>'; }).join('')
-    + '</ul>'
+    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 8px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Requested</p>'
+    + '<p style="margin:0 0 6px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">' + esc(joinServices(service)) + '</p>'
+    + (totalServiceMinutes(service) ? '<p style="margin:0 0 16px;font-size:0.86rem;color:#555;">Estimated time on site: about <strong>' + formatDuration(totalServiceMinutes(service)) + '</strong>. Please pick a time that allows for it.</p>' : '')
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
-    + '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + partsLabor.toFixed(2) + '</td></tr>'
-    + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + shopSupplies.toFixed(2) + '</td></tr>'
-    + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + tax.toFixed(2) + '</td></tr>'
+    + '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(partsLabor) + '</td></tr>'
+    + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(shopSupplies) + '</td></tr>'
+    + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(tax) + '</td></tr>'
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total</td>'
-    + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + total.toFixed(2) + '</td></tr>'
+    + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
     + '</table></div>'
     + service.split(', ').map(function(s) { var sv = PRICING.services[s.trim()]; return (sv && sv.note) ? sv.note : null; }).filter(Boolean).map(function(n) {
         return '<p style="color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:12px 14px;line-height:1.55;margin:0 0 20px;font-size:0.86rem;">' + esc(n) + '</p>';

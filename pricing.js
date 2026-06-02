@@ -23,17 +23,17 @@ module.exports = {
     'Rear Pads': {
       minutes: 30,
       standard: { parts: 135, labor: 130, shopSupplies: 10 },
-      premium:  { parts: 162, labor: 163, shopSupplies: 10 }
+      premium:  { parts: 162, labor: 133, shopSupplies: 10 }
     },
     'Front and Rear Pads': {
-      minutes: 45,
+      minutes: 60,
       standard: { parts: 270, labor: 185, shopSupplies: 10 },
-      premium:  { parts: 261, labor: 214, shopSupplies: 10 }
+      premium:  { parts: 271, labor: 224, shopSupplies: 10 }
     },
     'Front Pads and Rotors': {
       minutes: 60,
-      standard: { parts: 281, labor: 214, shopSupplies: 10 },
-      premium:  { parts: 289, labor: 236, shopSupplies: 10 }
+      standard: { parts: 289, labor: 236, shopSupplies: 10 },
+      premium:  { parts: 316, labor: 259, shopSupplies: 10 }
     },
     'Rear Pads and Rotors': {
       minutes: 60,
@@ -42,22 +42,22 @@ module.exports = {
     },
     'Front and Rear Pads and Rotors': {
       minutes: 120,
-      standard: { parts: 470, labor: 385, shopSupplies: 10 },
-      premium:  { parts: 525, labor: 430, shopSupplies: 10 }
+      standard: { parts: 493, labor: 402, shopSupplies: 10 },
+      premium:  { parts: 565, labor: 430, shopSupplies: 10 }
     },
     'Front Rotors': {
       minutes: 60,
-      standard: { parts: 179, labor: 146, shopSupplies: 10 },
-      premium:  { parts: 206, labor: 169, shopSupplies: 10 }
+      standard: { parts: 279, labor: 146, shopSupplies: 10 },
+      premium:  { parts: 279, labor: 146, shopSupplies: 10 }
     },
     'Rear Rotors': {
       minutes: 60,
-      standard: { parts: 190, labor: 155, shopSupplies: 10 },
-      premium:  { parts: 217, labor: 178, shopSupplies: 10 }
+      standard: { parts: 279, labor: 146, shopSupplies: 10 },
+      premium:  { parts: 279, labor: 146, shopSupplies: 10 }
     },
     'Front and Rear Rotors': {
       minutes: 120,
-      standard: { parts: 316, labor: 259, shopSupplies: 10 },
+      standard: { parts: 371, labor: 304, shopSupplies: 10 },
       premium:  { parts: 371, labor: 304, shopSupplies: 10 }
     },
     'Drums and Shoes': {
@@ -66,7 +66,7 @@ module.exports = {
     },
     'Front Pads, Rotors, and Drums and Shoes': {
       minutes: 120,
-      standard: { parts: 492, labor: 403, shopSupplies: 10 }
+      standard: { parts: 565, labor: 430, shopSupplies: 10 }
     },
     'Brake Fluid Flush': {
       minutes: 30,
