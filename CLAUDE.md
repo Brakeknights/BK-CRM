@@ -192,16 +192,15 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Phase 9: white-label packaging for other service businesses
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
 - [ ] Vehicle year/make/model cascading dropdowns on contact forms (replace free-text vehicle field) — use NHTSA free API (vpic.nhtsa.dot.gov) for model lookup, no data to maintain; tackle after Phase 3B/3C
-- [ ] Finalize pricing table by vehicle type (required before Phase 8)
-- [ ] Brake Fluid Flush, Caliper Replacement, Brake Hose Replacement still need finalizing: Fluid Flush is set ($155 labor + $10 supplies, single tier); Caliper + Hose are intentionally custom-quote (look up exact part, enter manually). Confirm whether Caliper/Hose should ever get preset pricing.
-- [ ] Review/update existing service prices — owner flagged that "some service prices need updating" (deferred). Walk through the pricing table tier by tier and update any that changed.
-- [ ] Confirm pricing assumptions: Brake Fluid Flush single-tier (no premium); "Front Pads, Rotors, and Drums and Shoes" has no premium tier; Brake Inspection flat $60 no tax.
+- [ ] Finalize pricing table by vehicle type (required before Phase 8) — flat pricing today; Phase 8 needs per-vehicle-class matrix
+- [ ] Review/update existing service prices — owner flagged that "some service prices need updating". Walk through the pricing table tier by tier and update any that changed. (IN PROGRESS)
 - [ ] CRM improvement: tag submission source (homepage vs contact page) in Square customer note
 - [ ] CRM improvement: replace flat note field with structured data fields once Phase 7 CRM is built
 - [ ] CRM improvement: add visible alert/logging if Square customer sync fails on a form submission
 - [ ] Customer auto-nudge: if a sent quote has not been accepted after X hours, automatically send the customer a gentle follow-up email ("Just checking in — your quote is still available"). Currently manual; add as opt-in feature once Phase 3D is tested in production.
 
 ### Completed This Session
+- [x] Pricing decisions confirmed by owner: Brake Fluid Flush single-tier (no premium); Drums and Shoes + "Front Pads, Rotors, and Drums and Shoes" standard-only (no premium); Brake Inspection flat $60 no tax; Caliper Replacement + Brake Hose Replacement stay custom-quote permanently (no preset pricing)
 - [x] Google Maps API key created + restricted (HTTP referrers to brakeknights.com domains, Maps Platform APIs); Maps JavaScript API + Places API enabled; GOOGLE_MAPS_API_KEY set in Hostinger for dev + prod. Address autocomplete confirmed working on dev (and live by same project/key).
 - [x] Deployed Phase 3 + pricing + soft-archive batch to master via PR #2 (live on brakeknights.com)
 - [x] Removed the customer quote-acceptance auto-reply email (one fewer customer email): on-screen confirmation covers it, branded confirmation still sends after owner approves; owner notification unchanged
