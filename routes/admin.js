@@ -5,11 +5,43 @@ const crypto = require('crypto');
 const db = require('../db');
 const PRICING = require('../pricing');
 const { client: squareClient } = require('../square');
+const { toEasternRfc3339 } = require('../datetime');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'brakeknights';
 
-const SQUARE_LOCATION_ID  = 'LDDQ81CM33HJH';
-const SQUARE_TEAM_MEMBER  = 'TM2pRrtr9Kh27HGq';
+// Location + team member are auto-discovered from whichever Square environment the
+// token points at (sandbox now, production after upgrade), so no code change is needed
+// to switch. Optional env overrides win; the known production IDs are the last-resort
+// fallback if discovery returns nothing.
+const FALLBACK_LOCATION_ID = 'LDDQ81CM33HJH';
+const FALLBACK_TEAM_MEMBER = 'TM2pRrtr9Kh27HGq';
+var _squareLocationId = null;
+var _squareTeamMemberId = null;
+
+async function getSquareLocationId() {
+  if (_squareLocationId) return _squareLocationId;
+  if (process.env.SQUARE_LOCATION_ID) { _squareLocationId = process.env.SQUARE_LOCATION_ID; return _squareLocationId; }
+  try {
+    var r = await squareClient.locations.list();
+    var locs = r.locations || [];
+    var pick = locs.find(function(l) { return l.status === 'ACTIVE'; }) || locs[0];
+    if (pick && pick.id) { _squareLocationId = pick.id; return _squareLocationId; }
+  } catch (_) {}
+  _squareLocationId = FALLBACK_LOCATION_ID;
+  return _squareLocationId;
+}
+
+async function getSquareTeamMemberId() {
+  if (_squareTeamMemberId) return _squareTeamMemberId;
+  if (process.env.SQUARE_TEAM_MEMBER) { _squareTeamMemberId = process.env.SQUARE_TEAM_MEMBER; return _squareTeamMemberId; }
+  try {
+    var r = await squareClient.teamMembers.search({ query: { filter: { statuses: ['ACTIVE'] } } });
+    var members = r.teamMembers || [];
+    if (members.length && members[0].id) { _squareTeamMemberId = members[0].id; return _squareTeamMemberId; }
+  } catch (_) {}
+  _squareTeamMemberId = FALLBACK_TEAM_MEMBER;
+  return _squareTeamMemberId;
+}
 
 // Cache for the Square catalog service variation (created on first Approve)
 var _squareSvcVar = null;
@@ -55,24 +87,6 @@ async function getSquareSvcVar() {
   return _squareSvcVar;
 }
 
-// Converts pref_date (YYYY-MM-DD) + pref_time ("9:00 AM") to RFC 3339 in America/New_York
-function parseSquareDateTime(date, time) {
-  if (!date) return null;
-  var t = (time && time !== 'Anytime') ? time : '9:00 AM';
-  var m = /^(\d+):(\d+)\s*(AM|PM)$/i.exec(t);
-  if (!m) return null;
-  var h = parseInt(m[1], 10), min = parseInt(m[2], 10);
-  if (/PM/i.test(m[3]) && h !== 12) h += 12;
-  if (/AM/i.test(m[3]) && h === 12) h = 0;
-  var parts = date.split('-').map(Number);
-  var yr = parts[0], mo = parts[1], dy = parts[2];
-  function nthSun(y, mth, n) { var d = new Date(y, mth - 1, 1).getDay(); return (d === 0 ? 1 : 8 - d) + (n - 1) * 7; }
-  var dstOn  = new Date(yr, 2,  nthSun(yr, 3,  2), 2);
-  var dstOff = new Date(yr, 10, nthSun(yr, 11, 1), 2);
-  var target = new Date(yr, mo - 1, dy, h, min);
-  var off = (target >= dstOn && target < dstOff) ? '-04:00' : '-05:00';
-  return date + 'T' + String(h).padStart(2, '0') + ':' + String(min).padStart(2, '0') + ':00' + off;
-}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -129,6 +143,43 @@ function fmtHistoryTime(dateStr) {
   var d = new Date(dateStr + 'Z');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// Formats a stored ISO date (YYYY-MM-DD) as "Friday, June 5, 2026".
+function fmtPrefDate(val) {
+  if (!val) return '—';
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
+  if (!m) return val;
+  var WD = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var MO = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var dt = new Date(+m[1], +m[2] - 1, +m[3]);
+  return WD[dt.getDay()] + ', ' + MO[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+}
+
+// Renders the scheduling panel for a lead with an accepted quote: a confirmed
+// banner once booked, or the requested time + Approve/Deny actions while pending.
+// Approve/Deny hit the same /approve-schedule and /deny-schedule routes the email
+// buttons use. `compact` trims padding for the leads-list cards. Returns '' when
+// there's nothing to show.
+function schedulingPanel(lead, quote, compact) {
+  if (!quote || !quote.accepted_at || !quote.pref_date) return '';
+  var pad = compact ? '12px' : '16px';
+  if (lead.status === 'booked') {
+    return '<div style="background:#eaf6ee;border:1px solid #bfe3cb;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
+      + '<div style="font-weight:700;color:#1a7a3a;font-size:0.9rem;">&#10003; Appointment confirmed</div>'
+      + '<div style="color:#444;font-size:0.85rem;margin-top:3px;">' + esc(fmtPrefDate(quote.pref_date)) + ' at ' + esc(quote.pref_time || '—') + '</div>'
+      + '</div>';
+  }
+  if (lead.status !== 'quote_accepted') return '';
+  return '<div style="background:#e3f0ff;border:1px solid #b9d4f5;border-left:4px solid #4169e1;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
+    + '<div style="font-weight:700;color:#0a1f3d;font-size:0.9rem;margin-bottom:8px;">Requested Appointment</div>'
+    + '<div style="font-size:0.88rem;color:#1a2a3a;">' + esc(fmtPrefDate(quote.pref_date)) + ' at <strong>' + esc(quote.pref_time || '—') + '</strong></div>'
+    + (quote.pref_location ? '<div style="font-size:0.83rem;color:#666;margin-top:2px;">' + esc(quote.pref_location) + '</div>' : '')
+    + (quote.scheduling_notes ? '<div style="font-size:0.82rem;color:#666;font-style:italic;margin-top:4px;">' + esc(quote.scheduling_notes) + '</div>' : '')
+    + '<div style="display:flex;gap:8px;margin-top:12px;">'
+    + '<a href="/admin/quote/' + lead.id + '/approve-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#1a7a3a;color:#fff;border:none;">&#10003; Approve Time</a>'
+    + '<a href="/admin/quote/' + lead.id + '/deny-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#c0392b;color:#fff;border:none;">&#10005; Not Available</a>'
+    + '</div></div>';
 }
 
 async function notifyStageChange(req, lead, newStatus) {
@@ -313,7 +364,24 @@ router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: fals
   res.redirect(back);
 });
 
-// ─── Square setup diagnostics (temporary) ────────────────────────────────────
+// ─── Archive / restore (soft delete) ──────────────────────────────────────────
+// Soft archive keeps the lead, its quotes, and history for CRM lookups; archived
+// leads are just hidden from the working lists.
+router.post('/lead/:id/archive', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  db.prepare("UPDATE leads SET archived = 1, archived_at = datetime('now') WHERE id = ?").run(lead.id);
+  logHistory(lead.id, 'Lead archived');
+  res.redirect(req.body.back || '/admin');
+});
+
+router.post('/lead/:id/restore', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  db.prepare("UPDATE leads SET archived = 0, archived_at = NULL WHERE id = ?").run(lead.id);
+  logHistory(lead.id, 'Lead restored from archive');
+  res.redirect(req.body.back || '/admin?status=archived');
+});
 router.get('/square-info', requireAuth, async function(req, res) {
   const { client } = require('../square');
   const out = {};
@@ -325,6 +393,10 @@ router.get('/square-info', requireAuth, async function(req, res) {
     const r = await client.teamMembers.search({ query: { filter: { statuses: ['ACTIVE'] } } });
     out.teamMembers = (r.teamMembers || []).map(m => ({ id: m.id, name: (m.displayName || ((m.givenName || '') + ' ' + (m.familyName || '')).trim()) }));
   } catch (e) { out.teamMembers = 'ERR: ' + e.message; }
+  try {
+    await client.bookings.getBusinessProfile();
+    out.bookingsOnboarded = 'ok';
+  } catch (e) { out.bookingsOnboarded = 'ERR: ' + e.message; }
   try {
     const r = await client.catalog.list({ types: 'ITEM' });
     out.allCatalogItems = (r.objects || []).map(o => ({
@@ -348,14 +420,16 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
 
   // Square calendar booking
   try {
-    var startAt = parseSquareDateTime(quote.pref_date, quote.pref_time);
+    var startAt = toEasternRfc3339(quote.pref_date, quote.pref_time);
     if (startAt) {
       var svcVar = await getSquareSvcVar();
       if (svcVar && svcVar.id) {
-        var seg = { serviceVariationId: svcVar.id, teamMemberId: SQUARE_TEAM_MEMBER, durationMinutes: 90 };
+        var teamMemberId = await getSquareTeamMemberId();
+        var locationId = await getSquareLocationId();
+        var seg = { serviceVariationId: svcVar.id, teamMemberId: teamMemberId, durationMinutes: 90 };
         if (svcVar.version) seg.serviceVariationVersion = svcVar.version;
         var bkBody = {
-          locationId: SQUARE_LOCATION_ID,
+          locationId: locationId,
           startAt: startAt,
           appointmentSegments: [seg],
           customerNote: [lead.first_name + ' ' + lead.last_name, quote.service, quote.pref_location].filter(Boolean).join(' — ')
@@ -386,6 +460,8 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         var dt = new Date(+m[1], +m[2]-1, +m[3]);
         return WEEKDAYS[dt.getDay()] + ', ' + MONTHS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
       }
+      var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+      var calendarUrl = baseUrl + '/quote/' + quote.id + '/' + quote.accept_token + '/calendar.ics';
       var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
         + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
         + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
@@ -401,6 +477,10 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(quote.pref_time || '—') + '</td></tr>'
         + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(quote.pref_location || '—') + '</td></tr>'
         + '</table></div>'
+        + '<div style="text-align:center;margin:0 0 24px;">'
+        + '<a href="' + calendarUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">&#128197; Add to Calendar</a>'
+        + '<p style="color:#888;font-size:0.8rem;margin:10px 0 0;">Works with Apple Calendar, Google Calendar, and Outlook.</p>'
+        + '</div>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
@@ -450,18 +530,22 @@ router.get('/', requireAuth, function(req, res) {
 
   var leads;
   if (search) {
+    // Search spans everything (including archived) so old customers stay findable.
     leads = db.prepare(
       'SELECT * FROM leads WHERE (first_name || " " || last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR vehicle LIKE ? OR service LIKE ?) ORDER BY id DESC'
     ).all(sp, sp, sp, sp, sp);
+  } else if (status === 'archived') {
+    leads = db.prepare('SELECT * FROM leads WHERE archived = 1 ORDER BY archived_at DESC, id DESC').all();
   } else if (status === 'all') {
-    leads = db.prepare('SELECT * FROM leads ORDER BY id DESC').all();
+    leads = db.prepare('SELECT * FROM leads WHERE archived = 0 ORDER BY id DESC').all();
   } else {
-    leads = db.prepare('SELECT * FROM leads WHERE status = ? ORDER BY id DESC').all(status);
+    leads = db.prepare('SELECT * FROM leads WHERE status = ? AND archived = 0 ORDER BY id DESC').all(status);
   }
 
-  var counts = db.prepare('SELECT status, COUNT(*) as n FROM leads GROUP BY status').all()
+  var counts = db.prepare('SELECT status, COUNT(*) as n FROM leads WHERE archived = 0 GROUP BY status').all()
     .reduce(function(acc, r) { acc[r.status] = r.n; return acc; }, {});
-  var total = db.prepare('SELECT COUNT(*) as n FROM leads').get().n;
+  var total = db.prepare('SELECT COUNT(*) as n FROM leads WHERE archived = 0').get().n;
+  var archivedCount = db.prepare('SELECT COUNT(*) as n FROM leads WHERE archived = 1').get().n;
 
   var tabs = [
     ['all',            'All',            total],
@@ -471,6 +555,7 @@ router.get('/', requireAuth, function(req, res) {
     ['quote_accepted', 'Quote Accepted', counts.quote_accepted || 0],
     ['booked',         'Booked',         counts.booked         || 0],
     ['completed',      'Completed',      counts.completed      || 0],
+    ['archived',       'Archived',       archivedCount         || 0],
   ];
 
   var tabsHtml = tabs.map(function(t) {
@@ -491,7 +576,11 @@ router.get('/', requireAuth, function(req, res) {
   var cardsHtml = leads.length === 0
     ? '<div class="empty"><div style="font-size:2rem;margin-bottom:10px;">&#128203;</div>' + emptyMsg + '</div>'
     : leads.map(function(l) {
-        return '<div class="card">'
+        var sched = (l.status === 'quote_accepted' || l.status === 'booked')
+          ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
+          : null;
+        var backVal = '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '');
+        return '<div class="card"' + (l.archived ? ' style="opacity:.72;"' : '') + '>'
           + '<div class="row-sb">'
           + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
           + statusBadge(l.status)
@@ -500,20 +589,31 @@ router.get('/', requireAuth, function(req, res) {
           + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
           + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
           + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
+          + '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>'
           + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;">'
           + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
           + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;">Open Quote</a>'
           + '</div>'
-          + '<form method="POST" action="/admin/lead/' + l.id + '/status" style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
-          + '<input type="hidden" name="back" value="/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '') + '">'
-          + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
-          + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
-          + ['new','quoted','follow_up','quote_accepted','booked','completed'].map(function(s) {
-              var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed' }[s];
-              return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + label + '</option>';
-            }).join('')
-          + '</select>'
-          + '</form>'
+          + (l.archived
+              ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
+                + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/restore" style="margin:0;">'
+                + '<input type="hidden" name="back" value="' + backVal + '">'
+                + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">&#8634; Restore</button>'
+                + '</form></div>'
+              : '<form method="POST" action="/admin/lead/' + l.id + '/status" style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
+                + '<input type="hidden" name="back" value="' + backVal + '">'
+                + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
+                + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
+                + ['new','quoted','follow_up','quote_accepted','booked','completed'].map(function(s) {
+                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed' }[s];
+                    return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + label + '</option>';
+                  }).join('')
+                + '</select></form>'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/archive" style="margin-top:8px;" onsubmit="return confirm(\'Archive this lead? It stays saved for history and can be restored from the Archived tab.\');">'
+                + '<input type="hidden" name="back" value="' + backVal + '">'
+                + '<button type="submit" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128451; Archive lead</button>'
+                + '</form>')
           + '</div>';
       }).join('');
 
@@ -569,6 +669,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + quoteAlert
+
+    // Scheduling request / Approve-Deny (pending) or confirmed banner
+    + schedulingPanel(lead, q, false)
 
     // Customer info card
     + '<div class="card">'
@@ -651,6 +754,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + serviceCheckboxes
     + '<button type="button" class="svc-clear-btn" onclick="clearServices()">&#10005; Clear selection</button>'
     + '<div class="svc-tags" id="svcTags"></div>'
+    + '<div id="customQuoteHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
     + '</div>'
 
     + '<div class="form-group"><label>Tier</label>'
@@ -742,6 +846,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("labor").value="0.00";'
     +   'document.getElementById("ss").value="0.00";'
     +   'renderTags();'
+    +   'updateServiceHints([]);'
     +   'calc();'
     + '}'
 
@@ -752,16 +857,27 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var totParts=0,totLabor=0,totSS=0;'
     +   'names.forEach(function(svc){'
     +     'if(!PRICING[svc])return;'
-    +     'var p=PRICING[svc][tier];'
+    +     'var p=PRICING[svc][tier]||PRICING[svc].standard;' // fall back to standard when tier missing
     +     'if(!p)return;'
     +     'totParts+=p.parts;totLabor+=p.labor;totSS+=p.shopSupplies;'
     +   '});'
     +   'renderTags();'
+    +   'updateServiceHints(names);'
     +   'if(names.length===0)return;'
     +   'document.getElementById("parts").value=totParts.toFixed(2);'
     +   'document.getElementById("labor").value=totLabor.toFixed(2);'
     +   'document.getElementById("ss").value=totSS.toFixed(2);'
     +   'calc();'
+    + '}'
+
+    // Shows custom-quote reminders and any service-specific notes (e.g. inspection fee policy)
+    + 'function updateServiceHints(names){'
+    +   'var msgs=[];'
+    +   'var custom=names.filter(function(n){return PRICING[n]&&PRICING[n].customQuote;});'
+    +   'if(custom.length){msgs.push("<strong>Custom quote:</strong> "+custom.join(", ")+" "+(custom.length>1?"have":"has")+" no preset price. Look up the exact part(s) and enter Parts and Labor manually.");}'
+    +   'names.forEach(function(n){if(PRICING[n]&&PRICING[n].note){msgs.push(PRICING[n].note);}});'
+    +   'var box=document.getElementById("customQuoteHint");'
+    +   'if(msgs.length){box.innerHTML=msgs.join("<br><br>");box.style.display="block";}else{box.style.display="none";}'
     + '}'
 
     // Tax is on parts + shop supplies only (not labor — Virginia law)
@@ -791,7 +907,6 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
     +   'var tax=parseFloat(document.getElementById("taxH").value)||0;'
     +   'var tot=parseFloat(document.getElementById("totalH").value)||0;'
-    +   'var tierLabel=tier.charAt(0).toUpperCase()+tier.slice(1);'
     +   'var veh=vehicle?" for your <strong>"+vehicle+"</strong>":"";'
     +   'var toLine=leadEmail||"<em style=\'color:#e07000\'>(no email on file)</em>";'
     +   'var svcListHtml=svcNames.map(function(s){return "<li style=\'padding:3px 0;\'>"+s+"</li>";}).join("");'
@@ -802,7 +917,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+"<div style=\'font-size:0.82rem;color:#888;margin-bottom:8px;\'>Subject: Your Brake Service Quote — Brake Knights</div>"'
     +     '+"<hr class=\'preview-divider\'>"'
     +     '+"<p>Greetings "+firstName+",</p>"'
-    +     '+"<p style=\'margin-top:8px;\'>Here is your <strong>"+tierLabel+"</strong> quote"+veh+":</p>"'
+    +     '+"<p style=\'margin-top:8px;\'>Here is your quote"+veh+":</p>"'
     +     '+"<div style=\'margin:10px 0 4px;font-size:0.8rem;font-weight:700;color:#0a1f3d;text-transform:uppercase;letter-spacing:.4px;\'>Services Included</div>"'
     +     '+"<ul style=\'margin:0 0 12px;padding-left:18px;font-size:0.9rem;color:#1a2a3a;\'>"+svcListHtml+"</ul>"'
     +     '+"<table style=\'width:100%;margin:12px 0;font-size:0.88rem;border-collapse:collapse;\'>"'
@@ -811,6 +926,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+tax.toFixed(2)+"</td></tr>"'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+tot.toFixed(2)+"</td></tr>"'
     +     '+"</table>"'
+    +     '+svcNames.map(function(s){return PRICING[s]&&PRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;font-size:0.85rem;\'>"+n+"</p>";}).join("")'
     +     '+"<p>Includes all parts and labor. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong>.</p>"'
     +     '+"<p style=\'margin-top:8px;\'>We come to your home or office. No shop visit needed.</p>"'
     +     '+"<p style=\'margin-top:8px;\'>Reply to this email or call/text <strong>703-977-4475</strong> to confirm.</p>"'
@@ -819,7 +935,11 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("prevBtn").textContent="Hide Preview";'
     + '}'
 
-    + 'calc();'
+    // On load: if this is a brand-new quote (no saved quote yet) with a service
+    // already auto-filled from the lead, populate prices from the pricing table.
+    // Otherwise just total up the saved/edited values without overwriting them.
+    + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
+    + 'updateServiceHints(Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;}));'
     + 'renderTags();'
     + '</script>';
 
@@ -891,7 +1011,6 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 // ─── Quote email (Phase 3C upgrades this to fully branded template) ───────────
 
 function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl) {
-  var tierLabel   = tier === 'premium' ? 'Premium' : 'Standard';
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
   return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">'
@@ -903,7 +1022,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '</div>'
     + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
     + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Greetings ' + esc(lead.first_name) + ',</h2>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Here is your <strong>' + tierLabel + '</strong> quote' + vehicleBit + ':</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Here is your quote' + vehicleBit + ':</p>'
     + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
     + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 8px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Services Included</p>'
     + '<ul style="margin:0 0 16px;padding-left:18px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">'
@@ -916,15 +1035,19 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total</td>'
     + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + total.toFixed(2) + '</td></tr>'
     + '</table></div>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
-    // Primary CTA — accept the quote and pick a preferred time in one step
+    + service.split(', ').map(function(s) { var sv = PRICING.services[s.trim()]; return (sv && sv.note) ? sv.note : null; }).filter(Boolean).map(function(n) {
+        return '<p style="color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:12px 14px;line-height:1.55;margin:0 0 20px;font-size:0.86rem;">' + esc(n) + '</p>';
+      }).join('')
+    // Primary CTA — placed directly under the total (the unique part of the email)
+    // so Gmail never hides it below "show trimmed content".
     + (acceptUrl
-        ? '<div style="text-align:center;margin:0 0 24px;">'
+        ? '<div style="text-align:center;margin:4px 0 24px;">'
           + '<a href="' + acceptUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:1rem;text-decoration:none;padding:15px 34px;border-radius:8px;">Accept Quote &amp; Choose Your Time &rarr;</a>'
           + '<p style="color:#888;font-size:0.82rem;margin:12px 0 0;">You&rsquo;ll pick a preferred day and time. We&rsquo;ll confirm it or reach out about other openings.</p>'
           + '</div>'
         : '')
+    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
     + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Prefer to talk it through? Reply to this email or call/text:</p>'
     + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'

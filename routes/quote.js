@@ -2,6 +2,24 @@ const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
 const db = require('../db');
+const { toEasternRfc3339 } = require('../datetime');
+const pricing = require('../pricing');
+
+// On-site duration (minutes) for a service, falling back to the default.
+function serviceMinutes(service) {
+  var svc = pricing.services[service];
+  return (svc && svc.minutes) || pricing.defaultMinutes || 60;
+}
+
+// Formats a JS Date as an ICS UTC timestamp, e.g. 20260608T160000Z.
+function icsUtc(d) {
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+// Escapes text for an ICS field (commas, semicolons, backslashes, newlines).
+function icsEscape(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -147,6 +165,45 @@ function loadQuote(id, token) {
   return q;
 }
 
+// ─── Calendar file (.ics) ─────────────────────────────────────────────────────
+// Token-protected so it works straight from the confirmation email. Universal:
+// adds the appointment on Apple Calendar, Google Calendar, and Outlook.
+router.get('/:id/:token/calendar.ics', function(req, res) {
+  var q = loadQuote(req.params.id, req.params.token);
+  if (!q || !q.pref_date) return res.status(404).send('Appointment not found.');
+
+  var startRfc = toEasternRfc3339(q.pref_date, q.pref_time);
+  if (!startRfc) return res.status(404).send('Appointment time unavailable.');
+  var start = new Date(startRfc);
+  var end = new Date(start.getTime() + serviceMinutes(q.service) * 60 * 1000); // per-service block
+
+  var summary = 'Brake Knights — ' + (q.service || 'Brake Service');
+  var desc = 'Mobile brake service' + (q.service ? ' (' + q.service + ')' : '')
+    + '. Total: $' + fmt(q.total) + '. Questions? Call or text 703-977-4475.';
+
+  var ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Brake Knights//Appointments//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:bk-quote-' + q.id + '@brakeknights.com',
+    'DTSTAMP:' + icsUtc(new Date()),
+    'DTSTART:' + icsUtc(start),
+    'DTEND:' + icsUtc(end),
+    'SUMMARY:' + icsEscape(summary),
+    'LOCATION:' + icsEscape(q.pref_location || ''),
+    'DESCRIPTION:' + icsEscape(desc),
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+
+  res.set('Content-Type', 'text/calendar; charset=utf-8');
+  res.set('Content-Disposition', 'attachment; filename="brakeknights-appointment.ics"');
+  res.send(ics);
+});
+
 // ─── Accept page (GET) ────────────────────────────────────────────────────────
 
 router.get('/:id/:token', function(req, res) {
@@ -165,6 +222,17 @@ router.get('/:id/:token', function(req, res) {
     return res.send(shell('Quote Accepted', acceptedConfirmation(q)));
   }
 
+  // Google Places address autocomplete is enabled only when an API key is set.
+  // Until then the address field is a plain text input.
+  var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
+  var addressAutocomplete = mapsKey
+    ? '<script>function initBkAddr(){var input=document.getElementById("prefLocation");if(!input||!window.google||!google.maps||!google.maps.places)return;'
+      + 'var ac=new google.maps.places.Autocomplete(input,{fields:["formatted_address"],componentRestrictions:{country:"us"},types:["address"]});'
+      + 'ac.addListener("place_changed",function(){var p=ac.getPlace();if(p&&p.formatted_address){input.value=p.formatted_address;}});'
+      + 'input.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();}});}</script>'
+      + '<script src="https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(mapsKey) + '&libraries=places&loading=async&callback=initBkAddr" async></script>'
+    : '';
+
   var body = '<div class="card">'
     + '<h1>Greetings ' + esc(q.first_name) + ',</h1>'
     + '<p>Your quote is ready. Review the details below, choose a preferred day and time, and accept. We&rsquo;ll confirm your appointment or reach out about other openings.</p>'
@@ -180,7 +248,7 @@ router.get('/:id/:token', function(req, res) {
     + '<select name="prefTime" required>' + buildTimeOptions() + '</select></div>'
     + '</div>'
     + '<div class="form-group"><label>Service address</label>'
-    + '<input type="text" name="prefLocation" placeholder="Where should we meet you? Home or work address" required></div>'
+    + '<input type="text" id="prefLocation" name="prefLocation" placeholder="Where should we meet you? Home or work address" autocomplete="off" required></div>'
     + '<div class="form-group"><label>Anything else? <span style="color:#aab;font-weight:400;">(optional)</span></label>'
     + '<textarea name="schedulingNotes" placeholder="Gate codes, second choice of time, parking notes…"></textarea></div>'
     + '<button type="submit" class="btn btn-blue">Accept Quote &amp; Request This Time</button>'
@@ -210,7 +278,8 @@ router.get('/:id/:token', function(req, res) {
     +   'dateEl.addEventListener("change",capTimes);'
     +   'capTimes();'
     + '})();'
-    + '</script>';
+    + '</script>'
+    + addressAutocomplete;
 
   res.send(shell('Your Quote', body));
 });
@@ -252,7 +321,7 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
   if (process.env.SMTP_PASS) {
     try {
       var tx = transporter();
-      // Owner notification
+      // Owner notification — owner reviews and approves the requested time.
       await tx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      'greetings@brakeknights.com',
@@ -260,16 +329,8 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
         subject: 'Quote ACCEPTED: ' + q.first_name + ' ' + q.last_name + ' — needs scheduling',
         html:    ownerAcceptedEmail(fresh, baseUrl)
       });
-      // Customer auto-reply
-      if (q.lead_email) {
-        await tx.sendMail({
-          from:    '"Brake Knights" <greetings@brakeknights.com>',
-          to:      q.lead_email,
-          replyTo: 'greetings@brakeknights.com',
-          subject: 'We received your acceptance — Brake Knights',
-          html:    customerAcceptedEmail(fresh)
-        });
-      }
+      // No customer auto-reply here: the on-screen confirmation already covers it,
+      // and the branded appointment-confirmed email is sent once the owner approves.
     } catch (err) {
       console.error('Acceptance email error:', err.message);
     }
@@ -285,11 +346,11 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
 function acceptedConfirmation(q) {
   return '<div class="card" style="text-align:center;">'
     + '<div class="check">&#10003;</div>'
-    + '<h1>You&rsquo;re all set, ' + esc(q.first_name) + '</h1>'
-    + '<p>Your quote is accepted and your scheduling request is in. We&rsquo;ll confirm your appointment shortly, or reach out if we need to find another time.</p>'
+    + '<h1>Quote accepted, ' + esc(q.first_name) + '</h1>'
+    + '<p><strong>Your appointment isn&rsquo;t booked yet.</strong> We&rsquo;ve received your accepted quote and your preferred time below. We&rsquo;ll review it and email you a confirmation once your appointment is locked in, or reach out if we need to find another time.</p>'
     + '</div>'
     + '<div class="card">'
-    + '<h2>Your Request</h2>'
+    + '<h2>Your Requested Time</h2>'
     + '<div class="qline"><span>Service</span><span>' + esc(q.service || 'Brake Service') + '</span></div>'
     + '<div class="qline"><span>Total</span><span>$' + fmt(q.total) + '</span></div>'
     + '<div class="qline"><span>Preferred date</span><span>' + esc(formatPrefDate(q.pref_date)) + '</span></div>'
@@ -330,35 +391,6 @@ function ownerAcceptedEmail(q, baseUrl) {
     + '<a href="' + adminUrl + '" style="color:#4169e1;font-size:0.88rem;text-decoration:none;font-weight:600;">Open in Admin &rarr;</a>'
     + '</div>'
     + '</div></div>';
-}
-
-function customerAcceptedEmail(q) {
-  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
-    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
-    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;">'
-    + '<img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;">'
-    + 'Brake Knights</h1>'
-    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p>'
-    + '</div>'
-    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
-    + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Thank you, ' + esc(q.first_name) + '!</h2>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">We&rsquo;ve received your acceptance and your preferred time. A knight will review your request and confirm your appointment, or reach out if we need to find another time that works.</p>'
-    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
-    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 12px;font-size:0.95rem;">Your Request</p>'
-    + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
-    + '<tr><td style="padding:5px 0;color:#888;width:120px;">Service</td><td style="padding:5px 0;">' + esc(q.service) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;">Total</td><td style="padding:5px 0;font-weight:700;">$' + fmt(q.total) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;">Preferred date</td><td style="padding:5px 0;">' + esc(formatPrefDate(q.pref_date)) + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;">Preferred time</td><td style="padding:5px 0;">' + esc(q.pref_time || '—') + '</td></tr>'
-    + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(q.pref_location || '—') + '</td></tr>'
-    + '</table></div>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 8px;font-size:0.9rem;">Your time is a request, not yet confirmed. We&rsquo;ll be in touch shortly to lock it in.</p>'
-    + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;margin-top:20px;">'
-    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Need to change something? Call or text:</p>'
-    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
-    + '</div></div>'
-    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div>'
-    + '</div>';
 }
 
 module.exports = router;

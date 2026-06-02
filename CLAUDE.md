@@ -4,9 +4,18 @@
 1. `git config core.hooksPath .githooks` — activates the master push block
 2. `git branch --show-current` — confirm you are on `claude/gallant-ptolemy-9gZLb` (or the current feature branch); if not, switch: `git checkout claude/gallant-ptolemy-9gZLb`
 
+## Master Branch Protection (Two Layers)
+Master is protected by two independent layers. Do not weaken or remove either without explicit user approval.
+
+**Layer 1: GitHub ruleset (server-side, primary).**
+A repository ruleset named "Protect master" targets the `master` branch on GitHub itself. It blocks direct pushes by non-admins, force pushes, and branch deletion. It cannot be bypassed locally (`--no-verify` does not affect it) and applies no matter what branch a session starts on. The repo owner (Repository admin) is on the bypass list, so the owner can still push directly to master to deploy. Confirm status anytime with `list_branches` — master reports `"protected": true`.
+
+**Layer 2: local pre-push hook (catches accidental admin pushes).**
+`.githooks/pre-push` blocks all pushes to master by default and is activated each session by `git config core.hooksPath .githooks` (run by the session-start hook). This is the safety net for the one gap Layer 1 leaves open: the owner accidentally pushing to master.
+
 ## Master Push Override
 The pre-push hook blocks all pushes to master by default.
-To override: user says **"go master"** in chat. Claude then runs the push with `MASTER_OVERRIDE="go master"` set as an env var.
+To override: user says **"go master"** in chat. Claude then runs the push with `MASTER_OVERRIDE="go master"` set as an env var. (This satisfies Layer 2; Layer 1 is satisfied separately by the owner's admin bypass.)
 
 ## Skill/Tooling Push Override
 For changes that are dev tooling only (skills, hooks, scripts — nothing that affects the live site):
@@ -124,8 +133,13 @@ Update this section at the end of each session to stay caught up next time.
 - Images and CSS served with `Cache-Control: no-cache` ✅
 - CSS version is at `?v=3` across all 45 pages
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
+- Square auto-booking (Approve → create calendar booking) is **code-complete and validated end-to-end in sandbox** ✅
+  - Location + team member now auto-discovered per environment (sandbox vs production), so no code change needed when production upgrades — see `getSquareLocationId` / `getSquareTeamMemberId` in `routes/admin.js`
+  - Fixed `catalog.upsert` → `catalog.object.upsert` (correct path for the installed Square SDK)
+  - **Only remaining blocker is the Square Appointments subscription tier.** Both sandbox (free) and production (free) return 403 "Merchant subscription does not support write operations" on `bookings.create`. The feature works the moment a paid Appointments plan (Plus/Premium) is active — no further code changes.
+  - The Approve action lives only as a link in the customer-acceptance email (`routes/quote.js`), not in the admin UI — possible future improvement: add an Approve button on the lead page.
 - Next steps:
-  1. Phase 2: auto-create Square customer when contact form is submitted
+  1. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking, or keep manual booking
   2. Add a good rotor-caliper photo to the brake inspection page (tabled — image rotation issue)
 
 ## Pre-Launch Checklist (Before Merging to Master)
@@ -168,6 +182,7 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
+- [ ] Create Google Cloud project + Maps API key (Maps JavaScript API + Places API enabled, key restricted to brakeknights.com), then set GOOGLE_MAPS_API_KEY in Hostinger for dev + prod to activate address autocomplete
 - [ ] Phase 2: auto-create Square customer when contact form is submitted
 - [ ] Phase 3: owner quote tool — enter service + price + time, fire branded quote email
 - [ ] Phase 4: branded booking confirmation email (service, price, date, time, address)
@@ -179,7 +194,9 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
 - [ ] Vehicle year/make/model cascading dropdowns on contact forms (replace free-text vehicle field) — use NHTSA free API (vpic.nhtsa.dot.gov) for model lookup, no data to maintain; tackle after Phase 3B/3C
 - [ ] Finalize pricing table by vehicle type (required before Phase 8)
-- [ ] Provide prices for incomplete services in pricing.js: Brake Fluid Flush, Brake Inspection, Caliper Replacement, Brake Hose Replacement (currently all $0)
+- [ ] Brake Fluid Flush, Caliper Replacement, Brake Hose Replacement still need finalizing: Fluid Flush is set ($155 labor + $10 supplies, single tier); Caliper + Hose are intentionally custom-quote (look up exact part, enter manually). Confirm whether Caliper/Hose should ever get preset pricing.
+- [ ] Review/update existing service prices — owner flagged that "some service prices need updating" (deferred). Walk through the pricing table tier by tier and update any that changed.
+- [ ] Confirm pricing assumptions: Brake Fluid Flush single-tier (no premium); "Front Pads, Rotors, and Drums and Shoes" has no premium tier; Brake Inspection flat $60 no tax.
 - [ ] CRM improvement: tag submission source (homepage vs contact page) in Square customer note
 - [ ] CRM improvement: replace flat note field with structured data fields once Phase 7 CRM is built
 - [ ] CRM improvement: add visible alert/logging if Square customer sync fails on a form submission
@@ -187,6 +204,16 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Removed the customer quote-acceptance auto-reply email (one fewer customer email): on-screen confirmation covers it, branded confirmation still sends after owner approves; owner notification unchanged
+- [x] Quote email: moved "Accept Quote & Choose Your Time" CTA directly under the total so Gmail no longer hides it behind "show trimmed content"
+- [x] Soft archive for leads: Archive button per card (confirm), Restore button + Archived tab, search still spans archived; preserves quote/service history for the CRM
+- [x] Google Places address autocomplete on the customer accept page Service Address field — code complete, gated behind GOOGLE_MAPS_API_KEY (plain text until the key is set)
+- [x] Phase 3: auto-populate quote prices on load; hide Standard/Premium tier wording from customer email
+- [x] Phase 3: "Add to Calendar" (.ics) link in confirmation email (Apple/Google/Outlook); per-service block-off durations from pricing.js `minutes`
+- [x] Phase 3: Approve/Deny appointment from admin (lead page + Quote Accepted list cards)
+- [x] Phase 3: branded appointment reminder emails at T-24h and T-2h (independent of Square plan)
+- [x] Lowered sales tax 7% → 6% (VA state); all new quotes recompute at 6%
+- [x] Pricing update: shop supplies $10 across both tiers; Brake Fluid Flush ($155 labor + $10 supplies, single tier); Brake Inspection flat $60 (no tax) with conditional-fee note in quote email; Caliper/Hose/"Not Sure" marked custom-quote; Drums and Shoes + Front Pads/Rotors/Drums combo are standard-only (premium falls back to standard in the tool)
 - [x] Phase 2: auto-create Square customer when contact form is submitted — live on master
 - [x] Square Developer setup complete — sandbox + production credentials generated
 - [x] Square env vars saved in Hostinger hPanel for brakeknights.com
