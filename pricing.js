@@ -26,7 +26,7 @@ module.exports = {
       premium:  { parts: 162, labor: 133, shopSupplies: 10 }
     },
     'Front and Rear Pads': {
-      minutes: 45,
+      minutes: 60,
       standard: { parts: 270, labor: 185, shopSupplies: 10 },
       premium:  { parts: 271, labor: 224, shopSupplies: 10 }
     },
