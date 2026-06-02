@@ -182,6 +182,8 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
+- [ ] Create Google Cloud project + Maps API key (Maps JavaScript API + Places API enabled, key restricted to brakeknights.com), then set GOOGLE_MAPS_API_KEY in Hostinger for dev + prod to activate address autocomplete
+- [ ] Decide email consolidation (item #4): quote email already links to a single accept+pick-time page. Interactive pickers can't live inside email bodies reliably. Confirm whether to trim the separate confirmation email or keep as-is.
 - [ ] Phase 2: auto-create Square customer when contact form is submitted
 - [ ] Phase 3: owner quote tool — enter service + price + time, fire branded quote email
 - [ ] Phase 4: branded booking confirmation email (service, price, date, time, address)
@@ -202,6 +204,9 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Customer auto-nudge: if a sent quote has not been accepted after X hours, automatically send the customer a gentle follow-up email ("Just checking in — your quote is still available"). Currently manual; add as opt-in feature once Phase 3D is tested in production.
 
 ### Completed This Session
+- [x] Quote email: moved "Accept Quote & Choose Your Time" CTA directly under the total so Gmail no longer hides it behind "show trimmed content"
+- [x] Soft archive for leads: Archive button per card (confirm), Restore button + Archived tab, search still spans archived; preserves quote/service history for the CRM
+- [x] Google Places address autocomplete on the customer accept page Service Address field — code complete, gated behind GOOGLE_MAPS_API_KEY (plain text until the key is set)
 - [x] Phase 3: auto-populate quote prices on load; hide Standard/Premium tier wording from customer email
 - [x] Phase 3: "Add to Calendar" (.ics) link in confirmation email (Apple/Google/Outlook); per-service block-off durations from pricing.js `minutes`
 - [x] Phase 3: Approve/Deny appointment from admin (lead page + Quote Accepted list cards)
