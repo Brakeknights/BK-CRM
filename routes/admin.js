@@ -274,11 +274,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .topbar{background:#0a1f3d;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .topbar-brand{color:#6b8ff5;font-weight:700;font-size:0.95rem;letter-spacing:.5px;display:flex;align-items:center;gap:8px;text-decoration:none}
 .topbar-brand img{width:22px;height:22px;border-radius:4px}
-.topbar-logout{color:#8aadcf;font-size:0.82rem;text-decoration:none}
+.topbar-nav{display:flex;align-items:center;gap:4px}
+.topbar-link{color:#8aadcf;font-size:0.84rem;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;padding:5px 10px;border-radius:6px;transition:background .12s,color .12s}
+.topbar-link:hover{color:#fff;background:rgba(255,255,255,.08)}
+.topbar-link.active{color:#fff;background:rgba(107,143,245,.18);font-weight:700}
+.topbar-logout{color:#8aadcf;font-size:0.82rem;text-decoration:none;padding:5px 10px;border-radius:6px;transition:color .12s}
 .topbar-logout:hover{color:#fff}
-.topbar-nav{display:flex;align-items:center;gap:16px}
-.topbar-link{color:#8aadcf;font-size:0.82rem;text-decoration:none;display:inline-flex;align-items:center}
-.topbar-link:hover{color:#fff}
 .nav-badge{background:#e07000;color:#fff;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:5px;line-height:1.5}
 .wrap{max-width:600px;margin:0 auto;padding:16px}
 .card{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
@@ -359,10 +360,12 @@ function page(title, body, req) {
     var badge = dueCount > 0
       ? ' <span class="nav-badge">' + dueCount + '</span>'
       : '';
+    var p = req.path || '/';
+    var activeSection = p === '/quick' ? 'quick' : p.startsWith('/followups') ? 'followups' : 'leads';
     nav = '<div class="topbar-nav">'
-      + '<a href="/admin" class="topbar-link">Leads</a>'
-      + '<a href="/admin/quick" class="topbar-link">Quick Quote</a>'
-      + '<a href="/admin/followups" class="topbar-link">Follow-ups' + badge + '</a>'
+      + '<a href="/admin" class="topbar-link' + (activeSection === 'leads'     ? ' active' : '') + '">Leads</a>'
+      + '<a href="/admin/quick" class="topbar-link' + (activeSection === 'quick'     ? ' active' : '') + '">Quick Quote</a>'
+      + '<a href="/admin/followups" class="topbar-link' + (activeSection === 'followups' ? ' active' : '') + '">Follow-ups' + badge + '</a>'
       + '<a href="/admin/logout" class="topbar-logout">Log out</a>'
       + '</div>';
   }
@@ -584,6 +587,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">&#127822; Apple / Outlook (.ics)</a>'
         + '<p style="color:#888;font-size:0.8rem;margin:6px 0 0;">Google Calendar opens in your browser. The .ics works with Apple Calendar and Outlook.</p>'
         + '</div>'
+        + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
@@ -1247,7 +1251,8 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
           + '</div>'
         : '')
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
+    + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
     + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Prefer to talk it through? Reply to this email or call/text:</p>'
     + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
@@ -1888,9 +1893,11 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Last name</label><input type="text" name="lastName" id="qln"></div>'
     + '</div>'
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Email <span id="qemHint" style="color:#bbb;font-weight:400;">(to send)</span></label><input type="email" name="email" id="qem" placeholder="customer@email.com"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Phone <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="tel" name="phone" id="qph" placeholder="703-555-0123"></div>'
+    + '<div class="form-group"><label>Email <span id="qemHint" style="color:#bbb;font-weight:400;">(to send)</span></label><input type="email" name="email" id="qem" placeholder="customer@email.com"></div>'
+    + '<div class="form-group"><label>Phone <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="tel" name="phone" id="qph" placeholder="703-555-0123"></div>'
     + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model, optional)</span></label>'
+    + '<input type="text" name="vehicle" id="qveh" placeholder="e.g. 2018 Honda Accord"></div>'
     + '</div>'
 
     // Services + tier
@@ -1908,11 +1915,9 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="hidden" name="tier" id="qtier" value="standard"></div>'
     + '</div>'
 
-    // Receipt-only vehicle / date / payment / address
+    // Receipt-only date / payment / address
     + '<div class="card qReceiptOnly" style="display:none;">'
-    + '<div class="section-title">Service &amp; Vehicle</div>'
-    + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model)</span></label>'
-    + '<input type="text" name="vehicle" id="qveh" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '<div class="section-title">Job Details</div>'
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>Date of service</label><input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
     + '<div class="form-group"><label>Payment method</label>'
@@ -1971,7 +1976,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'receipt_send\')">&#10003; Send Receipt to Customer</button>'
     + '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="qSubmit(\'receipt_save\')">Save as New Lead (no email)</button>'
     + '</div>'
-    + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="qClearAll()">&#10005; Clear everything (calculator only, nothing saved)</button>'
+    + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="if(confirm(\'Clear the form and start over? Nothing will be saved.\'))qClearAll()">&#10005; Clear &amp; Start Over</button>'
     + '</div>'
     + '</form>'
 
@@ -1993,6 +1998,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qSummaryLabel").textContent=rec?"Customer Receipt":"Customer Quote";'
     +   'document.getElementById("qTotalLabel").textContent=rec?"Total Paid":"Total";'
     +   'document.getElementById("qemHint").textContent=rec?"(to send receipt)":"(to send)";'
+    +   'qSaveState();'
     + '}'
 
     + 'function qSetTier(t){'
@@ -2000,6 +2006,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qBtnStd").classList.toggle("active",t==="standard");'
     +   'document.getElementById("qBtnPrem").classList.toggle("active",t==="premium");'
     +   'qAutofill();'
+    +   'qSaveState();'
     + '}'
 
     + 'function qRenderTags(){'
@@ -2072,7 +2079,81 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qfn").value="";document.getElementById("qln").value="";'
     +   'document.getElementById("qem").value="";document.getElementById("qph").value="";'
     +   'var veh=document.getElementById("qveh");if(veh)veh.value="";'
-    +   'qSetTier("standard");qcalc();'
+    +   'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";'
+    +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
+    +   'var offN=document.querySelector("[name=officeNotes]");if(offN)offN.value="";'
+    +   '[1,2,3,4].forEach(function(i){'
+    +     'var n=document.querySelector("[name=custNote"+i+"]");if(n)n.value="";'
+    +     'var t=document.querySelector("[name=fuTime"+i+"]");if(t){t.value="none";toggleCustom(i);}'
+    +     'var r=document.querySelector("[name=fuRecipient"+i+"]");if(r)r.value="owner";'
+    +     'var c=document.querySelector("[name=fuCustom"+i+"]");if(c)c.value="";'
+    +   '});'
+    +   'qSetMode("quote");qSetTier("standard");qcalc();'
+    +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
+    + '}'
+
+    // Auto-save form state to localStorage so navigating away and back preserves work.
+    + 'function qSaveState(){'
+    +   'try{'
+    +     'var adv=[1,2,3,4].map(function(i){'
+    +       'return {'
+    +         'note:(document.querySelector("[name=custNote"+i+"]")||{}).value||"",'
+    +         'time:(document.querySelector("[name=fuTime"+i+"]")||{}).value||"none",'
+    +         'recv:(document.querySelector("[name=fuRecipient"+i+"]")||{}).value||"owner",'
+    +         'cust:(document.querySelector("[name=fuCustom"+i+"]")||{}).value||""'
+    +       '};'
+    +     '});'
+    +     'localStorage.setItem("bk_qq_state",JSON.stringify({'
+    +       'mode:qmode,tier:qtier,'
+    +       'fn:document.getElementById("qfn").value,'
+    +       'ln:document.getElementById("qln").value,'
+    +       'em:document.getElementById("qem").value,'
+    +       'ph:document.getElementById("qph").value,'
+    +       'veh:(document.getElementById("qveh")||{}).value||"",'
+    +       'svcs:qCheckedServices(),'
+    +       'parts:document.getElementById("qparts").value,'
+    +       'labor:document.getElementById("qlabor").value,'
+    +       'ss:document.getElementById("qss").value,'
+    +       'tr:document.getElementById("qtr").value,'
+    +       'payMethod:(document.getElementById("qpm")||{}).value||"",'
+    +       'payOther:(document.getElementById("qpmOther")||{}).value||"",'
+    +       'svcDate:(document.querySelector("[name=serviceDate]")||{}).value||"",'
+    +       'svcAddr:(document.querySelector("[name=serviceAddress]")||{}).value||"",'
+    +       'offNotes:(document.querySelector("[name=officeNotes]")||{}).value||"",'
+    +       'adv:adv'
+    +     '}));'
+    +   '}catch(_){}'
+    + '}'
+    + 'function qRestoreState(){'
+    +   'try{'
+    +     'var raw=localStorage.getItem("bk_qq_state");if(!raw)return;'
+    +     'var s=JSON.parse(raw);if(!s)return;'
+    +     'if(s.mode)qSetMode(s.mode);'
+    +     'if(s.tier)qSetTier(s.tier);'
+    +     'if(s.fn)document.getElementById("qfn").value=s.fn;'
+    +     'if(s.ln)document.getElementById("qln").value=s.ln;'
+    +     'if(s.em)document.getElementById("qem").value=s.em;'
+    +     'if(s.ph)document.getElementById("qph").value=s.ph;'
+    +     'if(s.veh&&document.getElementById("qveh"))document.getElementById("qveh").value=s.veh;'
+    +     'if(s.svcs&&s.svcs.length)document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});'
+    +     'if(s.parts!==undefined)document.getElementById("qparts").value=s.parts;'
+    +     'if(s.labor!==undefined)document.getElementById("qlabor").value=s.labor;'
+    +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
+    +     'if(s.tr!==undefined)document.getElementById("qtr").value=s.tr;'
+    +     'if(s.payMethod&&document.getElementById("qpm"))document.getElementById("qpm").value=s.payMethod;'
+    +     'if(s.payOther&&document.getElementById("qpmOther"))document.getElementById("qpmOther").value=s.payOther;'
+    +     'var sa=document.querySelector("[name=serviceAddress]");if(s.svcAddr&&sa)sa.value=s.svcAddr;'
+    +     'var sd=document.querySelector("[name=serviceDate]");if(s.svcDate&&sd)sd.value=s.svcDate;'
+    +     'var on=document.querySelector("[name=officeNotes]");if(s.offNotes&&on)on.value=s.offNotes;'
+    +     'if(s.adv)s.adv.forEach(function(a,idx){'
+    +       'var i=idx+1;'
+    +       'var n=document.querySelector("[name=custNote"+i+"]");if(n&&a.note)n.value=a.note;'
+    +       'var t=document.querySelector("[name=fuTime"+i+"]");if(t&&a.time){t.value=a.time;toggleCustom(i);}'
+    +       'var r=document.querySelector("[name=fuRecipient"+i+"]");if(r&&a.recv)r.value=a.recv;'
+    +       'var c=document.querySelector("[name=fuCustom"+i+"]");if(c&&a.cust)c.value=a.cust;'
+    +     '});'
+    +     'qUpdateServices();qPayToggle();qcalc();'
+    +   '}catch(_){}'
     + '}'
 
     + 'function qSubmit(action){'
@@ -2081,11 +2162,18 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var em=document.getElementById("qem").value.trim();'
     +   'if(!fn||!ln){alert("Enter the customer first and last name to save or send.");return;}'
     +   'if((action==="quote_send"||action==="receipt_send")&&!em){alert("Enter an email to send. For texting, use Get Copyable Quote Link instead.");return;}'
+    +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
     +   'document.getElementById("qaction").value=action;'
     +   'document.getElementById("qqf").submit();'
     + '}'
 
-    + 'qRenderTags();qPayToggle();qcalc();'
+    // Wire up auto-save and restore on page load.
+    + 'var _qqSaveTimer;'
+    + 'document.getElementById("qqf").addEventListener("input",function(){clearTimeout(_qqSaveTimer);_qqSaveTimer=setTimeout(qSaveState,400);});'
+    + 'document.getElementById("qqf").addEventListener("change",function(){clearTimeout(_qqSaveTimer);_qqSaveTimer=setTimeout(qSaveState,400);});'
+    + 'qRenderTags();qPayToggle();'
+    + 'qRestoreState();'
+    + 'qcalc();'
     + '</script>';
 
   res.send(page('Quick Quote', body, req));

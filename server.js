@@ -5,11 +5,14 @@ const nodemailer = require('nodemailer');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 const { toEasternRfc3339 } = require('./datetime');
 const db = require('./db');
+const SqliteStore = require('./sqlite-session-store');
 const adminRouter = require('./routes/admin');
 const quoteRouter = require('./routes/quote');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 hours
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -17,7 +20,8 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'bk-dev-secret-change-in-prod',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 8 * 60 * 60 * 1000 }
+  store: new SqliteStore(db, SESSION_TTL),
+  cookie: { maxAge: SESSION_TTL }
 }));
 
 // 301 redirects for old blog posts and old-format location URLs from previous site
