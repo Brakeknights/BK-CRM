@@ -106,9 +106,18 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 
 **Phase 5 (complete):** Job summary + custom receipt — owner fills out a receipt form after the job (service, vehicle, pricing, payment method, up to 4 advisory notes). Branded receipt emails to the customer. Lead auto-marked Completed. Each advisory can carry a timed follow-up reminder (owner/customer/both).
 
-**Phase 6 (foundation complete):** Follow-up reminders created from receipt advisories are stored in the `followups` table. A cron job in server.js checks every 6h and fires owner alert and/or customer reminder emails on the due date.
+**Phase 6 (complete):** Follow-up reminders created from receipt advisories are stored in the `followups` table. A cron job in server.js checks every 6h and fires owner alert and/or customer reminder emails on the due date. Management UI added: `/admin/followups` dashboard (Due Now / Upcoming / Recently Sent) with reschedule, mark-done, cancel; topbar Follow-ups link with an overdue/due-today count badge; ad-hoc reminder creator on lead pages; follow-ups surfaced on the lead profile. Plus a round of receipt/profile refinements: receipt service multi-select with tier + price auto-fill, "Other" payment text box, lead-level VIN + Internal Notes card, "Receipt Sent" pipeline stage (amber Completed = receipt still owed), clickable "View customer copy", full lead-history logging, and Text/Email buttons on lead cards.
+- **Auto-fill decision:** the receipt service picker auto-fills price fields from the pricing table. Keep as-is for now; revisit later.
+
+**Phase 6C (deferred — Square auto-trigger):** Instead of the owner manually clicking "Complete Job & Send Receipt," Square events (appointment marked done, or payment taken in the Square POS) automatically fire our receipt + follow-up flow via the Square API/webhooks. Bigger build; spec together when we get there.
 
 **Phase 7:** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, all owned by Brake Knights.
+
+**Phase 7A (next up — Quick Quote / Receipt Generator):** A standalone generator on the dashboard, not bound to any lead, for fast phone/text inquiries. Reuses the existing pricing engine, service multi-select + tier toggle, live auto-calc, and branded quote/receipt templates.
+- **Quote/Receipt mode switch** on one screen; usable on the front end (brand-new) or back end (within an existing lead). Pick services + tier, override any number, total recalcs live (for reading off on the phone).
+- **Three outcomes:** (1) calculator only — nothing saved, can be erased; (2) send to customer — enter first/last name + email → creates a lead (source "Quick Quote") in the Quoted stage, saves the quote, emails the branded quote with the accept link; (3) copyable shareable link — creates the lead + quote + token and returns the customer-facing branded quote URL the owner copy-pastes into their own texting app.
+- Also: option to save as a new lead without sending.
+- **SMS note:** in-app text sending needs an SMS provider (Twilio etc.) — not wired yet. For text inquiries, use email or the copyable link for now. Real in-app SMS is its own later phase.
 
 **Phase 8:** Automated quotes — instant quote emails based on vehicle type and service selected (requires pricing table to be finalized first).
 
@@ -122,11 +131,11 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/friendly-lamport-I5Aji` — pushed to `dev`, pending merge to `master` ⏳
+- Working branch: `claude/ecstatic-bardeen-5kp7B` — pushed to `dev` ⏳ (pending merge to `master`)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Phases 2, 3, 4, 5 complete and on dev. Phase 6 foundation (followups table + cron) also on dev.
-- Phase 5 on dev, not yet on master — needs user to merge PR or push from local machine.
+- Phases 2, 3, 4, 5 complete. Phase 6 complete (followups table + cron + management UI + receipt/profile refinements) — all on dev.
+- Phase 5 + Phase 6 on dev, not yet on master — needs user to merge.
 - Pre-push hook in place — direct pushes to `master` blocked; override with "go master" keyword ✅
 - "go skill" keyword added — pushes tooling-only changes to both dev and master in one shot ✅
 - Session startup hook shows pending dev-vs-master commits at session start ✅
@@ -134,9 +143,10 @@ Update this section at the end of each session to stay caught up next time.
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - Next steps:
-  1. Merge dev → master to ship Phase 5 to the live site (user-initiated)
-  2. Phase 7: admin CRM dashboard at brakeknights.com/admin
-  3. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
+  1. **Phase 7A: Quick Quote / Receipt Generator** (build next — standalone dashboard tool; see Platform Build Phases for full spec)
+  2. Merge dev → master to ship Phases 5 + 6 to the live site (user-initiated)
+  3. Phase 7: admin CRM dashboard at brakeknights.com/admin
+  4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -181,8 +191,9 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Phase 2: auto-create Square customer when contact form is submitted
 - [ ] Phase 3: owner quote tool — enter service + price + time, fire branded quote email
 - [ ] Phase 4: branded booking confirmation email (service, price, date, time, address)
+- [ ] **Phase 7A (next): Quick Quote / Receipt Generator** — standalone dashboard tool, quote/receipt mode switch, live auto-calc, three outcomes (calculator-only/erase, send-email + create lead, copyable branded quote link to text manually). Build before Phase 7. Full spec in Platform Build Phases.
 - [ ] Phase 7: admin CRM dashboard at brakeknights.com/admin
-- [ ] Phase 7: admin CRM dashboard at brakeknights.com/admin
+- [ ] Phase 6C: Square auto-trigger (Square events fire receipt + follow-up flow) — deferred, spec later
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
