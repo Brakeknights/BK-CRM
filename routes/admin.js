@@ -796,26 +796,43 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Complete Job — opens the receipt form (Phase 5)
     + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>'
 
-    // Receipt history
+    // Receipt history — each receipt is a clickable card that opens the customer
+    // copy, and surfaces its advisories + office (internal) notes right here so
+    // they're easy to find without opening the receipt.
     + (function() {
         var receipts = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
         if (receipts.length === 0) return '';
-        var rows = receipts.map(function(rc) {
-          var when = rc.sent_at ? new Date(rc.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : 'not emailed';
-          return '<tr style="border-bottom:1px solid #f0f0f0;">'
-            + '<td style="padding:7px 8px 7px 0;white-space:nowrap;">' + esc(when) + '</td>'
-            + '<td style="padding:7px 8px;">' + esc(rc.service || '—') + '</td>'
-            + '<td style="padding:7px 0 7px 8px;text-align:right;">$' + money(rc.total) + '</td>'
-            + '</tr>';
+        var cards = receipts.map(function(rc) {
+          var when = rc.sent_at
+            ? 'Sent ' + new Date(rc.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : 'Saved (not emailed)';
+          var advisories = [];
+          try { advisories = JSON.parse(rc.customer_notes || '[]'); } catch (_) {}
+          var advHtml = advisories.length
+            ? '<div style="margin-top:10px;"><div style="font-size:0.74rem;font-weight:700;color:#1a6fc4;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;">Advisories to customer</div>'
+              + '<ul style="margin:0;padding-left:18px;color:#1a2a3a;font-size:0.85rem;line-height:1.5;">'
+              + advisories.map(function(a) { return '<li>' + esc(a) + '</li>'; }).join('')
+              + '</ul></div>'
+            : '';
+          var officeHtml = rc.office_notes
+            ? '<div style="margin-top:10px;background:#fff8e1;border:1px solid #f0d080;border-radius:7px;padding:10px 12px;">'
+              + '<div style="font-size:0.74rem;font-weight:700;color:#7a5a00;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Office notes (internal)</div>'
+              + '<div style="color:#5a4400;font-size:0.85rem;line-height:1.5;white-space:pre-wrap;">' + esc(rc.office_notes) + '</div></div>'
+            : '';
+          return '<div style="border:1px solid #eef1f5;border-radius:9px;padding:13px;margin-bottom:10px;">'
+            + '<div class="row-sb" style="align-items:flex-start;">'
+            + '<div><div style="font-weight:700;color:#0a1f3d;font-size:0.9rem;">' + esc(rc.service || 'Service') + '</div>'
+            + '<div style="color:#999;font-size:0.78rem;margin-top:2px;">' + esc(when) + (rc.payment_method ? ' &middot; ' + esc(rc.payment_method) : '') + '</div></div>'
+            + '<div style="font-weight:700;color:#0a1f3d;white-space:nowrap;">$' + money(rc.total) + '</div>'
+            + '</div>'
+            + advHtml
+            + officeHtml
+            + '<div style="margin-top:11px;"><a href="/admin/receipt/view/' + rc.id + '" class="btn btn-outline btn-sm" style="width:auto;">View customer copy &rarr;</a></div>'
+            + '</div>';
         }).join('');
         return '<div class="card">'
           + '<div class="section-title" style="margin-bottom:10px;">Receipts <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + receipts.length + ')</span></div>'
-          + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.83rem;">'
-          + '<thead><tr style="border-bottom:2px solid #f0f0f0;">'
-          + '<th style="text-align:left;padding:4px 8px 8px 0;color:#888;font-weight:600;">Sent</th>'
-          + '<th style="text-align:left;padding:4px 8px 8px;color:#888;font-weight:600;">Service</th>'
-          + '<th style="text-align:right;padding:4px 0 8px 8px;color:#888;font-weight:600;">Total</th>'
-          + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+          + cards + '</div>';
       })()
 
     // Follow-ups for this lead (pending + recent), plus an add form.
@@ -1254,6 +1271,19 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   var shopSupplies = quote.shop_supplies || 0;
   var tax       = quote.tax || 0;
   var total     = partsLabor + shopSupplies + tax;
+  var receiptTier = quote.tier === 'premium' ? 'premium' : 'standard';
+
+  // Service picker mirrors the quote tool: a multi-select of every service so the
+  // owner can change/add what was actually done if the job grew on arrival.
+  var selectedServices = service ? service.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  var rServiceCheckboxes = '<div class="svc-check-list">'
+    + Object.keys(PRICING.services).map(function(s) {
+        var checked = selectedServices.indexOf(s) >= 0 ? ' checked' : '';
+        return '<label class="svc-check-item"><input type="checkbox" class="rsvc-cb" value="' + esc(s) + '"' + checked + ' onchange="rUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
+      }).join('')
+    + '</div>'
+    + '<input type="hidden" name="service" id="rsvcHidden" value="' + esc(service) + '">';
+  var rPricingJson = JSON.stringify(PRICING.services);
 
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
     return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
@@ -1281,16 +1311,26 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
 
     + '<div class="card">'
     + '<div class="section-title">Service &amp; Vehicle</div>'
-    + '<div class="form-group"><label>Service performed</label>'
-    + '<input type="text" name="service" value="' + esc(service) + '" placeholder="e.g. Front and Rear Pads and Rotors"></div>'
+    + '<div class="form-group"><label>Service performed <span style="color:#bbb;font-weight:400;">(select all that apply, change if the job grew on arrival)</span></label>'
+    + rServiceCheckboxes
+    + '<button type="button" class="svc-clear-btn" onclick="rClearServices()">&#10005; Clear selection</button>'
+    + '<div class="svc-tags" id="rsvcTags"></div>'
+    + '</div>'
+    + '<div class="form-group"><label>Tier <span style="color:#bbb;font-weight:400;">(sets auto-filled pricing)</span></label>'
+    + '<div class="tier-toggle">'
+    + '<button type="button" class="tier-btn' + (receiptTier === 'standard' ? ' active' : '') + '" id="rBtnStd" onclick="rSetTier(\'standard\')">Standard</button>'
+    + '<button type="button" class="tier-btn' + (receiptTier === 'premium'  ? ' active' : '') + '" id="rBtnPrem" onclick="rSetTier(\'premium\')">Premium</button>'
+    + '</div></div>'
     + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model)</span></label>'
     + '<input type="text" name="vehicle" value="' + esc(vehicle) + '" placeholder="e.g. 2018 Honda Accord"></div>'
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>Date of service</label>'
     + '<input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
     + '<div class="form-group"><label>Payment method</label>'
-    + '<select name="paymentMethod">' + paymentOpts + '</select></div>'
+    + '<select name="paymentMethod" id="rpm" onchange="rPayToggle()">' + paymentOpts + '</select></div>'
     + '</div>'
+    + '<div class="form-group" id="rpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
+    + '<input type="text" name="paymentOther" id="rpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
     + '<input type="text" name="serviceAddress" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
     + '</div>'
@@ -1324,6 +1364,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '</form>'
 
     + '<script>'
+    + 'var RPRICING=' + rPricingJson + ';'
+    + 'var RTAXRATE=' + PRICING.taxRate + ';'
+    + 'var rtier="' + esc(receiptTier) + '";'
     + 'function rcalc(){'
     +   'var pl=parseFloat(document.getElementById("rpl").value)||0;'
     +   'var ss=parseFloat(document.getElementById("rss").value)||0;'
@@ -1332,10 +1375,65 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'document.getElementById("rtotal").textContent="$"+t.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});'
     +   'document.getElementById("rtotalH").value=t.toFixed(2);'
     + '}'
+    + 'function rCheckedServices(){'
+    +   'return Array.from(document.querySelectorAll(".rsvc-cb:checked")).map(function(c){return c.value;});'
+    + '}'
+    + 'function rRenderTags(){'
+    +   'var names=rCheckedServices();'
+    +   'document.getElementById("rsvcTags").innerHTML=names.map(function(n){'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'rRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
+    +   '}).join("");'
+    + '}'
+    + 'function rRemoveTag(btn){'
+    +   'var val=btn.getAttribute("data-val");'
+    +   'var cb=Array.from(document.querySelectorAll(".rsvc-cb")).find(function(c){return c.value===val;});'
+    +   'if(cb)cb.checked=false;'
+    +   'rUpdateServices();'
+    + '}'
+    + 'function rClearServices(){'
+    +   'document.querySelectorAll(".rsvc-cb").forEach(function(cb){cb.checked=false;});'
+    +   'rUpdateServices();'
+    + '}'
+    + 'function rSetTier(t){'
+    +   'rtier=t;'
+    +   'document.getElementById("rBtnStd").classList.toggle("active",t==="standard");'
+    +   'document.getElementById("rBtnPrem").classList.toggle("active",t==="premium");'
+    +   'rAutofill();'
+    + '}'
+    // Auto-fill the Amount Paid fields from the pricing table for the selected
+    // services + tier. The owner can still type over any field afterward.
+    + 'function rAutofill(){'
+    +   'var names=rCheckedServices();'
+    +   'if(names.length===0)return;'
+    +   'var parts=0,labor=0,ss=0;'
+    +   'names.forEach(function(s){'
+    +     'var sv=RPRICING[s];if(!sv)return;'
+    +     'var p=sv[rtier]||sv.standard;if(!p)return;'
+    +     'parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;'
+    +   '});'
+    +   'var tax=(parts+ss)*RTAXRATE;'
+    +   'document.getElementById("rpl").value=(parts+labor).toFixed(2);'
+    +   'document.getElementById("rss").value=ss.toFixed(2);'
+    +   'document.getElementById("rtax").value=tax.toFixed(2);'
+    +   'rcalc();'
+    + '}'
+    + 'function rUpdateServices(){'
+    +   'document.getElementById("rsvcHidden").value=rCheckedServices().join(", ");'
+    +   'rRenderTags();'
+    +   'rAutofill();'
+    + '}'
+    + 'function rPayToggle(){'
+    +   'var v=document.getElementById("rpm").value;'
+    +   'var wrap=document.getElementById("rpmOtherWrap");'
+    +   'var show=(v==="Other");'
+    +   'wrap.style.display=show?"block":"none";'
+    +   'document.getElementById("rpmOther").required=show;'
+    + '}'
     + 'function toggleCustom(i){'
     +   'var v=document.querySelector("[name=fuTime"+i+"]").value;'
     +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
     + '}'
+    + 'rRenderTags();rPayToggle();'
     + '</script>';
 
   res.send(page('Receipt — ' + lead.first_name + ' ' + lead.last_name, body, req));
@@ -1354,6 +1452,7 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var tax          = parseFloat(req.body.tax)          || 0;
   var total        = partsLabor + shopSupplies + tax;
   var payment      = (req.body.paymentMethod || '').trim();
+  if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
   var officeNotes  = (req.body.officeNotes || '').trim() || null;
 
   // Collect customer advisories and any reminders attached to them.
@@ -1407,6 +1506,60 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     }
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=receipt_saved');
+});
+
+// Read-only view of a sent receipt: the exact customer copy, plus an internal
+// panel with office notes and any follow-ups this receipt created.
+router.get('/receipt/view/:id', requireAuth, function(req, res) {
+  var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
+  if (!receipt) return res.status(404).send('Receipt not found');
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(receipt.lead_id);
+  if (!lead) return res.status(404).send('Lead not found');
+
+  var notes = [];
+  try { notes = JSON.parse(receipt.customer_notes || '[]'); } catch (_) {}
+  var when = receipt.sent_at
+    ? 'Emailed ' + new Date(receipt.sent_at + 'Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : 'Saved, not emailed';
+
+  var fus = db.prepare('SELECT * FROM followups WHERE receipt_id = ? ORDER BY due_date ASC').all(receipt.id);
+  var fuHtml = fus.length
+    ? '<div style="margin-top:14px;"><div style="font-size:0.78rem;font-weight:700;color:#0a1f3d;margin-bottom:6px;">Follow-ups created from this receipt</div>'
+      + fus.map(function(f) {
+          return '<div style="font-size:0.85rem;color:#444;padding:6px 0;border-bottom:1px solid #f4f4f4;">'
+            + esc(f.description) + ' <span style="color:#aaa;">&middot; due ' + esc(fmtPrefDate(f.due_date)) + ' &middot; ' + esc(RECIPIENT_LABEL[f.recipient] || f.recipient)
+            + (f.sent ? ' &middot; sent' : '') + '</span></div>';
+        }).join('')
+      + '</div>'
+    : '';
+
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back to Lead</a>'
+    + '<div class="card">'
+    + '<div class="row-sb" style="margin-bottom:4px;">'
+    + '<div class="lead-name">Receipt &middot; ' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
+    + '<div style="font-weight:700;color:#0a1f3d;">$' + money(receipt.total) + '</div>'
+    + '</div>'
+    + '<div style="color:#999;font-size:0.82rem;">' + esc(when) + (receipt.payment_method ? ' &middot; ' + esc(receipt.payment_method) : '') + '</div>'
+    + '</div>'
+
+    // Internal panel (office notes + follow-ups) — never sent to the customer.
+    + ((receipt.office_notes || fus.length)
+        ? '<div class="card" style="background:#fffaf0;border:1px solid #f0d080;">'
+          + '<div class="section-title" style="color:#7a5a00;">Internal &mdash; not sent to customer</div>'
+          + (receipt.office_notes
+              ? '<div style="color:#5a4400;font-size:0.9rem;line-height:1.55;white-space:pre-wrap;">' + esc(receipt.office_notes) + '</div>'
+              : '<div style="color:#999;font-size:0.85rem;">No office notes.</div>')
+          + fuHtml
+          + '</div>'
+        : '')
+
+    // The exact customer copy.
+    + '<div class="section-title" style="margin:18px 0 10px;">Customer copy</div>'
+    + '<div style="border:1px solid #e0e7ef;border-radius:8px;overflow:hidden;background:#fff;">'
+    + buildReceiptEmail(lead, receipt, notes)
+    + '</div>';
+
+  res.send(page('Receipt — ' + lead.first_name + ' ' + lead.last_name, body, req));
 });
 
 // Branded service receipt. notes is an array of customer-facing advisory strings.
