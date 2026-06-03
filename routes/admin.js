@@ -361,6 +361,7 @@ function page(title, body, req) {
       : '';
     nav = '<div class="topbar-nav">'
       + '<a href="/admin" class="topbar-link">Leads</a>'
+      + '<a href="/admin/quick" class="topbar-link">Quick Quote</a>'
       + '<a href="/admin/followups" class="topbar-link">Follow-ups' + badge + '</a>'
       + '<a href="/admin/logout" class="topbar-logout">Log out</a>'
       + '</div>';
@@ -775,6 +776,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'receipt_sent')  quoteAlert = '<div class="alert alert-success">Receipt sent to the customer. Lead moved to Receipt.</div>';
   if (req.query.msg === 'receipt_saved') quoteAlert = '<div class="alert alert-success">Receipt saved. No email on file for this lead.</div>';
   if (req.query.msg === 'receipt_err')   quoteAlert = '<div class="alert alert-error">Receipt saved, but the email failed to send. Try again.</div>';
+  if (req.query.msg === 'quick_sent')    quoteAlert = '<div class="alert alert-success">Quick Quote sent to the customer. Lead created in the Quoted stage.</div>';
+  if (req.query.msg === 'quick_saved')   quoteAlert = '<div class="alert alert-success">Lead created from Quick Quote and the quote was saved (not emailed).</div>';
+  if (req.query.msg === 'quick_err')     quoteAlert = '<div class="alert alert-error">Lead and quote saved, but the email failed to send. Try resending from this page.</div>';
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + quoteAlert
@@ -1820,6 +1824,425 @@ router.post('/followup/:id/cancel', requireAuth, express.urlencoded({ extended: 
   db.prepare('DELETE FROM followups WHERE id = ?').run(req.params.id);
   if (f) logHistory(f.lead_id, 'Follow-up cancelled', f.description);
   res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=cancelled');
+});
+
+// ─── Phase 7A: Quick Quote / Receipt Generator ───────────────────────────────
+// A standalone generator, not bound to any lead, for fast phone/text inquiries.
+// Reuses the pricing engine, the service multi-select + tier toggle, live
+// auto-calc, and the branded buildQuoteEmail / buildReceiptEmail templates.
+//
+// Three quote outcomes: (1) calculator only (Clear, nothing saved); (2) Send —
+// create a "Quick Quote" lead in the Quoted stage, save the quote, email the
+// branded quote with its accept link; (3) Copyable link — create the lead +
+// quote + token and hand back the customer-facing quote URL to paste into a
+// text. Receipt mode mirrors the receipt builder (send or save as a lead).
+
+router.get('/quick', requireAuth, function(req, res) {
+  var serviceNames = Object.keys(PRICING.services);
+  var pricingJson = JSON.stringify(PRICING.services);
+  var taxPct = +(PRICING.taxRate * 100).toFixed(2);
+
+  var serviceCheckboxes = '<div class="svc-check-list">'
+    + serviceNames.map(function(s) {
+        return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
+      }).join('')
+    + '</div>'
+    + '<input type="hidden" name="service" id="qsvcHidden" value="">';
+
+  var paymentOpts = PAYMENT_METHODS.map(function(p) {
+    return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+  }).join('');
+
+  var advisoryRows = '';
+  for (var i = 1; i <= 4; i++) advisoryRows += advisoryRow(i);
+
+  var alert = '';
+  if (req.query.err === 'name')  alert = '<div class="alert alert-error">First and last name are required to save or send.</div>';
+  if (req.query.err === 'email') alert = '<div class="alert alert-error">An email address is required to send a quote or receipt. Use the copyable link instead, or add an email.</div>';
+
+  var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
+    + alert
+    + '<div class="card">'
+    + '<div class="lead-name" style="margin-bottom:4px;">Quick Quote / Receipt</div>'
+    + '<div style="color:#888;font-size:0.85rem;">A standalone generator for phone and text inquiries. Pick services, read the live total off to the customer, then send, save, or grab a copyable link.</div>'
+    + '</div>'
+
+    + '<form method="POST" action="/admin/quick" id="qqf">'
+    + '<input type="hidden" name="mode" id="qmode" value="quote">'
+    + '<input type="hidden" name="action" id="qaction" value="">'
+
+    // Mode switch
+    + '<div class="card">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Mode</label>'
+    + '<div class="tier-toggle">'
+    + '<button type="button" class="tier-btn active" id="qModeQuote" onclick="qSetMode(\'quote\')">Quote</button>'
+    + '<button type="button" class="tier-btn" id="qModeReceipt" onclick="qSetMode(\'receipt\')">Receipt</button>'
+    + '</div></div>'
+    + '</div>'
+
+    // Customer (optional for calculator-only; required to save/send)
+    + '<div class="card">'
+    + '<div class="section-title">Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(needed to save or send, not for calculator-only)</span></div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>First name</label><input type="text" name="firstName" id="qfn"></div>'
+    + '<div class="form-group"><label>Last name</label><input type="text" name="lastName" id="qln"></div>'
+    + '</div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Email <span id="qemHint" style="color:#bbb;font-weight:400;">(to send)</span></label><input type="email" name="email" id="qem" placeholder="customer@email.com"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Phone <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="tel" name="phone" id="qph" placeholder="703-555-0123"></div>'
+    + '</div>'
+    + '</div>'
+
+    // Services + tier
+    + '<div class="card">'
+    + '<div class="section-title">Service <span style="font-size:0.8rem;color:#bbb;font-weight:400;">(select all that apply)</span></div>'
+    + serviceCheckboxes
+    + '<button type="button" class="svc-clear-btn" onclick="qClearServices()">&#10005; Clear selection</button>'
+    + '<div class="svc-tags" id="qsvcTags"></div>'
+    + '<div id="qCustomHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
+    + '<div class="form-group" style="margin:14px 0 0;"><label>Tier</label>'
+    + '<div class="tier-toggle">'
+    + '<button type="button" class="tier-btn active" id="qBtnStd" onclick="qSetTier(\'standard\')">Standard</button>'
+    + '<button type="button" class="tier-btn" id="qBtnPrem" onclick="qSetTier(\'premium\')">Premium</button>'
+    + '</div>'
+    + '<input type="hidden" name="tier" id="qtier" value="standard"></div>'
+    + '</div>'
+
+    // Receipt-only vehicle / date / payment / address
+    + '<div class="card qReceiptOnly" style="display:none;">'
+    + '<div class="section-title">Service &amp; Vehicle</div>'
+    + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model)</span></label>'
+    + '<input type="text" name="vehicle" id="qveh" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date of service</label><input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
+    + '<div class="form-group"><label>Payment method</label>'
+    + '<select name="paymentMethod" id="qpm" onchange="qPayToggle()">' + paymentOpts + '</select></div>'
+    + '</div>'
+    + '<div class="form-group" id="qpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
+    + '<input type="text" name="paymentOther" id="qpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
+    + '<input type="text" name="serviceAddress" placeholder="Where the work was performed"></div>'
+    + '</div>'
+
+    // Price breakdown (internal) — shared by both modes
+    + '<div class="card">'
+    + '<div class="price-section">'
+    + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
+    + '<div class="price-row"><span class="price-label">Parts</span>'
+    + '<input class="price-input" type="number" name="parts" id="qparts" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
+    + '<input class="price-input" type="number" name="labor" id="qlabor" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
+    + '<input class="price-input" type="number" name="shopSupplies" id="qss" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
+    + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="qtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="qcalc()">%) on Parts + Supplies</span>'
+    + '<span id="qtaxAmt">$0.00</span></div>'
+    + '</div>'
+
+    // Customer-facing total
+    + '<div class="price-section" style="margin-bottom:0;">'
+    + '<div class="price-section-header"><span id="qSummaryLabel">Customer Quote</span></div>'
+    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span><span id="qplDisplay">$0.00</span></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="qssDisplay">$0.00</span></div>'
+    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="qtaxDisplay">$0.00</span></div>'
+    + '<div class="price-row total-row divider-row"><span id="qTotalLabel">Total</span><span id="qtotalAmt" style="font-size:1.15rem;">$0.00</span></div>'
+    + '</div>'
+    + '<input type="hidden" name="taxAmt"   id="qtaxH"   value="0.00">'
+    + '<input type="hidden" name="totalAmt" id="qtotalH" value="0.00">'
+    + '</div>'
+
+    // Receipt-only advisories + office notes
+    + '<div class="card qReceiptOnly" style="display:none;">'
+    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span></div>'
+    + advisoryRows
+    + '</div>'
+    + '<div class="card qReceiptOnly" style="display:none;">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Notes to Office <span style="color:#bbb;font-weight:400;">(internal only, never sent)</span></label>'
+    + '<textarea name="officeNotes" placeholder="Torque specs, parts used, condition observations, anything for the record…"></textarea></div>'
+    + '</div>'
+
+    // Action buttons
+    + '<div class="card">'
+    + '<div class="qQuoteActions">'
+    + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'quote_send\')">Send Quote to Customer</button>'
+    + '<button type="button" class="btn btn-navy" style="margin-top:8px;" onclick="qSubmit(\'quote_link\')">Get Copyable Quote Link</button>'
+    + '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="qSubmit(\'quote_save\')">Save as New Lead (no email)</button>'
+    + '</div>'
+    + '<div class="qReceiptActions" style="display:none;">'
+    + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'receipt_send\')">&#10003; Send Receipt to Customer</button>'
+    + '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="qSubmit(\'receipt_save\')">Save as New Lead (no email)</button>'
+    + '</div>'
+    + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="qClearAll()">&#10005; Clear everything (calculator only, nothing saved)</button>'
+    + '</div>'
+    + '</form>'
+
+    + '<script>'
+    + 'var QPRICING=' + pricingJson + ';'
+    + 'var qtier="standard";var qmode="quote";'
+
+    + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
+    + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+
+    + 'function qSetMode(m){'
+    +   'qmode=m;document.getElementById("qmode").value=m;'
+    +   'document.getElementById("qModeQuote").classList.toggle("active",m==="quote");'
+    +   'document.getElementById("qModeReceipt").classList.toggle("active",m==="receipt");'
+    +   'var rec=m==="receipt";'
+    +   'document.querySelectorAll(".qReceiptOnly").forEach(function(el){el.style.display=rec?"block":"none";});'
+    +   'document.querySelector(".qQuoteActions").style.display=rec?"none":"block";'
+    +   'document.querySelector(".qReceiptActions").style.display=rec?"block":"none";'
+    +   'document.getElementById("qSummaryLabel").textContent=rec?"Customer Receipt":"Customer Quote";'
+    +   'document.getElementById("qTotalLabel").textContent=rec?"Total Paid":"Total";'
+    +   'document.getElementById("qemHint").textContent=rec?"(to send receipt)":"(to send)";'
+    + '}'
+
+    + 'function qSetTier(t){'
+    +   'qtier=t;document.getElementById("qtier").value=t;'
+    +   'document.getElementById("qBtnStd").classList.toggle("active",t==="standard");'
+    +   'document.getElementById("qBtnPrem").classList.toggle("active",t==="premium");'
+    +   'qAutofill();'
+    + '}'
+
+    + 'function qRenderTags(){'
+    +   'document.getElementById("qsvcTags").innerHTML=qCheckedServices().map(function(n){'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
+    +   '}).join("");'
+    + '}'
+    + 'function qRemoveTag(btn){'
+    +   'var val=btn.getAttribute("data-val");'
+    +   'var cb=Array.from(document.querySelectorAll(".qsvc-cb")).find(function(c){return c.value===val;});'
+    +   'if(cb)cb.checked=false;qUpdateServices();'
+    + '}'
+    + 'function qClearServices(){'
+    +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;});qUpdateServices();'
+    + '}'
+
+    // Auto-fill the price fields from the pricing table for the checked services + tier.
+    + 'function qAutofill(){'
+    +   'var names=qCheckedServices();'
+    +   'document.getElementById("qsvcHidden").value=names.join(", ");'
+    +   'if(names.length===0){'
+    +     'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";qcalc();return;'
+    +   '}'
+    +   'var parts=0,labor=0,ss=0;'
+    +   'names.forEach(function(s){var sv=QPRICING[s];if(!sv)return;var p=sv[qtier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
+    +   'document.getElementById("qparts").value=parts.toFixed(2);'
+    +   'document.getElementById("qlabor").value=labor.toFixed(2);'
+    +   'document.getElementById("qss").value=ss.toFixed(2);'
+    +   'qcalc();'
+    + '}'
+    + 'function qUpdateServices(){qRenderTags();qHints();qAutofill();}'
+
+    + 'function qHints(){'
+    +   'var names=qCheckedServices();var msgs=[];'
+    +   'var custom=names.filter(function(n){return QPRICING[n]&&QPRICING[n].customQuote;});'
+    +   'if(custom.length){msgs.push("<strong>Custom quote:</strong> "+custom.join(", ")+" "+(custom.length>1?"have":"has")+" no preset price. Look up the exact part(s) and enter Parts and Labor manually.");}'
+    +   'names.forEach(function(n){if(QPRICING[n]&&QPRICING[n].note){msgs.push(QPRICING[n].note);}});'
+    +   'var box=document.getElementById("qCustomHint");'
+    +   'if(msgs.length){box.innerHTML=msgs.join("<br><br>");box.style.display="block";}else{box.style.display="none";}'
+    + '}'
+
+    // Tax is on parts + shop supplies only (not labor — Virginia law).
+    + 'function qcalc(){'
+    +   'var parts=parseFloat(document.getElementById("qparts").value)||0;'
+    +   'var labor=parseFloat(document.getElementById("qlabor").value)||0;'
+    +   'var ss=parseFloat(document.getElementById("qss").value)||0;'
+    +   'var tr=parseFloat(document.getElementById("qtr").value)||0;'
+    +   'var tax=(parts+ss)*tr/100;var total=parts+labor+ss+tax;'
+    +   'document.getElementById("qtaxAmt").textContent="$"+money(tax);'
+    +   'document.getElementById("qplDisplay").textContent="$"+money(parts+labor);'
+    +   'document.getElementById("qssDisplay").textContent="$"+money(ss);'
+    +   'document.getElementById("qtaxDisplay").textContent="$"+money(tax);'
+    +   'document.getElementById("qtotalAmt").textContent="$"+money(total);'
+    +   'document.getElementById("qtaxH").value=tax.toFixed(2);'
+    +   'document.getElementById("qtotalH").value=total.toFixed(2);'
+    + '}'
+
+    + 'function qPayToggle(){'
+    +   'var v=document.getElementById("qpm").value;var show=(v==="Other");'
+    +   'document.getElementById("qpmOtherWrap").style.display=show?"block":"none";'
+    +   'document.getElementById("qpmOther").required=show;'
+    + '}'
+    + 'function toggleCustom(i){'
+    +   'var v=document.querySelector("[name=fuTime"+i+"]").value;'
+    +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
+    + '}'
+
+    + 'function qClearAll(){'
+    +   'qClearServices();'
+    +   'document.getElementById("qfn").value="";document.getElementById("qln").value="";'
+    +   'document.getElementById("qem").value="";document.getElementById("qph").value="";'
+    +   'var veh=document.getElementById("qveh");if(veh)veh.value="";'
+    +   'qSetTier("standard");qcalc();'
+    + '}'
+
+    + 'function qSubmit(action){'
+    +   'var fn=document.getElementById("qfn").value.trim();'
+    +   'var ln=document.getElementById("qln").value.trim();'
+    +   'var em=document.getElementById("qem").value.trim();'
+    +   'if(!fn||!ln){alert("Enter the customer first and last name to save or send.");return;}'
+    +   'if((action==="quote_send"||action==="receipt_send")&&!em){alert("Enter an email to send. For texting, use Get Copyable Quote Link instead.");return;}'
+    +   'document.getElementById("qaction").value=action;'
+    +   'document.getElementById("qqf").submit();'
+    + '}'
+
+    + 'qRenderTags();qPayToggle();qcalc();'
+    + '</script>';
+
+  res.send(page('Quick Quote', body, req));
+});
+
+// Result page for the copyable-link outcome: shows the branded customer URL in a
+// read-only field with a one-tap copy button, plus a link to the new lead.
+function quickLinkResult(req, lead, acceptUrl) {
+  var body = '<a href="/admin/quick" class="back-link">&#8592; New Quick Quote</a>'
+    + '<div class="card">'
+    + '<div class="section-title" style="color:#1a7a3a;">&#10003; Quote link ready</div>'
+    + '<p style="color:#555;font-size:0.9rem;margin-bottom:12px;">A lead for <strong>' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</strong> was created in the Quoted stage and the quote was saved. Copy the link below and paste it into your text to the customer. They can review the quote and pick a time.</p>'
+    + '<div class="form-group" style="margin-bottom:10px;"><label>Customer quote link</label>'
+    + '<input type="text" id="qlink" readonly value="' + esc(acceptUrl) + '" onclick="this.select()" style="font-size:0.85rem;"></div>'
+    + '<button type="button" class="btn btn-blue" onclick="qCopy()" id="qCopyBtn">Copy Link</button>'
+    + '<a href="/admin/quote/' + lead.id + '" class="btn btn-outline" style="margin-top:8px;">Open the Lead</a>'
+    + '</div>'
+    + '<script>'
+    + 'function qCopy(){var el=document.getElementById("qlink");el.select();el.setSelectionRange(0,99999);'
+    + 'function done(){var b=document.getElementById("qCopyBtn");b.textContent="Copied!";setTimeout(function(){b.textContent="Copy Link";},1800);}'
+    + 'if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(el.value).then(done,function(){document.execCommand("copy");done();});}'
+    + 'else{document.execCommand("copy");done();}}'
+    + '</script>';
+  return page('Quote Link', body, req);
+}
+
+router.post('/quick', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
+  var mode   = req.body.mode === 'receipt' ? 'receipt' : 'quote';
+  var action = req.body.action || '';
+
+  var firstName = (req.body.firstName || '').trim();
+  var lastName  = (req.body.lastName  || '').trim();
+  var email     = (req.body.email     || '').trim() || null;
+  var phone     = (req.body.phone     || '').trim();
+  var vehicle   = (req.body.vehicle   || '').trim() || null;
+  if (!firstName || !lastName) return res.redirect('/admin/quick?err=name');
+
+  var isSend = (action === 'quote_send' || action === 'receipt_send');
+  if (isSend && !email) return res.redirect('/admin/quick?err=email');
+
+  var service      = (req.body.service || '').trim();
+  var tier         = req.body.tier === 'premium' ? 'premium' : 'standard';
+  var parts        = parseFloat(req.body.parts)        || 0;
+  var labor        = parseFloat(req.body.labor)        || 0;
+  var shopSupplies = parseFloat(req.body.shopSupplies) || 0;
+  var taxRate      = parseFloat(req.body.taxRate)      || 0;
+  var taxAmt       = parseFloat(req.body.taxAmt)       || 0;
+  var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
+
+  var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+
+  // Every save/send outcome creates a Quick Quote lead. Quote mode lands it in
+  // Quoted; receipt mode reflects a finished job (set further down).
+  var leadInfo = db.prepare(
+    'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status) VALUES (?,?,?,?,?,?,?,?)'
+  ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', mode === 'receipt' ? 'completed' : 'quoted');
+  var leadId = leadInfo.lastInsertRowid;
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId);
+  logHistory(leadId, 'Lead created from Quick Quote', (mode === 'receipt' ? 'Receipt' : 'Quote') + (service ? ' — ' + service : ''));
+
+  // ── Quote mode ──────────────────────────────────────────────────────────────
+  if (mode === 'quote') {
+    var acceptToken = crypto.randomBytes(24).toString('hex');
+    var qStatus = action === 'quote_save' ? 'saved' : 'sent';
+    var qInfo = db.prepare(
+      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, accept_token, sent_at, status) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, acceptToken,
+          null, qStatus);
+    var quoteId = qInfo.lastInsertRowid;
+    var acceptUrl = baseUrl + '/quote/' + quoteId + '/' + acceptToken;
+    logHistory(leadId, action === 'quote_save' ? 'Quote saved' : 'Quote sent', service + ' (' + tier + ') — $' + totalAmt.toFixed(2));
+
+    if (action === 'quote_save') return res.redirect('/admin/quote/' + leadId + '?msg=quick_saved');
+    if (action === 'quote_link') {
+      db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
+      return res.send(quickLinkResult(req, lead, acceptUrl));
+    }
+    // quote_send — email the branded quote
+    if (!process.env.SMTP_PASS) {
+      console.error('SMTP_PASS not set — Quick Quote saved but not emailed');
+      return res.redirect('/admin/quote/' + leadId + '?msg=quick_err');
+    }
+    try {
+      var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      await tx.sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      email,
+        replyTo: 'greetings@brakeknights.com',
+        subject: 'Your Brake Service Quote — Brake Knights',
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl)
+      });
+      db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
+      return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
+    } catch (err) {
+      console.error('Quick Quote email error:', err.message);
+      return res.redirect('/admin/quote/' + leadId + '?msg=quick_err');
+    }
+  }
+
+  // ── Receipt mode ────────────────────────────────────────────────────────────
+  var serviceDate = (req.body.serviceDate || '').trim() || easternToday();
+  var address     = (req.body.serviceAddress || '').trim();
+  var payment     = (req.body.paymentMethod || '').trim();
+  if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
+  var officeNotes = (req.body.officeNotes || '').trim() || null;
+  var partsLabor  = parts + labor;
+
+  // Customer advisories + any timed follow-ups attached to them.
+  var notes = [];
+  var followups = [];
+  for (var i = 1; i <= 4; i++) {
+    var txt = (req.body['custNote' + i] || '').trim();
+    if (txt) notes.push(txt);
+    var tf = req.body['fuTime' + i] || 'none';
+    if (tf !== 'none' && txt) {
+      var due = followupDueDate(serviceDate, tf, req.body['fuCustom' + i]);
+      if (due) followups.push({ description: txt, due_date: due, recipient: req.body['fuRecipient' + i] || 'owner' });
+    }
+  }
+
+  var rInfo = db.prepare(
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, totalAmt, payment, JSON.stringify(notes), officeNotes);
+  var receiptId = rInfo.lastInsertRowid;
+
+  followups.forEach(function(f) {
+    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+      .run(leadId, receiptId, f.description, f.due_date, f.recipient);
+  });
+
+  var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
+  var receiptDetail = '$' + totalAmt.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+
+  if (action === 'receipt_send' && process.env.SMTP_PASS && email) {
+    try {
+      var rtx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      await rtx.sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      email,
+        replyTo: 'greetings@brakeknights.com',
+        subject: 'Your Brake Knights Service Receipt',
+        html:    buildReceiptEmail(lead, receipt, notes)
+      });
+      db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
+      db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(leadId);
+      logHistory(leadId, 'Receipt sent to customer', receiptDetail);
+      return res.redirect('/admin/quote/' + leadId + '?msg=receipt_sent');
+    } catch (err) {
+      console.error('Quick receipt email error:', err.message);
+      logHistory(leadId, 'Receipt saved (email failed)', receiptDetail);
+      return res.redirect('/admin/quote/' + leadId + '?msg=receipt_err');
+    }
+  }
+  logHistory(leadId, 'Receipt saved (not emailed)', receiptDetail);
+  res.redirect('/admin/quote/' + leadId + '?msg=receipt_saved');
 });
 
 module.exports = router;
