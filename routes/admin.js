@@ -275,6 +275,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .topbar-brand img{width:22px;height:22px;border-radius:4px}
 .topbar-logout{color:#8aadcf;font-size:0.82rem;text-decoration:none}
 .topbar-logout:hover{color:#fff}
+.topbar-nav{display:flex;align-items:center;gap:16px}
+.topbar-link{color:#8aadcf;font-size:0.82rem;text-decoration:none;display:inline-flex;align-items:center}
+.topbar-link:hover{color:#fff}
+.nav-badge{background:#e07000;color:#fff;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:5px;line-height:1.5}
 .wrap{max-width:600px;margin:0 auto;padding:16px}
 .card{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
 .section-title{font-size:0.95rem;font-weight:700;color:#0a1f3d;margin-bottom:14px}
@@ -342,9 +346,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 `;
 
 function page(title, body, req) {
-  var logoutLink = (req.session && req.session.adminAuthed)
-    ? '<a href="/admin/logout" class="topbar-logout">Log out</a>'
-    : '';
+  var authed = req.session && req.session.adminAuthed;
+  var nav = '';
+  if (authed) {
+    // Count of follow-ups that are due now (overdue or due today) so the owner sees
+    // at a glance when something needs attention.
+    var dueCount = 0;
+    try {
+      dueCount = db.prepare("SELECT COUNT(*) AS n FROM followups WHERE sent = 0 AND date(due_date) <= date('now')").get().n;
+    } catch (_) {}
+    var badge = dueCount > 0
+      ? ' <span class="nav-badge">' + dueCount + '</span>'
+      : '';
+    nav = '<div class="topbar-nav">'
+      + '<a href="/admin" class="topbar-link">Leads</a>'
+      + '<a href="/admin/followups" class="topbar-link">Follow-ups' + badge + '</a>'
+      + '<a href="/admin/logout" class="topbar-logout">Log out</a>'
+      + '</div>';
+  }
   return '<!DOCTYPE html><html lang="en"><head>'
     + '<meta charset="UTF-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
@@ -354,7 +373,7 @@ function page(title, body, req) {
     + '</head><body>'
     + '<div class="topbar">'
     + '<a href="/admin" class="topbar-brand"><img src="/images/favicon.png" alt=""> BK Admin</a>'
-    + logoutLink
+    + nav
     + '</div>'
     + '<div class="wrap">' + body + '</div>'
     + '</body></html>';
@@ -797,6 +816,34 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '<th style="text-align:left;padding:4px 8px 8px;color:#888;font-weight:600;">Service</th>'
           + '<th style="text-align:right;padding:4px 0 8px 8px;color:#888;font-weight:600;">Total</th>'
           + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+      })()
+
+    // Follow-ups for this lead (pending + recent), plus an add form.
+    + (function() {
+        var fus = db.prepare(
+          'SELECT f.*, ? AS first_name, ? AS last_name, ? AS vehicle FROM followups f WHERE f.lead_id = ? ORDER BY f.sent ASC, f.due_date ASC, f.id ASC'
+        ).all(lead.first_name, lead.last_name, lead.vehicle, lead.id);
+        var back = '/admin/quote/' + lead.id;
+        var todayIso = easternToday();
+        var cards = fus.map(function(f) { return followupCard(f, back); }).join('');
+        var addForm = '<form method="POST" action="/admin/followup/new" style="margin:0;">'
+          + '<input type="hidden" name="lead_id" value="' + lead.id + '">'
+          + '<input type="hidden" name="back" value="' + back + '">'
+          + '<div style="font-size:0.8rem;color:#888;font-weight:600;margin-bottom:7px;">Add a reminder</div>'
+          + '<input type="text" name="description" placeholder="What to follow up on (e.g. recommend rear pads soon)" required style="width:100%;padding:8px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.86rem;margin-bottom:8px;">'
+          + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+          + '<input type="date" name="due_date" required min="' + todayIso + '" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.84rem;">'
+          + '<select name="recipient" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.84rem;background:#fff;">'
+          + '<option value="owner">Owner only</option>'
+          + '<option value="customer">Customer only</option>'
+          + '<option value="both">Owner + Customer</option>'
+          + '</select>'
+          + '<button type="submit" class="btn btn-navy btn-sm" style="width:auto;">+ Add</button>'
+          + '</div></form>';
+        return '<div class="section-title" style="margin:18px 0 10px;">Follow-ups'
+          + (fus.length ? ' <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + fus.length + ')</span>' : '') + '</div>'
+          + cards
+          + '<div class="card">' + addForm + '</div>';
       })()
 
     // Quote history
@@ -1420,5 +1467,154 @@ function buildReceiptEmail(lead, r, notes) {
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div>'
     + '</div>';
 }
+
+// ─── Phase 6: Follow-up management ────────────────────────────────────────────
+// Receipt advisories (and ad-hoc reminders) live in the followups table. The cron
+// in server.js fires the email(s) on the due date; these routes let the owner see
+// what's scheduled, reschedule, cancel, or dismiss, and add reminders by hand.
+
+var RECIPIENT_LABEL = { owner: 'Owner only', customer: 'Customer only', both: 'Owner + Customer' };
+
+// Human due-date label relative to today, e.g. "Overdue 3 days", "Due today", "in 2 mo".
+function dueLabel(due) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((due || '').trim());
+  if (!m) return esc(due || '—');
+  var today = easternToday().split('-').map(Number);
+  var d0 = Date.UTC(today[0], today[1] - 1, today[2]);
+  var d1 = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  var days = Math.round((d1 - d0) / 86400000);
+  if (days < 0)  return '<span style="color:#c0392b;font-weight:700;">Overdue ' + (-days) + ' day' + (days === -1 ? '' : 's') + '</span>';
+  if (days === 0) return '<span style="color:#e07000;font-weight:700;">Due today</span>';
+  if (days === 1) return '<span style="color:#666;">Due tomorrow</span>';
+  if (days < 31)  return '<span style="color:#888;">in ' + days + ' days</span>';
+  var months = Math.round(days / 30);
+  return '<span style="color:#888;">in ' + months + ' month' + (months === 1 ? '' : 's') + '</span>';
+}
+
+function recipientBadge(r) {
+  var label = RECIPIENT_LABEL[r] || r || 'Owner only';
+  return '<span style="font-size:0.72rem;background:#eef2f8;color:#4a5b73;padding:2px 8px;border-radius:10px;font-weight:600;">' + esc(label) + '</span>';
+}
+
+// Renders one follow-up as a card with reschedule / cancel / dismiss actions.
+// `back` is the URL each action returns to. Pending rows get full controls; sent
+// rows render read-only with a "Sent" stamp.
+function followupCard(f, back) {
+  var name = (f.first_name || '') + ' ' + (f.last_name || '');
+  var sentStamp = f.sent
+    ? '<span style="font-size:0.74rem;color:#1a7a3a;font-weight:700;">&#10003; Sent' + (f.sent_at ? ' ' + timeAgo(f.sent_at) : '') + '</span>'
+    : dueLabel(f.due_date);
+  var head = '<div class="row-sb" style="align-items:flex-start;">'
+    + '<div><a href="/admin/quote/' + f.lead_id + '" style="font-weight:700;color:#0a1f3d;text-decoration:none;font-size:0.95rem;">' + esc(name.trim()) + '</a>'
+    + (f.vehicle ? '<span style="color:#888;font-size:0.83rem;"> &middot; ' + esc(f.vehicle) + '</span>' : '') + '</div>'
+    + '<div style="text-align:right;font-size:0.8rem;white-space:nowrap;">' + sentStamp + '</div>'
+    + '</div>';
+  var desc = '<div style="background:#f4f7fb;border-left:3px solid #4169e1;border-radius:5px;padding:9px 12px;margin:9px 0;color:#1a2a3a;font-size:0.88rem;line-height:1.45;">' + esc(f.description) + '</div>';
+  var meta = '<div style="display:flex;align-items:center;gap:10px;font-size:0.78rem;color:#aaa;">'
+    + recipientBadge(f.recipient)
+    + '<span>Due ' + esc(fmtPrefDate(f.due_date)) + '</span>'
+    + '</div>';
+  if (f.sent) {
+    return '<div class="card" style="opacity:.78;">' + head + desc + meta + '</div>';
+  }
+  var actions = '<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;align-items:center;">'
+    + '<form method="POST" action="/admin/followup/' + f.id + '/reschedule" style="display:flex;gap:6px;margin:0;align-items:center;">'
+    + '<input type="hidden" name="back" value="' + esc(back) + '">'
+    + '<input type="date" name="due_date" value="' + esc(f.due_date) + '" style="padding:5px 7px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.8rem;">'
+    + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">Reschedule</button>'
+    + '</form>'
+    + '<form method="POST" action="/admin/followup/' + f.id + '/done" style="margin:0;">'
+    + '<input type="hidden" name="back" value="' + esc(back) + '">'
+    + '<button type="submit" class="btn btn-sm" style="width:auto;background:#1a7a3a;color:#fff;border:none;">&#10003; Mark done</button>'
+    + '</form>'
+    + '<form method="POST" action="/admin/followup/' + f.id + '/cancel" style="margin:0;" onsubmit="return confirm(\'Cancel this follow-up? It will not be sent.\');">'
+    + '<input type="hidden" name="back" value="' + esc(back) + '">'
+    + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:6px 4px;">Cancel</button>'
+    + '</form>'
+    + '</div>';
+  return '<div class="card">' + head + desc + meta + actions + '</div>';
+}
+
+router.get('/followups', requireAuth, function(req, res) {
+  var rows = db.prepare(
+    'SELECT f.*, l.first_name, l.last_name, l.vehicle, l.email AS lead_email '
+    + 'FROM followups f JOIN leads l ON l.id = f.lead_id '
+    + "ORDER BY f.sent ASC, f.due_date ASC, f.id ASC"
+  ).all();
+
+  var today = easternToday();
+  var overdue = [], upcoming = [], sent = [];
+  rows.forEach(function(f) {
+    if (f.sent) sent.push(f);
+    else if (f.due_date <= today) overdue.push(f);
+    else upcoming.push(f);
+  });
+  sent = sent.sort(function(a, b) { return (b.sent_at || '').localeCompare(a.sent_at || ''); }).slice(0, 25);
+
+  var back = '/admin/followups';
+  var alert = '';
+  if (req.query.msg === 'resched')   alert = '<div class="alert alert-success">Follow-up rescheduled.</div>';
+  if (req.query.msg === 'done')      alert = '<div class="alert alert-success">Follow-up marked done.</div>';
+  if (req.query.msg === 'cancelled') alert = '<div class="alert alert-success">Follow-up cancelled.</div>';
+  if (req.query.msg === 'added')     alert = '<div class="alert alert-success">Follow-up added.</div>';
+
+  function section(title, list, emptyNote) {
+    var inner = list.length
+      ? list.map(function(f) { return followupCard(f, back); }).join('')
+      : '<div class="empty" style="padding:18px;color:#aaa;font-size:0.88rem;">' + emptyNote + '</div>';
+    return '<div class="section-title" style="margin:18px 0 10px;">' + title
+      + (list.length ? ' <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + list.length + ')</span>' : '')
+      + '</div>' + inner;
+  }
+
+  var body = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Follow-ups</h1>'
+    + '<span style="color:#aaa;font-size:0.83rem;">' + (overdue.length + upcoming.length) + ' active</span>'
+    + '</div>'
+    + alert
+    + section('Due now', overdue, 'Nothing due. You&rsquo;re all caught up.')
+    + section('Upcoming', upcoming, 'No upcoming follow-ups scheduled.')
+    + (sent.length ? section('Recently sent', sent, '') : '');
+
+  res.send(page('Follow-ups', body, req));
+});
+
+// Add an ad-hoc follow-up to a lead (from the lead/quote page).
+router.post('/followup/new', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var leadId = parseInt(req.body.lead_id, 10);
+  var lead = leadId ? db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId) : null;
+  var back = req.body.back || (lead ? '/admin/quote/' + leadId : '/admin/followups');
+  var desc = (req.body.description || '').trim();
+  var due = (req.body.due_date || '').trim();
+  var recipient = ['owner', 'customer', 'both'].indexOf(req.body.recipient) >= 0 ? req.body.recipient : 'owner';
+  if (lead && desc && /^\d{4}-\d{2}-\d{2}$/.test(due)) {
+    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+      .run(leadId, null, desc, due, recipient);
+    logHistory(leadId, 'Follow-up scheduled', fmtPrefDate(due) + ' · ' + (RECIPIENT_LABEL[recipient] || recipient));
+  }
+  res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=added');
+});
+
+router.post('/followup/:id/reschedule', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var due = (req.body.due_date || '').trim();
+  var back = req.body.back || '/admin/followups';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(due)) {
+    db.prepare('UPDATE followups SET due_date = ?, sent = 0, sent_at = NULL WHERE id = ?').run(due, req.params.id);
+  }
+  res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=resched');
+});
+
+// Dismiss without emailing: flag it sent so the cron skips it.
+router.post('/followup/:id/done', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var back = req.body.back || '/admin/followups';
+  db.prepare("UPDATE followups SET sent = 1, sent_at = datetime('now') WHERE id = ?").run(req.params.id);
+  res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=done');
+});
+
+router.post('/followup/:id/cancel', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var back = req.body.back || '/admin/followups';
+  db.prepare('DELETE FROM followups WHERE id = ?').run(req.params.id);
+  res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=cancelled');
+});
 
 module.exports = router;
