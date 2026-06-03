@@ -172,9 +172,8 @@ function shell(title, inner) {
 
 function quoteSummaryCard(q) {
   var partsLabor = (q.price_parts || 0) + (q.price_labor || 0);
-  var tierLabel  = q.tier === 'premium' ? 'Premium' : 'Standard';
   return '<div class="card">'
-    + '<span class="badge">' + tierLabel + ' Quote</span>'
+    + '<span class="badge">Your Quote</span>'
     + '<div class="svc">' + esc(joinServices(q.service) || 'Brake Service') + '</div>'
     + (q.vehicle ? '<p class="muted" style="margin-bottom:14px;">' + esc(q.vehicle) + '</p>' : '<div style="height:6px"></div>')
     + '<div class="qline"><span>Parts &amp; Labor</span><span>$' + money(partsLabor) + '</span></div>'

@@ -82,6 +82,19 @@ app.post('/api/contact', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Missing required fields' });
   }
 
+  // Guard against accidental double-posts: if the same person (name + phone) just
+  // submitted within the last 2 minutes, treat it as a resubmit. Reuse that lead
+  // and skip re-sending emails. Legitimate repeat requests later still create a
+  // new lead.
+  const recentDupe = db.prepare(
+    "SELECT id FROM leads WHERE first_name = ? AND last_name = ? AND phone = ? "
+    + "AND created_at >= datetime('now', '-2 minutes') ORDER BY id DESC LIMIT 1"
+  ).get(firstName, lastName, phone);
+  if (recentDupe) {
+    console.log('Duplicate contact submission ignored for lead', recentDupe.id);
+    return res.json({ success: true, duplicate: true });
+  }
+
   // Save lead to database
   const lead = db.prepare(
     'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, message, preferred_contact, source) VALUES (?,?,?,?,?,?,?,?,?)'
