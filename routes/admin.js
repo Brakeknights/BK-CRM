@@ -181,6 +181,24 @@ function fmtHistoryTime(dateStr) {
     + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
+// Today's date in Eastern Time as YYYY-MM-DD (en-CA yields ISO order).
+function easternToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+// Computes a follow-up due date (YYYY-MM-DD) from a base date and a timeframe key.
+// '1m'/'3m'/'6m'/'1y' add calendar months; 'custom' returns the provided date.
+function followupDueDate(baseDate, timeframe, customDate) {
+  if (timeframe === 'custom') return (customDate || '').trim() || null;
+  var months = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 }[timeframe];
+  if (!months) return null;
+  var p = String(baseDate || easternToday()).split('-').map(Number);
+  if (p.length !== 3) return null;
+  var d = new Date(p[0], p[1] - 1, p[2]);
+  d.setMonth(d.getMonth() + months);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 // Formats a stored ISO date (YYYY-MM-DD) as "Friday, June 5, 2026".
 function fmtPrefDate(val) {
   if (!val) return '—';
@@ -645,6 +663,7 @@ router.get('/', requireAuth, function(req, res) {
           + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
           + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;">Open Quote</a>'
           + '</div>'
+          + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">&#10003; Complete Job &amp; Send Receipt</a>')
           + (l.archived
               ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
                 + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
@@ -717,6 +736,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var quoteAlert = '';
   if (req.query.msg === 'approved') quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
   if (req.query.msg === 'denied')   quoteAlert = '<div class="alert alert-error" style="background:#fff8e1;color:#7a5a00;border-color:#f0d080;">Time denied. Customer notified — we\'ll reach out to reschedule.</div>';
+  if (req.query.msg === 'receipt_sent')  quoteAlert = '<div class="alert alert-success">Receipt sent to the customer. Lead marked Completed.</div>';
+  if (req.query.msg === 'receipt_saved') quoteAlert = '<div class="alert alert-success">Receipt saved. No email on file for this lead.</div>';
+  if (req.query.msg === 'receipt_err')   quoteAlert = '<div class="alert alert-error">Receipt saved, but the email failed to send. Try again.</div>';
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + quoteAlert
@@ -751,6 +773,31 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '</select>'
     + '</form>'
     + '</div>'
+
+    // Complete Job — opens the receipt form (Phase 5)
+    + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>'
+
+    // Receipt history
+    + (function() {
+        var receipts = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
+        if (receipts.length === 0) return '';
+        var rows = receipts.map(function(rc) {
+          var when = rc.sent_at ? new Date(rc.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : 'not emailed';
+          return '<tr style="border-bottom:1px solid #f0f0f0;">'
+            + '<td style="padding:7px 8px 7px 0;white-space:nowrap;">' + esc(when) + '</td>'
+            + '<td style="padding:7px 8px;">' + esc(rc.service || '—') + '</td>'
+            + '<td style="padding:7px 0 7px 8px;text-align:right;">$' + money(rc.total) + '</td>'
+            + '</tr>';
+        }).join('');
+        return '<div class="card">'
+          + '<div class="section-title" style="margin-bottom:10px;">Receipts <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + receipts.length + ')</span></div>'
+          + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.83rem;">'
+          + '<thead><tr style="border-bottom:2px solid #f0f0f0;">'
+          + '<th style="text-align:left;padding:4px 8px 8px 0;color:#888;font-weight:600;">Sent</th>'
+          + '<th style="text-align:left;padding:4px 8px 8px;color:#888;font-weight:600;">Service</th>'
+          + '<th style="text-align:right;padding:4px 0 8px 8px;color:#888;font-weight:600;">Total</th>'
+          + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+      })()
 
     // Quote history
     + (allQuotes.length > 0
@@ -1108,6 +1155,269 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
     + '</div></div>'
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div>'
+    + '</div>';
+}
+
+// ─── Phase 5: Job summary + custom receipt ────────────────────────────────────
+
+var PAYMENT_METHODS = ['Credit/Debit Card', 'Cash', 'Other'];
+
+// Renders one advisory row: a customer-facing note plus an optional follow-up
+// reminder (timeframe + recipient). Reminders only fire when a timeframe other
+// than "No reminder" is chosen and the note has text.
+function advisoryRow(i) {
+  return '<div style="border:1.5px solid #eef1f5;border-radius:10px;padding:13px;margin-bottom:10px;background:#fbfcfe;">'
+    + '<div class="form-group" style="margin-bottom:9px;"><label>Advisory #' + i + ' <span style="color:#bbb;font-weight:400;">(shown on receipt)</span></label>'
+    + '<input type="text" name="custNote' + i + '" placeholder="e.g. Rear pads ~30%, plan replacement in about 6 months"></div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Set reminder</label>'
+    + '<select name="fuTime' + i + '" onchange="toggleCustom(' + i + ')">'
+    +   '<option value="none" selected>No reminder</option>'
+    +   '<option value="1m">In 1 month</option>'
+    +   '<option value="3m">In 3 months</option>'
+    +   '<option value="6m">In 6 months</option>'
+    +   '<option value="1y">In 1 year</option>'
+    +   '<option value="custom">Custom date…</option>'
+    + '</select></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Remind</label>'
+    + '<select name="fuRecipient' + i + '">'
+    +   '<option value="owner" selected>Owner only</option>'
+    +   '<option value="customer">Customer only</option>'
+    +   '<option value="both">Both</option>'
+    + '</select></div>'
+    + '</div>'
+    + '<div class="form-group" id="customWrap' + i + '" style="display:none;margin:10px 0 0;"><label>Custom reminder date</label>'
+    + '<input type="date" name="fuCustom' + i + '"></div>'
+    + '</div>';
+}
+
+router.get('/receipt/:id', requireAuth, function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+
+  // Prefill from the accepted quote if there is one, otherwise the most recent quote.
+  var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id)
+    || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id)
+    || {};
+
+  var service   = quote.service || lead.service || '';
+  var vehicle   = lead.vehicle || '';
+  var address   = quote.pref_location || '';
+  var partsLabor = (quote.price_parts || 0) + (quote.price_labor || 0);
+  var shopSupplies = quote.shop_supplies || 0;
+  var tax       = quote.tax || 0;
+  var total     = partsLabor + shopSupplies + tax;
+
+  var paymentOpts = PAYMENT_METHODS.map(function(p) {
+    return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+  }).join('');
+
+  var advisoryRows = '';
+  for (var i = 1; i <= 4; i++) advisoryRows += advisoryRow(i);
+
+  // Past receipts for this lead (lightweight history)
+  var pastReceipts = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
+
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back to Lead</a>'
+    + '<div class="card">'
+    + '<div class="row-sb" style="margin-bottom:6px;">'
+    + '<div class="lead-name">' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
+    + statusBadge(lead.status)
+    + '</div>'
+    + '<div style="color:#888;font-size:0.85rem;">Complete the job and send a branded receipt. This marks the lead Completed.</div>'
+    + (pastReceipts.length
+        ? '<div style="margin-top:10px;font-size:0.82rem;color:#1a7a3a;">&#10003; ' + pastReceipts.length + ' receipt' + (pastReceipts.length > 1 ? 's' : '') + ' already sent for this lead. Sending another creates a new one.</div>'
+        : '')
+    + '</div>'
+
+    + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf">'
+
+    + '<div class="card">'
+    + '<div class="section-title">Service &amp; Vehicle</div>'
+    + '<div class="form-group"><label>Service performed</label>'
+    + '<input type="text" name="service" value="' + esc(service) + '" placeholder="e.g. Front and Rear Pads and Rotors"></div>'
+    + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model)</span></label>'
+    + '<input type="text" name="vehicle" value="' + esc(vehicle) + '" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date of service</label>'
+    + '<input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
+    + '<div class="form-group"><label>Payment method</label>'
+    + '<select name="paymentMethod">' + paymentOpts + '</select></div>'
+    + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
+    + '<input type="text" name="serviceAddress" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title">Amount Paid</div>'
+    + '<div class="price-section" style="margin-bottom:0;">'
+    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span>'
+    + '<input class="price-input" type="number" name="partsLabor" id="rpl" min="0" step="0.01" value="' + fmt(partsLabor) + '" oninput="rcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
+    + '<input class="price-input" type="number" name="shopSupplies" id="rss" min="0" step="0.01" value="' + fmt(shopSupplies) + '" oninput="rcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Tax</span>'
+    + '<input class="price-input" type="number" name="tax" id="rtax" min="0" step="0.01" value="' + fmt(tax) + '" oninput="rcalc()"></div>'
+    + '<div class="price-row total-row divider-row"><span>Total Paid</span><span id="rtotal" style="font-size:1.15rem;">$' + money(total) + '</span></div>'
+    + '</div>'
+    + '<input type="hidden" name="total" id="rtotalH" value="' + fmt(total) + '">'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span></div>'
+    + advisoryRows
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Notes to Office <span style="color:#bbb;font-weight:400;">(internal only, never sent)</span></label>'
+    + '<textarea name="officeNotes" placeholder="Torque specs, parts used, condition observations, anything for the record…"></textarea></div>'
+    + '</div>'
+
+    + (lead.email ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The receipt will be saved but not emailed.</div>')
+    + '<button type="submit" class="btn btn-blue">&#10003; Complete Job &amp; Send Receipt</button>'
+    + '</form>'
+
+    + '<script>'
+    + 'function rcalc(){'
+    +   'var pl=parseFloat(document.getElementById("rpl").value)||0;'
+    +   'var ss=parseFloat(document.getElementById("rss").value)||0;'
+    +   'var tax=parseFloat(document.getElementById("rtax").value)||0;'
+    +   'var t=pl+ss+tax;'
+    +   'document.getElementById("rtotal").textContent="$"+t.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});'
+    +   'document.getElementById("rtotalH").value=t.toFixed(2);'
+    + '}'
+    + 'function toggleCustom(i){'
+    +   'var v=document.querySelector("[name=fuTime"+i+"]").value;'
+    +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
+    + '}'
+    + '</script>';
+
+  res.send(page('Receipt — ' + lead.first_name + ' ' + lead.last_name, body, req));
+});
+
+router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+
+  var service      = (req.body.service || '').trim();
+  var vehicle      = (req.body.vehicle || '').trim();
+  var serviceDate  = (req.body.serviceDate || '').trim() || easternToday();
+  var address      = (req.body.serviceAddress || '').trim();
+  var partsLabor   = parseFloat(req.body.partsLabor)   || 0;
+  var shopSupplies = parseFloat(req.body.shopSupplies) || 0;
+  var tax          = parseFloat(req.body.tax)          || 0;
+  var total        = partsLabor + shopSupplies + tax;
+  var payment      = (req.body.paymentMethod || '').trim();
+  var officeNotes  = (req.body.officeNotes || '').trim() || null;
+
+  // Collect customer advisories and any reminders attached to them.
+  var notes = [];
+  var followups = [];
+  for (var i = 1; i <= 4; i++) {
+    var txt = (req.body['custNote' + i] || '').trim();
+    if (txt) notes.push(txt);
+    var tf = req.body['fuTime' + i] || 'none';
+    if (tf !== 'none' && txt) {
+      var due = followupDueDate(serviceDate, tf, req.body['fuCustom' + i]);
+      if (due) followups.push({ description: txt, due_date: due, recipient: req.body['fuRecipient' + i] || 'owner' });
+    }
+  }
+
+  var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id)
+    || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id);
+
+  var info = db.prepare(
+    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, total, payment, JSON.stringify(notes), officeNotes);
+  var receiptId = info.lastInsertRowid;
+
+  followups.forEach(function(f) {
+    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+      .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
+  });
+
+  db.prepare("UPDATE leads SET status = 'completed', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+  logHistory(lead.id, 'Receipt sent',
+    '$' + total.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : ''));
+
+  var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
+
+  if (process.env.SMTP_PASS && lead.email) {
+    try {
+      var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      await tx.sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      lead.email,
+        replyTo: 'greetings@brakeknights.com',
+        subject: 'Your Brake Knights Service Receipt',
+        html:    buildReceiptEmail(lead, receipt, notes)
+      });
+      db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
+      return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_sent');
+    } catch (err) {
+      console.error('Receipt email error:', err.message);
+      return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_err');
+    }
+  }
+  res.redirect('/admin/quote/' + lead.id + '?msg=receipt_saved');
+});
+
+// Branded service receipt. notes is an array of customer-facing advisory strings.
+function buildReceiptEmail(lead, r, notes) {
+  var advisoryBlock = (notes && notes.length)
+    ? '<div style="margin-bottom:24px;">'
+      + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Advisory</p>'
+      + '<ul style="margin:0;padding-left:20px;color:#444;line-height:1.7;font-size:0.9rem;">'
+      + notes.map(function(n) { return '<li style="margin-bottom:6px;">' + esc(n) + '</li>'; }).join('')
+      + '</ul></div>'
+    : '';
+
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">'
+    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;">'
+    + '<img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;">'
+    + 'Brake Knights</h1>'
+    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p>'
+    + '</div>'
+    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+    + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Greetings ' + esc(lead.first_name) + ',</h2>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">Thank you for choosing Brake Knights. Here is your service receipt for today&rsquo;s visit.</p>'
+
+    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:16px;">'
+    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Details</p>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
+    + '<tr><td style="padding:5px 0;color:#888;width:90px;">Date</td><td style="padding:5px 0;">' + esc(fmtPrefDate(r.service_date)) + '</td></tr>'
+    + (r.vehicle ? '<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">' + esc(r.vehicle) + '</td></tr>' : '')
+    + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(joinServices(r.service) || r.service || '—') + '</td></tr>'
+    + '</table></div>'
+
+    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
+    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Payment</p>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
+    + '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(r.parts_labor) + '</td></tr>'
+    + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(r.shop_supplies) + '</td></tr>'
+    + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(r.tax) + '</td></tr>'
+    + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+    + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(r.total) + '</td></tr>'
+    + (r.payment_method ? '<tr><td style="padding:8px 0 0;color:#888;">Payment</td><td style="text-align:right;padding:8px 0 0;">' + esc(r.payment_method) + '</td></tr>' : '')
+    + '</table></div>'
+
+    + advisoryBlock
+
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">This service is covered by our <strong>12-month parts and labor warranty</strong> on qualifying brake pad and rotor set replacements using our parts.</p>'
+
+    + '<div style="background:#f4f7fb;border:1px solid #e0e7ef;border-radius:8px;padding:22px;text-align:center;margin-bottom:24px;">'
+    + '<img src="https://brakeknights.com/images/favicon.png" alt="" style="width:34px;height:34px;border-radius:7px;margin-bottom:10px;">'
+    + '<p style="color:#0a1f3d;font-weight:700;margin:0 0 4px;font-size:1rem;">We appreciate your business</p>'
+    + '<p style="color:#667;margin:0 0 16px;font-size:0.9rem;">We&rsquo;d love to hear your feedback.</p>'
+    + '<a href="https://g.page/r/CdioLrg4kDAqEAI/review" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">Leave a Google Review</a>'
+    + '</div>'
+
+    + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Questions about your service? Call or text:</p>'
+    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+    + '</div></div>'
+    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div>'
     + '</div>';
 }
 

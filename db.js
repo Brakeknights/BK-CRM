@@ -51,6 +51,43 @@ db.exec(`
     event      TEXT    NOT NULL,
     detail     TEXT
   );
+
+  -- Phase 5: job summary + custom receipt. One row per receipt emailed to a customer.
+  -- customer_notes is a JSON array of advisory strings shown on the receipt; office_notes
+  -- is internal and never sent.
+  CREATE TABLE IF NOT EXISTS receipts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id         INTEGER NOT NULL REFERENCES leads(id),
+    quote_id        INTEGER REFERENCES quotes(id),
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    sent_at         TEXT,
+    service         TEXT,
+    vehicle         TEXT,
+    service_date    TEXT,
+    service_address TEXT,
+    parts_labor     REAL    NOT NULL DEFAULT 0,
+    shop_supplies   REAL    NOT NULL DEFAULT 0,
+    tax             REAL    NOT NULL DEFAULT 0,
+    total           REAL    NOT NULL DEFAULT 0,
+    payment_method  TEXT,
+    customer_notes  TEXT,
+    office_notes    TEXT
+  );
+
+  -- Phase 6 foundation: timed follow-up reminders created from receipt advisories.
+  -- recipient is 'owner', 'customer', or 'both'. The daily cron in server.js fires
+  -- the email(s) on/after due_date and flips sent = 1.
+  CREATE TABLE IF NOT EXISTS followups (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id     INTEGER NOT NULL REFERENCES leads(id),
+    receipt_id  INTEGER REFERENCES receipts(id),
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    description TEXT    NOT NULL,
+    due_date    TEXT    NOT NULL,
+    recipient   TEXT    NOT NULL DEFAULT 'owner',
+    sent        INTEGER NOT NULL DEFAULT 0,
+    sent_at     TEXT
+  );
 `);
 
 // ─── Migrations (idempotent — safe to run against existing dev/prod data) ──────
