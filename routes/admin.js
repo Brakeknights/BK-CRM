@@ -161,7 +161,7 @@ function statusBadge(status) {
     completed:      'background:#fff1de;color:#a85b00;',
     receipt:        'background:#e6f9ee;color:#0a6b2e;',
   };
-  const labels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt' };
+  const labels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
   const style = styles[status] || styles.new;
   const label = labels[status] || status;
   return '<span style="' + style + 'padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;letter-spacing:0.3px;white-space:nowrap;">' + label + '</span>';
@@ -429,7 +429,7 @@ router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: fals
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).send('Lead not found');
   if (lead.status !== status) {
-    var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt' };
+    var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
     db.prepare("UPDATE leads SET status = ?, status_updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
     logHistory(lead.id, 'Status changed to ' + (statusLabels[status] || status));
     notifyStageChange(req, lead, status).catch(function(err) { console.error('Stage notification error:', err.message); });
@@ -657,7 +657,7 @@ router.get('/', requireAuth, function(req, res) {
     ['quote_accepted', 'Quote Accepted', counts.quote_accepted || 0],
     ['booked',         'Booked',         counts.booked         || 0],
     ['completed',      'Completed',      counts.completed      || 0],
-    ['receipt',        'Receipt',        counts.receipt        || 0],
+    ['receipt',        'Receipt Sent',        counts.receipt        || 0],
     ['archived',       'Archived',       archivedCount         || 0],
   ];
 
@@ -712,7 +712,7 @@ router.get('/', requireAuth, function(req, res) {
                 + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
                 + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
                 + ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'].map(function(s) {
-                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt' }[s];
+                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' }[s];
                     return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + label + '</option>';
                   }).join('')
                 + '</select></form>'
@@ -808,7 +808,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
     + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:7px 10px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.88rem;color:#1a2a3a;background:#fff;">'
     + ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'].map(function(s) {
-        var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt' }[s];
+        var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' }[s];
         return '<option value="' + s + '"' + (lead.status === s ? ' selected' : '') + '>' + label + '</option>';
       }).join('')
     + '</select>'
