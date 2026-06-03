@@ -158,9 +158,10 @@ function statusBadge(status) {
     follow_up:      'background:#fce8ff;color:#8b2fc9;',
     quote_accepted: 'background:#e0f4f8;color:#0e7490;',
     booked:         'background:#e6f9ee;color:#1a7a3a;',
-    completed:      'background:#f0f0f0;color:#555;',
+    completed:      'background:#fff1de;color:#a85b00;',
+    receipt:        'background:#e6f9ee;color:#0a6b2e;',
   };
-  const labels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed' };
+  const labels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
   const style = styles[status] || styles.new;
   const label = labels[status] || status;
   return '<span style="' + style + 'padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;letter-spacing:0.3px;white-space:nowrap;">' + label + '</span>';
@@ -422,13 +423,13 @@ router.get('/logout', function(req, res) {
 // ─── Status update ────────────────────────────────────────────────────────────
 
 router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
-  var validStatuses = ['new', 'quoted', 'follow_up', 'quote_accepted', 'booked', 'completed'];
+  var validStatuses = ['new', 'quoted', 'follow_up', 'quote_accepted', 'booked', 'completed', 'receipt'];
   var status = req.body.status;
   if (!validStatuses.includes(status)) return res.status(400).send('Invalid status');
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).send('Lead not found');
   if (lead.status !== status) {
-    var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed' };
+    var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
     db.prepare("UPDATE leads SET status = ?, status_updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
     logHistory(lead.id, 'Status changed to ' + (statusLabels[status] || status));
     notifyStageChange(req, lead, status).catch(function(err) { console.error('Stage notification error:', err.message); });
@@ -454,6 +455,19 @@ router.post('/lead/:id/restore', requireAuth, express.urlencoded({ extended: fal
   db.prepare("UPDATE leads SET archived = 0, archived_at = NULL WHERE id = ?").run(lead.id);
   logHistory(lead.id, 'Lead restored from archive');
   res.redirect(req.body.back || '/admin?status=archived');
+});
+
+// Lead-level VIN + internal notes (item 5). Saved independently of any quote.
+router.post('/lead/:id/notes', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  var vin = (req.body.vin || '').trim() || null;
+  var notes = (req.body.internalNotes || '').trim() || null;
+  db.prepare('UPDATE leads SET vin = ?, internal_notes = ? WHERE id = ?').run(vin, notes, lead.id);
+  if ((lead.vin || '') !== (vin || '') || (lead.internal_notes || '') !== (notes || '')) {
+    logHistory(lead.id, 'VIN / internal notes updated');
+  }
+  res.redirect('/admin/quote/' + lead.id + '?msg=notes_saved');
 });
 router.get('/square-info', requireAuth, async function(req, res) {
   const { client } = require('../square');
@@ -643,6 +657,7 @@ router.get('/', requireAuth, function(req, res) {
     ['quote_accepted', 'Quote Accepted', counts.quote_accepted || 0],
     ['booked',         'Booked',         counts.booked         || 0],
     ['completed',      'Completed',      counts.completed      || 0],
+    ['receipt',        'Receipt Sent',        counts.receipt        || 0],
     ['archived',       'Archived',       archivedCount         || 0],
   ];
 
@@ -678,9 +693,11 @@ router.get('/', requireAuth, function(req, res) {
           + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
           + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
           + '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>'
-          + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;">'
+          + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">'
           + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
-          + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;">Open Quote</a>'
+          + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128172; Text</a>'
+          + (l.email ? '<a href="mailto:' + esc(l.email) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#9993; Email</a>' : '')
+          + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;min-width:120px;">Open Quote</a>'
           + '</div>'
           + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">&#10003; Complete Job &amp; Send Receipt</a>')
           + (l.archived
@@ -694,8 +711,8 @@ router.get('/', requireAuth, function(req, res) {
                 + '<input type="hidden" name="back" value="' + backVal + '">'
                 + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
                 + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
-                + ['new','quoted','follow_up','quote_accepted','booked','completed'].map(function(s) {
-                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed' }[s];
+                + ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'].map(function(s) {
+                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' }[s];
                     return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + label + '</option>';
                   }).join('')
                 + '</select></form>'
@@ -755,7 +772,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var quoteAlert = '';
   if (req.query.msg === 'approved') quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
   if (req.query.msg === 'denied')   quoteAlert = '<div class="alert alert-error" style="background:#fff8e1;color:#7a5a00;border-color:#f0d080;">Time denied. Customer notified — we\'ll reach out to reschedule.</div>';
-  if (req.query.msg === 'receipt_sent')  quoteAlert = '<div class="alert alert-success">Receipt sent to the customer. Lead marked Completed.</div>';
+  if (req.query.msg === 'receipt_sent')  quoteAlert = '<div class="alert alert-success">Receipt sent to the customer. Lead moved to Receipt.</div>';
   if (req.query.msg === 'receipt_saved') quoteAlert = '<div class="alert alert-success">Receipt saved. No email on file for this lead.</div>';
   if (req.query.msg === 'receipt_err')   quoteAlert = '<div class="alert alert-error">Receipt saved, but the email failed to send. Try again.</div>';
 
@@ -781,17 +798,35 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
     + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : '')
     + '</div>'
+    + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
+    + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128222; Call</a>'
+    + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128172; Text</a>'
+    + (lead.email ? '<a href="mailto:' + esc(lead.email) + '" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</a>' : '')
+    + '</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
     + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
     + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:7px 10px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.88rem;color:#1a2a3a;background:#fff;">'
-    + ['new','quoted','follow_up','quote_accepted','booked','completed'].map(function(s) {
-        var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed' }[s];
+    + ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'].map(function(s) {
+        var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' }[s];
         return '<option value="' + s + '"' + (lead.status === s ? ' selected' : '') + '>' + label + '</option>';
       }).join('')
     + '</select>'
     + '</form>'
     + '</div>'
+
+    // Lead-level VIN + Internal Notes — the running record for this customer,
+    // saved on its own and shown right under the profile (item 5).
+    + '<div class="card">'
+    + (req.query.msg === 'notes_saved' ? '<div class="alert alert-success" style="margin-bottom:10px;">Saved.</div>' : '')
+    + '<div class="section-title" style="margin-bottom:10px;">VIN &amp; Internal Notes <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(internal only, never sent)</span></div>'
+    + '<form method="POST" action="/admin/lead/' + lead.id + '/notes">'
+    + '<div class="form-group"><label>VIN</label>'
+    + '<input type="text" name="vin" placeholder="17-character VIN" value="' + esc(lead.vin || '') + '" maxlength="17"></div>'
+    + '<div class="form-group" style="margin-bottom:10px;"><label>Internal Notes</label>'
+    + '<textarea name="internalNotes" placeholder="Running notes about this customer or vehicle...">' + esc(lead.internal_notes || '') + '</textarea></div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save</button>'
+    + '</form></div>'
 
     // Complete Job — opens the receipt form (Phase 5)
     + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>'
@@ -842,6 +877,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
         ).all(lead.first_name, lead.last_name, lead.vehicle, lead.id);
         var back = '/admin/quote/' + lead.id;
         var todayIso = easternToday();
+        // Default the date to 3 months out (the most common follow-up window) so
+        // the field shows an active date rather than a grayed-out empty picker.
+        var defaultDue = followupDueDate(todayIso, '3m');
         var cards = fus.map(function(f) { return followupCard(f, back); }).join('');
         var addForm = '<form method="POST" action="/admin/followup/new" style="margin:0;">'
           + '<input type="hidden" name="lead_id" value="' + lead.id + '">'
@@ -849,7 +887,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '<div style="font-size:0.8rem;color:#888;font-weight:600;margin-bottom:7px;">Add a reminder</div>'
           + '<input type="text" name="description" placeholder="What to follow up on (e.g. recommend rear pads soon)" required style="width:100%;padding:8px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.86rem;margin-bottom:8px;">'
           + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
-          + '<input type="date" name="due_date" required min="' + todayIso + '" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.84rem;">'
+          + '<input type="date" name="due_date" required min="' + todayIso + '" value="' + esc(defaultDue) + '" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.84rem;color:#1a2a3a;">'
           + '<select name="recipient" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.84rem;background:#fff;">'
           + '<option value="owner">Owner only</option>'
           + '<option value="customer">Customer only</option>'
@@ -954,14 +992,6 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
     + '<input type="hidden" name="taxAmt"   id="taxH"   value="' + fmt(q.tax)   + '">'
     + '<input type="hidden" name="totalAmt" id="totalH" value="' + fmt(q.total) + '">'
-    + '</div>'
-
-    // VIN and notes
-    + '<div class="card">'
-    + '<div class="form-group"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label>'
-    + '<input type="text" name="vin" placeholder="17-character VIN" value="' + esc(q.vin || '') + '" maxlength="17"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Internal Notes <span style="color:#bbb;font-weight:400;">(not sent to customer)</span></label>'
-    + '<textarea name="internalNotes" placeholder="Parts ordered, scheduling notes, vehicle details...">' + esc(q.internal_notes || '') + '</textarea></div>'
     + '</div>'
 
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
@@ -1266,7 +1296,12 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
 
   var service   = quote.service || lead.service || '';
   var vehicle   = lead.vehicle || '';
-  var address   = quote.pref_location || '';
+  // Prefer the chosen quote's location; otherwise pull the most recent service
+  // address from any of this lead's quotes (phone-booked jobs may have it on a
+  // different quote than the one we prefilled from).
+  var address   = quote.pref_location
+    || (db.prepare("SELECT pref_location FROM quotes WHERE lead_id = ? AND pref_location IS NOT NULL AND TRIM(pref_location) != '' ORDER BY id DESC LIMIT 1").get(lead.id) || {}).pref_location
+    || '';
   var partsLabor = (quote.price_parts || 0) + (quote.price_labor || 0);
   var shopSupplies = quote.shop_supplies || 0;
   var tax       = quote.tax || 0;
@@ -1404,7 +1439,12 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     // services + tier. The owner can still type over any field afterward.
     + 'function rAutofill(){'
     +   'var names=rCheckedServices();'
-    +   'if(names.length===0)return;'
+    +   'if(names.length===0){'
+    +     'document.getElementById("rpl").value="0.00";'
+    +     'document.getElementById("rss").value="0.00";'
+    +     'document.getElementById("rtax").value="0.00";'
+    +     'rcalc();return;'
+    +   '}'
     +   'var parts=0,labor=0,ss=0;'
     +   'names.forEach(function(s){'
     +     'var sv=RPRICING[s];if(!sv)return;'
@@ -1482,11 +1522,13 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
       .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
   });
 
+  // Baseline: job is done but the receipt isn't delivered yet → 'completed'
+  // (this is the "needs receipt sent" state). Once the email goes out below,
+  // the lead advances to the 'receipt' stage.
   db.prepare("UPDATE leads SET status = 'completed', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
-  logHistory(lead.id, 'Receipt sent',
-    '$' + total.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : ''));
 
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
+  var receiptDetail = '$' + total.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
   if (process.env.SMTP_PASS && lead.email) {
     try {
@@ -1499,12 +1541,16 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
         html:    buildReceiptEmail(lead, receipt, notes)
       });
       db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
+      db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+      logHistory(lead.id, 'Receipt sent to customer', receiptDetail);
       return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_sent');
     } catch (err) {
       console.error('Receipt email error:', err.message);
+      logHistory(lead.id, 'Receipt saved (email failed)', receiptDetail);
       return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_err');
     }
   }
+  logHistory(lead.id, 'Receipt saved (not emailed)', receiptDetail);
   res.redirect('/admin/quote/' + lead.id + '?msg=receipt_saved');
 });
 
@@ -1751,8 +1797,10 @@ router.post('/followup/new', requireAuth, express.urlencoded({ extended: false }
 router.post('/followup/:id/reschedule', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var due = (req.body.due_date || '').trim();
   var back = req.body.back || '/admin/followups';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(due)) {
+  var f = db.prepare('SELECT * FROM followups WHERE id = ?').get(req.params.id);
+  if (f && /^\d{4}-\d{2}-\d{2}$/.test(due)) {
     db.prepare('UPDATE followups SET due_date = ?, sent = 0, sent_at = NULL WHERE id = ?').run(due, req.params.id);
+    logHistory(f.lead_id, 'Follow-up rescheduled', f.description + ' · now due ' + fmtPrefDate(due));
   }
   res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=resched');
 });
@@ -1760,13 +1808,17 @@ router.post('/followup/:id/reschedule', requireAuth, express.urlencoded({ extend
 // Dismiss without emailing: flag it sent so the cron skips it.
 router.post('/followup/:id/done', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var back = req.body.back || '/admin/followups';
+  var f = db.prepare('SELECT * FROM followups WHERE id = ?').get(req.params.id);
   db.prepare("UPDATE followups SET sent = 1, sent_at = datetime('now') WHERE id = ?").run(req.params.id);
+  if (f) logHistory(f.lead_id, 'Follow-up marked done', f.description);
   res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=done');
 });
 
 router.post('/followup/:id/cancel', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var back = req.body.back || '/admin/followups';
+  var f = db.prepare('SELECT * FROM followups WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM followups WHERE id = ?').run(req.params.id);
+  if (f) logHistory(f.lead_id, 'Follow-up cancelled', f.description);
   res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=cancelled');
 });
 

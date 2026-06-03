@@ -114,5 +114,7 @@ addLeadCol('status_updated_at',  'TEXT');
 addLeadCol('followup_sent',      'INTEGER DEFAULT 0');
 addLeadCol('archived',           'INTEGER DEFAULT 0');
 addLeadCol('archived_at',        'TEXT');
+addLeadCol('vin',                'TEXT');
+addLeadCol('internal_notes',     'TEXT');
 
 module.exports = db;
