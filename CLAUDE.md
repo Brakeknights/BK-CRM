@@ -98,15 +98,15 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 
 ### Platform Build Phases
 
-**Phase 2 (current — in progress):** When a customer submits the contact form, automatically create or find them as a Square customer. Foundation of the CRM.
+**Phase 2 (complete):** When a customer submits the contact form, automatically create or find them as a Square customer. Foundation of the CRM.
 
-**Phase 3:** Quote tool — owner enters service + price + proposed time, system sends a branded quote email to the customer.
+**Phase 3 (complete):** Quote tool — owner enters service + price + proposed time, system sends a branded quote email to the customer. Customer accepts, picks time + address, owner approves/denies. T-24h and T-2h reminder emails sent automatically.
 
-**Phase 4:** Booking confirmation — once price/time agreed, owner books in Square, our system sends a full branded confirmation email: service, price, date, time, address.
+**Phase 4 (complete, merged into Phase 3):** Branded booking confirmation email fires on owner approval with full service details, price, address, duration, and calendar links.
 
-**Phase 5:** Job summary + custom receipt — after payment, owner triggers a branded receipt with a proper Technician Notes section (Square's native receipt has no custom notes section).
+**Phase 5 (complete):** Job summary + custom receipt — owner fills out a receipt form after the job (service, vehicle, pricing, payment method, up to 4 advisory notes). Branded receipt emails to the customer. Lead auto-marked Completed. Each advisory can carry a timed follow-up reminder (owner/customer/both).
 
-**Phase 6:** Follow-up automation — notes entered on the job summary trigger timed reminder emails to owner and customer (e.g. "rear brakes have 6 months left" → reminder email sent at that time).
+**Phase 6 (foundation complete):** Follow-up reminders created from receipt advisories are stored in the `followups` table. A cron job in server.js checks every 6h and fires owner alert and/or customer reminder emails on the due date.
 
 **Phase 7:** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, all owned by Brake Knights.
 
@@ -122,27 +122,21 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/dazzling-planck-U9GXQ` — in sync with `dev` and `master` ✅
+- Working branch: `claude/friendly-lamport-I5Aji` — pushed to `dev`, pending merge to `master` ⏳
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Form emails fully working on both dev and live: internal notification + customer confirmation ✅
+- Phases 2, 3, 4, 5 complete and on dev. Phase 6 foundation (followups table + cron) also on dev.
+- Phase 5 on dev, not yet on master — needs user to merge PR or push from local machine.
 - Pre-push hook in place — direct pushes to `master` blocked; override with "go master" keyword ✅
 - "go skill" keyword added — pushes tooling-only changes to both dev and master in one shot ✅
 - Session startup hook shows pending dev-vs-master commits at session start ✅
 - Screenshot skill in place — `node scripts/screenshot.js [path] [selector]` ✅
-- Playwright Chromium installed by session hook — no mid-task download delays ✅
-- Google Search Console verified (DNS TXT record) and sitemap submitted ✅
-- Images and CSS served with `Cache-Control: no-cache` ✅
-- CSS version is at `?v=3` across all 45 pages
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
-- Square auto-booking (Approve → create calendar booking) is **code-complete and validated end-to-end in sandbox** ✅
-  - Location + team member now auto-discovered per environment (sandbox vs production), so no code change needed when production upgrades — see `getSquareLocationId` / `getSquareTeamMemberId` in `routes/admin.js`
-  - Fixed `catalog.upsert` → `catalog.object.upsert` (correct path for the installed Square SDK)
-  - **Only remaining blocker is the Square Appointments subscription tier.** Both sandbox (free) and production (free) return 403 "Merchant subscription does not support write operations" on `bookings.create`. The feature works the moment a paid Appointments plan (Plus/Premium) is active — no further code changes.
-  - The Approve action lives only as a link in the customer-acceptance email (`routes/quote.js`), not in the admin UI — possible future improvement: add an Approve button on the lead page.
+- Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - Next steps:
-  1. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking, or keep manual booking
-  2. Add a good rotor-caliper photo to the brake inspection page (tabled — image rotation issue)
+  1. Merge dev → master to ship Phase 5 to the live site (user-initiated)
+  2. Phase 7: admin CRM dashboard at brakeknights.com/admin
+  3. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -187,8 +181,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Phase 2: auto-create Square customer when contact form is submitted
 - [ ] Phase 3: owner quote tool — enter service + price + time, fire branded quote email
 - [ ] Phase 4: branded booking confirmation email (service, price, date, time, address)
-- [ ] Phase 5: branded job summary + custom receipt with Technician Notes section
-- [ ] Phase 6: follow-up automation from job notes (timed reminder emails)
+- [ ] Phase 7: admin CRM dashboard at brakeknights.com/admin
 - [ ] Phase 7: admin CRM dashboard at brakeknights.com/admin
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
@@ -203,6 +196,11 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Phase 5: receipt form + branded receipt email + lead auto-completes; receipts + followups tables; Phase 6 follow-up reminder cron in server.js; "Complete Job & Send Receipt" button on lead cards and quote page
+- [x] CLAUDE.md guardrail: forbid GitHub MCP workaround when master push is blocked (user is the only one who completes master merges)
+- [x] Merged pricing updates + quote display polish (5 commits) from dev → master via PR #3/#4
+
+### Previously Completed This Session
 - [x] Pricing decisions confirmed by owner: Brake Fluid Flush single-tier (no premium); Drums and Shoes + "Front Pads, Rotors, and Drums and Shoes" standard-only (no premium); Brake Inspection flat $60 no tax; Caliper Replacement + Brake Hose Replacement stay custom-quote permanently (no preset pricing)
 - [x] Google Maps API key created + restricted (HTTP referrers to brakeknights.com domains, Maps Platform APIs); Maps JavaScript API + Places API enabled; GOOGLE_MAPS_API_KEY set in Hostinger for dev + prod. Address autocomplete confirmed working on dev (and live by same project/key).
 - [x] Deployed Phase 3 + pricing + soft-archive batch to master via PR #2 (live on brakeknights.com)
