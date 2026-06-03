@@ -17,6 +17,8 @@ A repository ruleset named "Protect master" targets the `master` branch on GitHu
 The pre-push hook blocks all pushes to master by default.
 To override: user says **"go master"** in chat. Claude then runs the push with `MASTER_OVERRIDE="go master"` set as an env var. (This satisfies Layer 2; Layer 1 is satisfied separately by the owner's admin bypass.)
 
+**If the git push fails (e.g. 403 from GitHub's branch protection): STOP. Do NOT create a PR, do NOT use the GitHub MCP to merge, do NOT find any other workaround. Report the failure and wait for the user to complete the merge themselves. The user is the only one who completes merges to master — Claude only initiates the push attempt.**
+
 ## Skill/Tooling Push Override
 For changes that are dev tooling only (skills, hooks, scripts — nothing that affects the live site):
 User says **"go skill"** in chat. Claude merges the feature branch to BOTH `dev` and `master` in one operation, using `MASTER_OVERRIDE="go skill"`.
