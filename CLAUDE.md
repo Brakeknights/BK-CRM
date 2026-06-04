@@ -133,7 +133,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/busy-ritchie-GuJOH` — Phase 7A refinements round 2 (in progress, not yet on dev)
+- Working branch: `claude/busy-ritchie-GuJOH` — Phase 7A refinements round 2, merged to dev ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5 complete. Phase 6 complete (followups table + cron + management UI + receipt/profile refinements). Phase 7A complete (Quick Quote / Receipt Generator at `/admin/quick`) — all on dev.
@@ -145,7 +145,7 @@ Update this section at the end of each session to stay caught up next time.
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - Next steps:
-  1. Test Phase 7A refinements on dev.brakeknights.com/admin/quick; gather any feedback
+  1. Test Phase 7A refinements on dev.brakeknights.com/admin/quick; gather any remaining feedback
   2. Merge dev → master to ship Phases 5 + 6 + 7A to the live site (user-initiated)
   3. Phase 7: admin CRM dashboard at brakeknights.com/admin
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
