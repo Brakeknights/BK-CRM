@@ -74,7 +74,7 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/dazzling-planck-U9GXQ`
+- Current feature branch: `claude/busy-ritchie-GuJOH` (Phase 7A refinements round 2)
 
 ## Square Integration — Platform Build Plan
 
@@ -113,7 +113,9 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 
 **Phase 7:** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, all owned by Brake Knights.
 
-**Phase 7A (next up — Quick Quote / Receipt Generator):** A standalone generator on the dashboard, not bound to any lead, for fast phone/text inquiries. Reuses the existing pricing engine, service multi-select + tier toggle, live auto-calc, and branded quote/receipt templates.
+**Phase 7A (complete — Quick Quote / Receipt Generator):** A standalone generator on the dashboard at `/admin/quick`, not bound to any lead, for fast phone/text inquiries. Reuses the existing pricing engine, service multi-select + tier toggle, live auto-calc, and branded quote/receipt templates. "Quick Quote" link added to the admin topbar nav. Built entirely in `routes/admin.js` (`GET`/`POST /admin/quick`), reusing `buildQuoteEmail` / `buildReceiptEmail`. On dev, not yet on master.
+- **Implemented:** Quote/Receipt mode switch on one screen; service multi-select + tier toggle with live auto-fill from the pricing table; any field overridable, total recalcs live. Quote outcomes: (1) calculator only (Clear, nothing saved); (2) Send (create "Quick Quote" lead in Quoted stage, save quote, email branded quote with accept link); (3) Copyable link (create lead + quote + token, return result page with the customer quote URL + one-tap Copy button); plus Save as New Lead (no email). Receipt mode mirrors the receipt builder: vehicle/date/payment(+Other)/address, 4 advisories with timed follow-up reminders, office notes; Send Receipt (emails, advances lead to Receipt Sent + writes followups) or Save as New Lead.
+- Original spec (for reference):
 - **Quote/Receipt mode switch** on one screen; usable on the front end (brand-new) or back end (within an existing lead). Pick services + tier, override any number, total recalcs live (for reading off on the phone).
 - **Three outcomes:** (1) calculator only — nothing saved, can be erased; (2) send to customer — enter first/last name + email → creates a lead (source "Quick Quote") in the Quoted stage, saves the quote, emails the branded quote with the accept link; (3) copyable shareable link — creates the lead + quote + token and returns the customer-facing branded quote URL the owner copy-pastes into their own texting app.
 - Also: option to save as a new lead without sending.
@@ -131,11 +133,11 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/ecstatic-bardeen-5kp7B` — pushed to `dev` ⏳ (pending merge to `master`)
+- Working branch: `claude/busy-ritchie-GuJOH` — Phase 7A refinements round 2 (merged to dev)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Phases 2, 3, 4, 5 complete. Phase 6 complete (followups table + cron + management UI + receipt/profile refinements) — all on dev.
-- Phase 5 + Phase 6 on dev, not yet on master — needs user to merge.
+- Phases 2, 3, 4, 5 complete. Phase 6 complete (followups table + cron + management UI + receipt/profile refinements). Phase 7A complete with all refinements (Quick Quote / Receipt Generator at `/admin/quick`, delete lead, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store) — all on dev.
+- Phases 5 + 6 + 7A (including all refinements) on dev, not yet on master — needs user to merge.
 - Pre-push hook in place — direct pushes to `master` blocked; override with "go master" keyword ✅
 - "go skill" keyword added — pushes tooling-only changes to both dev and master in one shot ✅
 - Session startup hook shows pending dev-vs-master commits at session start ✅
@@ -143,10 +145,11 @@ Update this section at the end of each session to stay caught up next time.
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - Next steps:
-  1. **Phase 7A: Quick Quote / Receipt Generator** (build next — standalone dashboard tool; see Platform Build Phases for full spec)
-  2. Merge dev → master to ship Phases 5 + 6 to the live site (user-initiated)
-  3. Phase 7: admin CRM dashboard at brakeknights.com/admin
+  1. Test dev.brakeknights.com/admin/quick and the lead list (delete button, preview, advisories)
+  2. Merge dev → master to ship Phases 5 + 6 + 7A to the live site (user-initiated)
+  3. Phase 7: full CRM dashboard (customer profiles, vehicle history, job history)
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
+- Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -191,7 +194,6 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Phase 2: auto-create Square customer when contact form is submitted
 - [ ] Phase 3: owner quote tool — enter service + price + time, fire branded quote email
 - [ ] Phase 4: branded booking confirmation email (service, price, date, time, address)
-- [ ] **Phase 7A (next): Quick Quote / Receipt Generator** — standalone dashboard tool, quote/receipt mode switch, live auto-calc, three outcomes (calculator-only/erase, send-email + create lead, copyable branded quote link to text manually). Build before Phase 7. Full spec in Platform Build Phases.
 - [ ] Phase 7: admin CRM dashboard at brakeknights.com/admin
 - [ ] Phase 6C: Square auto-trigger (Square events fire receipt + follow-up flow) — deferred, spec later
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
@@ -207,6 +209,10 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Phase 7A: Quick Quote / Receipt Generator at `/admin/quick` (standalone, not bound to a lead) — quote/receipt mode switch, service multi-select + tier toggle with live auto-fill, live recalc; quote outcomes (calculator-only/erase, Send + create lead, copyable quote link with Copy button), Save as New Lead; receipt mode (vehicle/date/payment/address, advisories + timed follow-ups, office notes) Send or Save; "Quick Quote" topbar nav link. Merged to dev.
+- [x] Phase 7A refinements (round 2): delete lead button (cascade-delete all records permanently); receipt address Google Maps autocomplete; advisory reminder: replaced time-period dropdown with direct date picker, no pre-fill; quick quote receipt mode: removed "Save as New Lead" button; email button on lead list/detail now copies address to clipboard on click (fixes desktop where no email client); receipt builder: 1 advisory shown + 3 hidden + Add Advisory button; quick quote: same advisory 1+Add pattern; quick quote POST handler updated to use direct date for followups; Preview Email button on quick quote page (both quote and receipt modes); auto-save localStorage (navigate away and back restores form); "Clear & Start Over" replaces old Clear button.
+
+### Previously Completed This Session
 - [x] Phase 5: receipt form + branded receipt email + lead auto-completes; receipts + followups tables; Phase 6 follow-up reminder cron in server.js; "Complete Job & Send Receipt" button on lead cards and quote page
 - [x] CLAUDE.md guardrail: forbid GitHub MCP workaround when master push is blocked (user is the only one who completes master merges)
 - [x] Merged pricing updates + quote display polish (5 commits) from dev → master via PR #3/#4

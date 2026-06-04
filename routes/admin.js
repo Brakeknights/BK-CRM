@@ -158,9 +158,10 @@ function statusBadge(status) {
     follow_up:      'background:#fce8ff;color:#8b2fc9;',
     quote_accepted: 'background:#e0f4f8;color:#0e7490;',
     booked:         'background:#e6f9ee;color:#1a7a3a;',
-    completed:      'background:#f0f0f0;color:#555;',
+    completed:      'background:#fff1de;color:#a85b00;',
+    receipt:        'background:#e6f9ee;color:#0a6b2e;',
   };
-  const labels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed' };
+  const labels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
   const style = styles[status] || styles.new;
   const label = labels[status] || status;
   return '<span style="' + style + 'padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;letter-spacing:0.3px;white-space:nowrap;">' + label + '</span>';
@@ -179,6 +180,24 @@ function fmtHistoryTime(dateStr) {
   var d = new Date(dateStr + 'Z');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+// Today's date in Eastern Time as YYYY-MM-DD (en-CA yields ISO order).
+function easternToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+// Computes a follow-up due date (YYYY-MM-DD) from a base date and a timeframe key.
+// '1m'/'3m'/'6m'/'1y' add calendar months; 'custom' returns the provided date.
+function followupDueDate(baseDate, timeframe, customDate) {
+  if (timeframe === 'custom') return (customDate || '').trim() || null;
+  var months = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 }[timeframe];
+  if (!months) return null;
+  var p = String(baseDate || easternToday()).split('-').map(Number);
+  if (p.length !== 3) return null;
+  var d = new Date(p[0], p[1] - 1, p[2]);
+  d.setMonth(d.getMonth() + months);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 // Formats a stored ISO date (YYYY-MM-DD) as "Friday, June 5, 2026".
@@ -255,8 +274,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .topbar{background:#0a1f3d;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .topbar-brand{color:#6b8ff5;font-weight:700;font-size:0.95rem;letter-spacing:.5px;display:flex;align-items:center;gap:8px;text-decoration:none}
 .topbar-brand img{width:22px;height:22px;border-radius:4px}
-.topbar-logout{color:#8aadcf;font-size:0.82rem;text-decoration:none}
+.topbar-nav{display:flex;align-items:center;gap:4px}
+.topbar-link{color:#8aadcf;font-size:0.84rem;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;padding:5px 10px;border-radius:6px;transition:background .12s,color .12s}
+.topbar-link:hover{color:#fff;background:rgba(255,255,255,.08)}
+.topbar-link.active{color:#fff;background:rgba(107,143,245,.18);font-weight:700}
+.topbar-logout{color:#8aadcf;font-size:0.82rem;text-decoration:none;padding:5px 10px;border-radius:6px;transition:color .12s}
 .topbar-logout:hover{color:#fff}
+.nav-badge{background:#e07000;color:#fff;font-size:0.7rem;font-weight:700;padding:1px 7px;border-radius:10px;margin-left:5px;line-height:1.5}
 .wrap{max-width:600px;margin:0 auto;padding:16px}
 .card{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
 .section-title{font-size:0.95rem;font-weight:700;color:#0a1f3d;margin-bottom:14px}
@@ -324,9 +348,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 `;
 
 function page(title, body, req) {
-  var logoutLink = (req.session && req.session.adminAuthed)
-    ? '<a href="/admin/logout" class="topbar-logout">Log out</a>'
-    : '';
+  var authed = req.session && req.session.adminAuthed;
+  var nav = '';
+  if (authed) {
+    // Count of follow-ups that are due now (overdue or due today) so the owner sees
+    // at a glance when something needs attention.
+    var dueCount = 0;
+    try {
+      dueCount = db.prepare("SELECT COUNT(*) AS n FROM followups WHERE sent = 0 AND date(due_date) <= date('now')").get().n;
+    } catch (_) {}
+    var badge = dueCount > 0
+      ? ' <span class="nav-badge">' + dueCount + '</span>'
+      : '';
+    var p = req.path || '/';
+    var activeSection = p === '/quick' ? 'quick' : p.startsWith('/followups') ? 'followups' : 'leads';
+    nav = '<div class="topbar-nav">'
+      + '<a href="/admin" class="topbar-link' + (activeSection === 'leads'     ? ' active' : '') + '">Leads</a>'
+      + '<a href="/admin/quick" class="topbar-link' + (activeSection === 'quick'     ? ' active' : '') + '">Quick Quote</a>'
+      + '<a href="/admin/followups" class="topbar-link' + (activeSection === 'followups' ? ' active' : '') + '">Follow-ups' + badge + '</a>'
+      + '<a href="/admin/logout" class="topbar-logout">Log out</a>'
+      + '</div>';
+  }
   return '<!DOCTYPE html><html lang="en"><head>'
     + '<meta charset="UTF-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
@@ -336,7 +378,7 @@ function page(title, body, req) {
     + '</head><body>'
     + '<div class="topbar">'
     + '<a href="/admin" class="topbar-brand"><img src="/images/favicon.png" alt=""> BK Admin</a>'
-    + logoutLink
+    + nav
     + '</div>'
     + '<div class="wrap">' + body + '</div>'
     + '</body></html>';
@@ -385,13 +427,13 @@ router.get('/logout', function(req, res) {
 // ─── Status update ────────────────────────────────────────────────────────────
 
 router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
-  var validStatuses = ['new', 'quoted', 'follow_up', 'quote_accepted', 'booked', 'completed'];
+  var validStatuses = ['new', 'quoted', 'follow_up', 'quote_accepted', 'booked', 'completed', 'receipt'];
   var status = req.body.status;
   if (!validStatuses.includes(status)) return res.status(400).send('Invalid status');
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).send('Lead not found');
   if (lead.status !== status) {
-    var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed' };
+    var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
     db.prepare("UPDATE leads SET status = ?, status_updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
     logHistory(lead.id, 'Status changed to ' + (statusLabels[status] || status));
     notifyStageChange(req, lead, status).catch(function(err) { console.error('Stage notification error:', err.message); });
@@ -417,6 +459,30 @@ router.post('/lead/:id/restore', requireAuth, express.urlencoded({ extended: fal
   db.prepare("UPDATE leads SET archived = 0, archived_at = NULL WHERE id = ?").run(lead.id);
   logHistory(lead.id, 'Lead restored from archive');
   res.redirect(req.body.back || '/admin?status=archived');
+});
+
+router.post('/lead/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  db.prepare('DELETE FROM followups WHERE lead_id = ?').run(lead.id);
+  db.prepare('DELETE FROM receipts WHERE lead_id = ?').run(lead.id);
+  db.prepare('DELETE FROM quotes WHERE lead_id = ?').run(lead.id);
+  db.prepare('DELETE FROM lead_history WHERE lead_id = ?').run(lead.id);
+  db.prepare('DELETE FROM leads WHERE id = ?').run(lead.id);
+  res.redirect(req.body.back || '/admin');
+});
+
+// Lead-level VIN + internal notes (item 5). Saved independently of any quote.
+router.post('/lead/:id/notes', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  var vin = (req.body.vin || '').trim() || null;
+  var notes = (req.body.internalNotes || '').trim() || null;
+  db.prepare('UPDATE leads SET vin = ?, internal_notes = ? WHERE id = ?').run(vin, notes, lead.id);
+  if ((lead.vin || '') !== (vin || '') || (lead.internal_notes || '') !== (notes || '')) {
+    logHistory(lead.id, 'VIN / internal notes updated');
+  }
+  res.redirect('/admin/quote/' + lead.id + '?msg=notes_saved');
 });
 router.get('/square-info', requireAuth, async function(req, res) {
   const { client } = require('../square');
@@ -532,6 +598,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">&#127822; Apple / Outlook (.ics)</a>'
         + '<p style="color:#888;font-size:0.8rem;margin:6px 0 0;">Google Calendar opens in your browser. The .ics works with Apple Calendar and Outlook.</p>'
         + '</div>'
+        + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
@@ -606,6 +673,7 @@ router.get('/', requireAuth, function(req, res) {
     ['quote_accepted', 'Quote Accepted', counts.quote_accepted || 0],
     ['booked',         'Booked',         counts.booked         || 0],
     ['completed',      'Completed',      counts.completed      || 0],
+    ['receipt',        'Receipt Sent',        counts.receipt        || 0],
     ['archived',       'Archived',       archivedCount         || 0],
   ];
 
@@ -641,10 +709,13 @@ router.get('/', requireAuth, function(req, res) {
           + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
           + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
           + '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>'
-          + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;">'
+          + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">'
           + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
-          + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;">Open Quote</a>'
+          + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128172; Text</a>'
+          + (l.email ? '<a href="mailto:' + esc(l.email) + '" onclick="try{navigator.clipboard.writeText(this.href.slice(7))}catch(e){}" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#9993; Email</a>' : '')
+          + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;min-width:120px;">Open Quote</a>'
           + '</div>'
+          + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">&#10003; Complete Job &amp; Send Receipt</a>')
           + (l.archived
               ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
                 + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
@@ -656,15 +727,20 @@ router.get('/', requireAuth, function(req, res) {
                 + '<input type="hidden" name="back" value="' + backVal + '">'
                 + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
                 + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
-                + ['new','quoted','follow_up','quote_accepted','booked','completed'].map(function(s) {
-                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed' }[s];
+                + ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'].map(function(s) {
+                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' }[s];
                     return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + label + '</option>';
                   }).join('')
                 + '</select></form>'
-                + '<form method="POST" action="/admin/lead/' + l.id + '/archive" style="margin-top:8px;" onsubmit="return confirm(\'Archive this lead? It stays saved for history and can be restored from the Archived tab.\');">'
+                + '<div style="display:flex;gap:0;margin-top:8px;">'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/archive" style="flex:1;" onsubmit="return confirm(\'Archive this lead? It stays saved and can be restored from the Archived tab.\');">'
                 + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="submit" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128451; Archive lead</button>'
-                + '</form>')
+                + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128451; Archive</button>'
+                + '</form>'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/delete" style="flex:1;" onsubmit="return confirm(\'Permanently delete ' + esc(l.first_name) + ' ' + esc(l.last_name) + '? All quotes, receipts, and follow-ups will be erased. This cannot be undone.\');">'
+                + '<input type="hidden" name="back" value="' + backVal + '">'
+                + '<button type="submit" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete</button>'
+                + '</form></div>')
           + '</div>';
       }).join('');
 
@@ -717,6 +793,12 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var quoteAlert = '';
   if (req.query.msg === 'approved') quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
   if (req.query.msg === 'denied')   quoteAlert = '<div class="alert alert-error" style="background:#fff8e1;color:#7a5a00;border-color:#f0d080;">Time denied. Customer notified — we\'ll reach out to reschedule.</div>';
+  if (req.query.msg === 'receipt_sent')  quoteAlert = '<div class="alert alert-success">Receipt sent to the customer. Lead moved to Receipt.</div>';
+  if (req.query.msg === 'receipt_saved') quoteAlert = '<div class="alert alert-success">Receipt saved. No email on file for this lead.</div>';
+  if (req.query.msg === 'receipt_err')   quoteAlert = '<div class="alert alert-error">Receipt saved, but the email failed to send. Try again.</div>';
+  if (req.query.msg === 'quick_sent')    quoteAlert = '<div class="alert alert-success">Quick Quote sent to the customer. Lead created in the Quoted stage.</div>';
+  if (req.query.msg === 'quick_saved')   quoteAlert = '<div class="alert alert-success">Lead created from Quick Quote and the quote was saved (not emailed).</div>';
+  if (req.query.msg === 'quick_err')     quoteAlert = '<div class="alert alert-error">Lead and quote saved, but the email failed to send. Try resending from this page.</div>';
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + quoteAlert
@@ -740,17 +822,115 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
     + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : '')
     + '</div>'
+    + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
+    + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128222; Call</a>'
+    + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128172; Text</a>'
+    + (lead.email ? '<a href="mailto:' + esc(lead.email) + '" onclick="try{navigator.clipboard.writeText(this.href.slice(7))}catch(e){}" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</a>' : '')
+    + '</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
     + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
     + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:7px 10px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.88rem;color:#1a2a3a;background:#fff;">'
-    + ['new','quoted','follow_up','quote_accepted','booked','completed'].map(function(s) {
-        var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed' }[s];
+    + ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'].map(function(s) {
+        var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' }[s];
         return '<option value="' + s + '"' + (lead.status === s ? ' selected' : '') + '>' + label + '</option>';
       }).join('')
     + '</select>'
     + '</form>'
+    + '<div style="display:flex;gap:0;margin-top:6px;">'
+    + '<form method="POST" action="/admin/lead/' + lead.id + '/archive" style="flex:1;" onsubmit="return confirm(\'Archive this lead? It stays saved and can be restored from the Archived tab.\');">'
+    + '<input type="hidden" name="back" value="/admin">'
+    + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128451; Archive lead</button>'
+    + '</form>'
+    + '<form method="POST" action="/admin/lead/' + lead.id + '/delete" style="flex:1;" onsubmit="return confirm(\'Permanently delete ' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '? All quotes, receipts, and follow-ups will be erased. This cannot be undone.\');">'
+    + '<input type="hidden" name="back" value="/admin">'
+    + '<button type="submit" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete lead permanently</button>'
+    + '</form>'
     + '</div>'
+    + '</div>'
+
+    // Lead-level VIN + Internal Notes — the running record for this customer,
+    // saved on its own and shown right under the profile (item 5).
+    + '<div class="card">'
+    + (req.query.msg === 'notes_saved' ? '<div class="alert alert-success" style="margin-bottom:10px;">Saved.</div>' : '')
+    + '<div class="section-title" style="margin-bottom:10px;">VIN &amp; Internal Notes <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(internal only, never sent)</span></div>'
+    + '<form method="POST" action="/admin/lead/' + lead.id + '/notes">'
+    + '<div class="form-group"><label>VIN</label>'
+    + '<input type="text" name="vin" placeholder="17-character VIN" value="' + esc(lead.vin || '') + '" maxlength="17"></div>'
+    + '<div class="form-group" style="margin-bottom:10px;"><label>Internal Notes</label>'
+    + '<textarea name="internalNotes" placeholder="Running notes about this customer or vehicle...">' + esc(lead.internal_notes || '') + '</textarea></div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save</button>'
+    + '</form></div>'
+
+    // Complete Job — opens the receipt form (Phase 5)
+    + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>'
+
+    // Receipt history — each receipt is a clickable card that opens the customer
+    // copy, and surfaces its advisories + office (internal) notes right here so
+    // they're easy to find without opening the receipt.
+    + (function() {
+        var receipts = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
+        if (receipts.length === 0) return '';
+        var cards = receipts.map(function(rc) {
+          var when = rc.sent_at
+            ? 'Sent ' + new Date(rc.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : 'Saved (not emailed)';
+          var advisories = [];
+          try { advisories = JSON.parse(rc.customer_notes || '[]'); } catch (_) {}
+          var advHtml = advisories.length
+            ? '<div style="margin-top:10px;"><div style="font-size:0.74rem;font-weight:700;color:#1a6fc4;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;">Advisories to customer</div>'
+              + '<ul style="margin:0;padding-left:18px;color:#1a2a3a;font-size:0.85rem;line-height:1.5;">'
+              + advisories.map(function(a) { return '<li>' + esc(a) + '</li>'; }).join('')
+              + '</ul></div>'
+            : '';
+          var officeHtml = rc.office_notes
+            ? '<div style="margin-top:10px;background:#fff8e1;border:1px solid #f0d080;border-radius:7px;padding:10px 12px;">'
+              + '<div style="font-size:0.74rem;font-weight:700;color:#7a5a00;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;">Office notes (internal)</div>'
+              + '<div style="color:#5a4400;font-size:0.85rem;line-height:1.5;white-space:pre-wrap;">' + esc(rc.office_notes) + '</div></div>'
+            : '';
+          return '<div style="border:1px solid #eef1f5;border-radius:9px;padding:13px;margin-bottom:10px;">'
+            + '<div class="row-sb" style="align-items:flex-start;">'
+            + '<div><div style="font-weight:700;color:#0a1f3d;font-size:0.9rem;">' + esc(rc.service || 'Service') + '</div>'
+            + '<div style="color:#999;font-size:0.78rem;margin-top:2px;">' + esc(when) + (rc.payment_method ? ' &middot; ' + esc(rc.payment_method) : '') + '</div></div>'
+            + '<div style="font-weight:700;color:#0a1f3d;white-space:nowrap;">$' + money(rc.total) + '</div>'
+            + '</div>'
+            + advHtml
+            + officeHtml
+            + '<div style="margin-top:11px;"><a href="/admin/receipt/view/' + rc.id + '" class="btn btn-outline btn-sm" style="width:auto;">View customer copy &rarr;</a></div>'
+            + '</div>';
+        }).join('');
+        return '<div class="card">'
+          + '<div class="section-title" style="margin-bottom:10px;">Receipts <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + receipts.length + ')</span></div>'
+          + cards + '</div>';
+      })()
+
+    // Follow-ups for this lead (pending + recent), plus an add form.
+    + (function() {
+        var fus = db.prepare(
+          'SELECT f.*, ? AS first_name, ? AS last_name, ? AS vehicle FROM followups f WHERE f.lead_id = ? ORDER BY f.sent ASC, f.due_date ASC, f.id ASC'
+        ).all(lead.first_name, lead.last_name, lead.vehicle, lead.id);
+        var back = '/admin/quote/' + lead.id;
+        var todayIso = easternToday();
+        var cards = fus.map(function(f) { return followupCard(f, back); }).join('');
+        var addForm = '<form method="POST" action="/admin/followup/new" style="margin:0;">'
+          + '<input type="hidden" name="lead_id" value="' + lead.id + '">'
+          + '<input type="hidden" name="back" value="' + back + '">'
+          + '<div style="font-size:0.8rem;color:#888;font-weight:600;margin-bottom:7px;">Add a reminder</div>'
+          + '<input type="text" name="description" placeholder="What to follow up on (e.g. recommend rear pads soon)" required style="width:100%;padding:8px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.86rem;margin-bottom:8px;">'
+          + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+          + '<input type="date" name="due_date" required min="' + todayIso + '" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.84rem;color:#1a2a3a;">'
+          + '<select name="recipient" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.84rem;background:#fff;">'
+          + '<option value="owner">Owner only</option>'
+          + '<option value="customer">Customer only</option>'
+          + '<option value="both">Owner + Customer</option>'
+          + '</select>'
+          + '<button type="submit" class="btn btn-navy btn-sm" style="width:auto;">+ Add</button>'
+          + '</div></form>';
+        return '<div class="section-title" style="margin:18px 0 10px;">Follow-ups'
+          + (fus.length ? ' <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + fus.length + ')</span>' : '') + '</div>'
+          + cards
+          + '<div class="card">' + addForm + '</div>';
+      })()
 
     // Quote history
     + (allQuotes.length > 0
@@ -843,14 +1023,6 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
     + '<input type="hidden" name="taxAmt"   id="taxH"   value="' + fmt(q.tax)   + '">'
     + '<input type="hidden" name="totalAmt" id="totalH" value="' + fmt(q.total) + '">'
-    + '</div>'
-
-    // VIN and notes
-    + '<div class="card">'
-    + '<div class="form-group"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label>'
-    + '<input type="text" name="vin" placeholder="17-character VIN" value="' + esc(q.vin || '') + '" maxlength="17"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Internal Notes <span style="color:#bbb;font-weight:400;">(not sent to customer)</span></label>'
-    + '<textarea name="internalNotes" placeholder="Parts ordered, scheduling notes, vehicle details...">' + esc(q.internal_notes || '') + '</textarea></div>'
     + '</div>'
 
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
@@ -1102,7 +1274,8 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
           + '</div>'
         : '')
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
+    + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
     + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Prefer to talk it through? Reply to this email or call/text:</p>'
     + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
@@ -1110,5 +1283,1154 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div>'
     + '</div>';
 }
+
+// ─── Phase 5: Job summary + custom receipt ────────────────────────────────────
+
+var PAYMENT_METHODS = ['Credit/Debit Card', 'Cash', 'Other'];
+
+// Renders one advisory row: a customer-facing note plus an optional date-picker
+// follow-up reminder. Pass hidden=true for rows 2-4 (shown via "+ Add Advisory").
+function advisoryRow(i, hidden) {
+  var today = easternToday();
+  return '<div id="advRow' + i + '" style="border:1.5px solid #eef1f5;border-radius:10px;padding:13px;margin-bottom:10px;background:#fbfcfe;' + (hidden ? 'display:none;' : '') + '">'
+    + '<div class="form-group" style="margin-bottom:9px;"><label>Advisory ' + i + ' <span style="color:#bbb;font-weight:400;">(shown on receipt)</span></label>'
+    + '<input type="text" name="custNote' + i + '" placeholder="e.g. Rear pads ~30%, plan replacement in about 6 months"></div>'
+    + '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">'
+    + '<div class="form-group" style="margin-bottom:0;flex:1;min-width:140px;"><label>Follow-up date <span style="color:#bbb;font-weight:400;">(optional — leave blank for no reminder)</span></label>'
+    + '<input type="date" name="fuCustom' + i + '" min="' + today + '" style="width:100%;padding:9px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.9rem;color:#1a2a3a;"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Remind</label>'
+    + '<select name="fuRecipient' + i + '" style="padding:10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.88rem;background:#fff;">'
+    + '<option value="owner" selected>Owner only</option>'
+    + '<option value="customer">Customer only</option>'
+    + '<option value="both">Both</option>'
+    + '</select></div>'
+    + '</div>'
+    + '</div>';
+}
+
+router.get('/receipt/:id', requireAuth, function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+
+  // Prefill from the accepted quote if there is one, otherwise the most recent quote.
+  var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id)
+    || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id)
+    || {};
+
+  var service   = quote.service || lead.service || '';
+  var vehicle   = lead.vehicle || '';
+  // Prefer the chosen quote's location; otherwise pull the most recent service
+  // address from any of this lead's quotes (phone-booked jobs may have it on a
+  // different quote than the one we prefilled from).
+  var address   = quote.pref_location
+    || (db.prepare("SELECT pref_location FROM quotes WHERE lead_id = ? AND pref_location IS NOT NULL AND TRIM(pref_location) != '' ORDER BY id DESC LIMIT 1").get(lead.id) || {}).pref_location
+    || '';
+  var partsLabor = (quote.price_parts || 0) + (quote.price_labor || 0);
+  var shopSupplies = quote.shop_supplies || 0;
+  var tax       = quote.tax || 0;
+  var total     = partsLabor + shopSupplies + tax;
+  var receiptTier = quote.tier === 'premium' ? 'premium' : 'standard';
+
+  // Service picker mirrors the quote tool: a multi-select of every service so the
+  // owner can change/add what was actually done if the job grew on arrival.
+  var selectedServices = service ? service.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  var rServiceCheckboxes = '<div class="svc-check-list">'
+    + Object.keys(PRICING.services).map(function(s) {
+        var checked = selectedServices.indexOf(s) >= 0 ? ' checked' : '';
+        return '<label class="svc-check-item"><input type="checkbox" class="rsvc-cb" value="' + esc(s) + '"' + checked + ' onchange="rUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
+      }).join('')
+    + '</div>'
+    + '<input type="hidden" name="service" id="rsvcHidden" value="' + esc(service) + '">';
+  var rPricingJson = JSON.stringify(PRICING.services);
+
+  var paymentOpts = PAYMENT_METHODS.map(function(p) {
+    return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+  }).join('');
+
+  var advisoryRows = advisoryRow(1, false);
+  for (var i = 2; i <= 4; i++) advisoryRows += advisoryRow(i, true);
+  advisoryRows += '<button type="button" id="rAddAdvBtn" class="svc-clear-btn" style="margin-top:6px;" onclick="bkAddAdvisory(\'r\')">+ Add Advisory</button>';
+
+  // Past receipts for this lead (lightweight history)
+  var pastReceipts = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
+
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back to Lead</a>'
+    + '<div class="card">'
+    + '<div class="row-sb" style="margin-bottom:6px;">'
+    + '<div class="lead-name">' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
+    + statusBadge(lead.status)
+    + '</div>'
+    + '<div style="color:#888;font-size:0.85rem;">Complete the job and send a branded receipt. This marks the lead Completed.</div>'
+    + (pastReceipts.length
+        ? '<div style="margin-top:10px;font-size:0.82rem;color:#1a7a3a;">&#10003; ' + pastReceipts.length + ' receipt' + (pastReceipts.length > 1 ? 's' : '') + ' already sent for this lead. Sending another creates a new one.</div>'
+        : '')
+    + '</div>'
+
+    + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf">'
+
+    + '<div class="card">'
+    + '<div class="section-title">Service &amp; Vehicle</div>'
+    + '<div class="form-group"><label>Service performed <span style="color:#bbb;font-weight:400;">(select all that apply, change if the job grew on arrival)</span></label>'
+    + rServiceCheckboxes
+    + '<button type="button" class="svc-clear-btn" onclick="rClearServices()">&#10005; Clear selection</button>'
+    + '<div class="svc-tags" id="rsvcTags"></div>'
+    + '</div>'
+    + '<div class="form-group"><label>Tier <span style="color:#bbb;font-weight:400;">(sets auto-filled pricing)</span></label>'
+    + '<div class="tier-toggle">'
+    + '<button type="button" class="tier-btn' + (receiptTier === 'standard' ? ' active' : '') + '" id="rBtnStd" onclick="rSetTier(\'standard\')">Standard</button>'
+    + '<button type="button" class="tier-btn' + (receiptTier === 'premium'  ? ' active' : '') + '" id="rBtnPrem" onclick="rSetTier(\'premium\')">Premium</button>'
+    + '</div></div>'
+    + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model)</span></label>'
+    + '<input type="text" name="vehicle" value="' + esc(vehicle) + '" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date of service</label>'
+    + '<input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
+    + '<div class="form-group"><label>Payment method</label>'
+    + '<select name="paymentMethod" id="rpm" onchange="rPayToggle()">' + paymentOpts + '</select></div>'
+    + '</div>'
+    + '<div class="form-group" id="rpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
+    + '<input type="text" name="paymentOther" id="rpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
+    + '<input type="text" id="receiptAddr" name="serviceAddress" autocomplete="off" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title">Amount Paid</div>'
+    + '<div class="price-section" style="margin-bottom:0;">'
+    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span>'
+    + '<input class="price-input" type="number" name="partsLabor" id="rpl" min="0" step="0.01" value="' + fmt(partsLabor) + '" oninput="rcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
+    + '<input class="price-input" type="number" name="shopSupplies" id="rss" min="0" step="0.01" value="' + fmt(shopSupplies) + '" oninput="rcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Tax</span>'
+    + '<input class="price-input" type="number" name="tax" id="rtax" min="0" step="0.01" value="' + fmt(tax) + '" oninput="rcalc()"></div>'
+    + '<div class="price-row total-row divider-row"><span>Total Paid</span><span id="rtotal" style="font-size:1.15rem;">$' + money(total) + '</span></div>'
+    + '</div>'
+    + '<input type="hidden" name="total" id="rtotalH" value="' + fmt(total) + '">'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span></div>'
+    + advisoryRows
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Notes to Office <span style="color:#bbb;font-weight:400;">(internal only, never sent)</span></label>'
+    + '<textarea name="officeNotes" placeholder="Torque specs, parts used, condition observations, anything for the record…"></textarea></div>'
+    + '</div>'
+
+    + (lead.email ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The receipt will be saved but not emailed.</div>')
+    + '<button type="button" class="btn btn-outline" onclick="toggleReceiptPreview()" id="rPrevBtn" style="margin-bottom:10px;">Preview Receipt Email</button>'
+    + '<div id="rPreviewBox" style="display:none;margin-bottom:10px;"></div>'
+    + '<button type="submit" class="btn btn-blue">&#10003; Complete Job &amp; Send Receipt</button>'
+    + '</form>'
+
+    + '<script>'
+    + 'var RPRICING=' + rPricingJson + ';'
+    + 'var RTAXRATE=' + PRICING.taxRate + ';'
+    + 'var rtier="' + esc(receiptTier) + '";'
+    + 'function rcalc(){'
+    +   'var pl=parseFloat(document.getElementById("rpl").value)||0;'
+    +   'var ss=parseFloat(document.getElementById("rss").value)||0;'
+    +   'var tax=parseFloat(document.getElementById("rtax").value)||0;'
+    +   'var t=pl+ss+tax;'
+    +   'document.getElementById("rtotal").textContent="$"+t.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});'
+    +   'document.getElementById("rtotalH").value=t.toFixed(2);'
+    + '}'
+    + 'function rCheckedServices(){'
+    +   'return Array.from(document.querySelectorAll(".rsvc-cb:checked")).map(function(c){return c.value;});'
+    + '}'
+    + 'function rRenderTags(){'
+    +   'var names=rCheckedServices();'
+    +   'document.getElementById("rsvcTags").innerHTML=names.map(function(n){'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'rRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
+    +   '}).join("");'
+    + '}'
+    + 'function rRemoveTag(btn){'
+    +   'var val=btn.getAttribute("data-val");'
+    +   'var cb=Array.from(document.querySelectorAll(".rsvc-cb")).find(function(c){return c.value===val;});'
+    +   'if(cb)cb.checked=false;'
+    +   'rUpdateServices();'
+    + '}'
+    + 'function rClearServices(){'
+    +   'document.querySelectorAll(".rsvc-cb").forEach(function(cb){cb.checked=false;});'
+    +   'rUpdateServices();'
+    + '}'
+    + 'function rSetTier(t){'
+    +   'rtier=t;'
+    +   'document.getElementById("rBtnStd").classList.toggle("active",t==="standard");'
+    +   'document.getElementById("rBtnPrem").classList.toggle("active",t==="premium");'
+    +   'rAutofill();'
+    + '}'
+    // Auto-fill the Amount Paid fields from the pricing table for the selected
+    // services + tier. The owner can still type over any field afterward.
+    + 'function rAutofill(){'
+    +   'var names=rCheckedServices();'
+    +   'if(names.length===0){'
+    +     'document.getElementById("rpl").value="0.00";'
+    +     'document.getElementById("rss").value="0.00";'
+    +     'document.getElementById("rtax").value="0.00";'
+    +     'rcalc();return;'
+    +   '}'
+    +   'var parts=0,labor=0,ss=0;'
+    +   'names.forEach(function(s){'
+    +     'var sv=RPRICING[s];if(!sv)return;'
+    +     'var p=sv[rtier]||sv.standard;if(!p)return;'
+    +     'parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;'
+    +   '});'
+    +   'var tax=(parts+ss)*RTAXRATE;'
+    +   'document.getElementById("rpl").value=(parts+labor).toFixed(2);'
+    +   'document.getElementById("rss").value=ss.toFixed(2);'
+    +   'document.getElementById("rtax").value=tax.toFixed(2);'
+    +   'rcalc();'
+    + '}'
+    + 'function rUpdateServices(){'
+    +   'document.getElementById("rsvcHidden").value=rCheckedServices().join(", ");'
+    +   'rRenderTags();'
+    +   'rAutofill();'
+    + '}'
+    + 'function rPayToggle(){'
+    +   'var v=document.getElementById("rpm").value;'
+    +   'var wrap=document.getElementById("rpmOtherWrap");'
+    +   'var show=(v==="Other");'
+    +   'wrap.style.display=show?"block":"none";'
+    +   'document.getElementById("rpmOther").required=show;'
+    + '}'
+    + 'function toggleCustom(i){'
+    +   'var v=document.querySelector("[name=fuTime"+i+"]").value;'
+    +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
+    + '}'
+    + 'rRenderTags();rPayToggle();'
+    // Auto-fill prices from pricing table on page load if all price fields are 0
+    + 'if(!(parseFloat(document.getElementById("rpl").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();'
+    + 'function bkAddAdvisory(pfx){'
+    +   'for(var i=2;i<=4;i++){'
+    +     'var r=document.getElementById((pfx||"")+"advRow"+i)||document.getElementById("advRow"+i);'
+    +     'if(r&&r.style.display==="none"){r.style.display="block";'
+    +       'if(i===4){var btn=document.getElementById((pfx||"r")+"AddAdvBtn");if(btn)btn.style.display="none";}'
+    +       'return;}'
+    +   '}'
+    + '}'
+    + 'function toggleReceiptPreview(){'
+    +   'var box=document.getElementById("rPreviewBox");'
+    +   'if(box.style.display!=="none"){box.style.display="none";document.getElementById("rPrevBtn").textContent="Preview Receipt Email";return;}'
+    +   'var svcs=Array.from(document.querySelectorAll(".rsvc-cb:checked")).map(function(c){return c.value;});'
+    +   'var veh=(document.querySelector("[name=vehicle]")||{}).value||"";'
+    +   'var svcDate=(document.querySelector("[name=serviceDate]")||{}).value||"";'
+    +   'var pm=(document.getElementById("rpm")||{}).value||"";'
+    +   'var tot=document.getElementById("rtotal").textContent||"$0.00";'
+    +   'var advNotes=[];for(var i=1;i<=4;i++){var n=(document.querySelector("[name=custNote"+i+"]")||{}).value||"";if(n)advNotes.push(n);}'
+    +   'var toLine="' + esc(lead.email || '') + '"||"<em style=\'color:#e07000\'>(no email on file)</em>";'
+    +   'box.innerHTML="<div class=\'preview-box\'>"'
+    +     '+"<h4>Receipt Email Preview</h4>"'
+    +     '+"<div style=\'font-size:0.82rem;color:#888;margin-bottom:4px;\'>To: "+toLine+"</div>"'
+    +     '+"<div style=\'font-size:0.82rem;color:#888;margin-bottom:8px;\'>Subject: Your Brake Knights Service Receipt</div>"'
+    +     '+"<hr class=\'preview-divider\'>"'
+    +     '+"<p>Greetings ' + esc(lead.first_name) + ',</p>"'
+    +     '+"<div style=\'margin:10px 0;background:#f4f7fb;border-radius:8px;padding:14px;font-size:0.88rem;\'>"'
+    +     '+(svcs.length?"<div><strong>Service:</strong> "+svcs.join(", ")+"</div>":"")'
+    +     '+(veh?"<div style=\'margin-top:4px;\'><strong>Vehicle:</strong> "+veh+"</div>":"")'
+    +     '+(svcDate?"<div style=\'margin-top:4px;\'><strong>Date:</strong> "+svcDate+"</div>":"")'
+    +     '+"<div style=\'margin-top:4px;\'><strong>Total:</strong> "+tot+"</div>"'
+    +     '+(pm?"<div style=\'margin-top:4px;\'><strong>Payment:</strong> "+pm+"</div>":"")'
+    +     '+"</div>"'
+    +     '+(advNotes.length?"<div style=\'margin-top:10px;\'><strong>Notes to customer:</strong><ul style=\'margin:6px 0 0 18px;padding:0;font-size:0.86rem;\'>"+advNotes.map(function(n){return"<li>"+n+"</li>";}).join("")+"</ul></div>":"")'
+    +     '+"<p style=\'margin-top:10px;\'>All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong>.</p>"'
+    +     '+"</div>";'
+    +   'box.style.display="block";document.getElementById("rPrevBtn").textContent="Hide Preview";'
+    + '}'
+    + '</script>'
+    + (process.env.GOOGLE_MAPS_API_KEY
+        ? '<script>function initBkRecAddr(){var el=document.getElementById("receiptAddr");if(!el||!window.google||!google.maps||!google.maps.places)return;var ac=new google.maps.places.Autocomplete(el,{fields:["formatted_address"],componentRestrictions:{country:"us"},types:["address"]});ac.addListener("place_changed",function(){if(ac.getPlace())el.value=ac.getPlace().formatted_address||el.value;});}<\/script>'
+          + '<script src="https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(process.env.GOOGLE_MAPS_API_KEY) + '&libraries=places&loading=async&callback=initBkRecAddr" async><\/script>'
+        : '');
+
+  res.send(page('Receipt — ' + lead.first_name + ' ' + lead.last_name, body, req));
+});
+
+router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+
+  var service      = (req.body.service || '').trim();
+  var vehicle      = (req.body.vehicle || '').trim();
+  var serviceDate  = (req.body.serviceDate || '').trim() || easternToday();
+  var address      = (req.body.serviceAddress || '').trim();
+  var partsLabor   = parseFloat(req.body.partsLabor)   || 0;
+  var shopSupplies = parseFloat(req.body.shopSupplies) || 0;
+  var tax          = parseFloat(req.body.tax)          || 0;
+  var total        = partsLabor + shopSupplies + tax;
+  var payment      = (req.body.paymentMethod || '').trim();
+  if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
+  var officeNotes  = (req.body.officeNotes || '').trim() || null;
+
+  // Collect customer advisories and any reminders attached to them.
+  var notes = [];
+  var followups = [];
+  for (var i = 1; i <= 4; i++) {
+    var txt = (req.body['custNote' + i] || '').trim();
+    if (txt) notes.push(txt);
+    var due = (req.body['fuCustom' + i] || '').trim();
+    if (due && txt) {
+      followups.push({ description: txt, due_date: due, recipient: req.body['fuRecipient' + i] || 'owner' });
+    }
+  }
+
+  var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id)
+    || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id);
+
+  var info = db.prepare(
+    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, total, payment, JSON.stringify(notes), officeNotes);
+  var receiptId = info.lastInsertRowid;
+
+  followups.forEach(function(f) {
+    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+      .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
+  });
+
+  // Baseline: job is done but the receipt isn't delivered yet → 'completed'
+  // (this is the "needs receipt sent" state). Once the email goes out below,
+  // the lead advances to the 'receipt' stage.
+  db.prepare("UPDATE leads SET status = 'completed', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+
+  var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
+  var receiptDetail = '$' + total.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+
+  if (process.env.SMTP_PASS && lead.email) {
+    try {
+      var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      await tx.sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      lead.email,
+        replyTo: 'greetings@brakeknights.com',
+        subject: 'Your Brake Knights Service Receipt',
+        html:    buildReceiptEmail(lead, receipt, notes)
+      });
+      db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
+      db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+      logHistory(lead.id, 'Receipt sent to customer', receiptDetail);
+      return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_sent');
+    } catch (err) {
+      console.error('Receipt email error:', err.message);
+      logHistory(lead.id, 'Receipt saved (email failed)', receiptDetail);
+      return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_err');
+    }
+  }
+  logHistory(lead.id, 'Receipt saved (not emailed)', receiptDetail);
+  res.redirect('/admin/quote/' + lead.id + '?msg=receipt_saved');
+});
+
+// Read-only view of a sent receipt: the exact customer copy, plus an internal
+// panel with office notes and any follow-ups this receipt created.
+router.get('/receipt/view/:id', requireAuth, function(req, res) {
+  var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
+  if (!receipt) return res.status(404).send('Receipt not found');
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(receipt.lead_id);
+  if (!lead) return res.status(404).send('Lead not found');
+
+  var notes = [];
+  try { notes = JSON.parse(receipt.customer_notes || '[]'); } catch (_) {}
+  var when = receipt.sent_at
+    ? 'Emailed ' + new Date(receipt.sent_at + 'Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : 'Saved, not emailed';
+
+  var fus = db.prepare('SELECT * FROM followups WHERE receipt_id = ? ORDER BY due_date ASC').all(receipt.id);
+  var fuHtml = fus.length
+    ? '<div style="margin-top:14px;"><div style="font-size:0.78rem;font-weight:700;color:#0a1f3d;margin-bottom:6px;">Follow-ups created from this receipt</div>'
+      + fus.map(function(f) {
+          return '<div style="font-size:0.85rem;color:#444;padding:6px 0;border-bottom:1px solid #f4f4f4;">'
+            + esc(f.description) + ' <span style="color:#aaa;">&middot; due ' + esc(fmtPrefDate(f.due_date)) + ' &middot; ' + esc(RECIPIENT_LABEL[f.recipient] || f.recipient)
+            + (f.sent ? ' &middot; sent' : '') + '</span></div>';
+        }).join('')
+      + '</div>'
+    : '';
+
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back to Lead</a>'
+    + '<div class="card">'
+    + '<div class="row-sb" style="margin-bottom:4px;">'
+    + '<div class="lead-name">Receipt &middot; ' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
+    + '<div style="font-weight:700;color:#0a1f3d;">$' + money(receipt.total) + '</div>'
+    + '</div>'
+    + '<div style="color:#999;font-size:0.82rem;">' + esc(when) + (receipt.payment_method ? ' &middot; ' + esc(receipt.payment_method) : '') + '</div>'
+    + '</div>'
+
+    // Internal panel (office notes + follow-ups) — never sent to the customer.
+    + ((receipt.office_notes || fus.length)
+        ? '<div class="card" style="background:#fffaf0;border:1px solid #f0d080;">'
+          + '<div class="section-title" style="color:#7a5a00;">Internal &mdash; not sent to customer</div>'
+          + (receipt.office_notes
+              ? '<div style="color:#5a4400;font-size:0.9rem;line-height:1.55;white-space:pre-wrap;">' + esc(receipt.office_notes) + '</div>'
+              : '<div style="color:#999;font-size:0.85rem;">No office notes.</div>')
+          + fuHtml
+          + '</div>'
+        : '')
+
+    // The exact customer copy.
+    + '<div class="section-title" style="margin:18px 0 10px;">Customer copy</div>'
+    + '<div style="border:1px solid #e0e7ef;border-radius:8px;overflow:hidden;background:#fff;">'
+    + buildReceiptEmail(lead, receipt, notes)
+    + '</div>';
+
+  res.send(page('Receipt — ' + lead.first_name + ' ' + lead.last_name, body, req));
+});
+
+// Branded service receipt. notes is an array of customer-facing advisory strings.
+function buildReceiptEmail(lead, r, notes) {
+  var advisoryBlock = (notes && notes.length)
+    ? '<div style="margin-bottom:24px;">'
+      + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Advisory</p>'
+      + '<ul style="margin:0;padding-left:20px;color:#444;line-height:1.7;font-size:0.9rem;">'
+      + notes.map(function(n) { return '<li style="margin-bottom:6px;">' + esc(n) + '</li>'; }).join('')
+      + '</ul></div>'
+    : '';
+
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">'
+    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;">'
+    + '<img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;">'
+    + 'Brake Knights</h1>'
+    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p>'
+    + '</div>'
+    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+    + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Greetings ' + esc(lead.first_name) + ',</h2>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">Thank you for choosing Brake Knights. Here is your service receipt for today&rsquo;s visit.</p>'
+
+    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:16px;">'
+    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Details</p>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
+    + '<tr><td style="padding:5px 0;color:#888;width:90px;">Date</td><td style="padding:5px 0;">' + esc(fmtPrefDate(r.service_date)) + '</td></tr>'
+    + (r.vehicle ? '<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">' + esc(r.vehicle) + '</td></tr>' : '')
+    + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(joinServices(r.service) || r.service || '—') + '</td></tr>'
+    + '</table></div>'
+
+    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
+    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Payment</p>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
+    + '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(r.parts_labor) + '</td></tr>'
+    + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(r.shop_supplies) + '</td></tr>'
+    + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(r.tax) + '</td></tr>'
+    + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+    + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(r.total) + '</td></tr>'
+    + (r.payment_method ? '<tr><td style="padding:8px 0 0;color:#888;">Payment</td><td style="text-align:right;padding:8px 0 0;">' + esc(r.payment_method) + '</td></tr>' : '')
+    + '</table></div>'
+
+    + advisoryBlock
+
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">This service is covered by our <strong>12-month parts and labor warranty</strong> on qualifying brake pad and rotor set replacements using our parts.</p>'
+
+    + '<div style="background:#f4f7fb;border:1px solid #e0e7ef;border-radius:8px;padding:22px;text-align:center;margin-bottom:24px;">'
+    + '<img src="https://brakeknights.com/images/favicon.png" alt="" style="width:34px;height:34px;border-radius:7px;margin-bottom:10px;">'
+    + '<p style="color:#0a1f3d;font-weight:700;margin:0 0 4px;font-size:1rem;">We appreciate your business</p>'
+    + '<p style="color:#667;margin:0 0 16px;font-size:0.9rem;">We&rsquo;d love to hear your feedback.</p>'
+    + '<a href="https://g.page/r/CdioLrg4kDAqEAI/review" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">Leave a Google Review</a>'
+    + '</div>'
+
+    + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Questions about your service? Call or text:</p>'
+    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+    + '</div></div>'
+    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div>'
+    + '</div>';
+}
+
+// ─── Phase 6: Follow-up management ────────────────────────────────────────────
+// Receipt advisories (and ad-hoc reminders) live in the followups table. The cron
+// in server.js fires the email(s) on the due date; these routes let the owner see
+// what's scheduled, reschedule, cancel, or dismiss, and add reminders by hand.
+
+var RECIPIENT_LABEL = { owner: 'Owner only', customer: 'Customer only', both: 'Owner + Customer' };
+
+// Human due-date label relative to today, e.g. "Overdue 3 days", "Due today", "in 2 mo".
+function dueLabel(due) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((due || '').trim());
+  if (!m) return esc(due || '—');
+  var today = easternToday().split('-').map(Number);
+  var d0 = Date.UTC(today[0], today[1] - 1, today[2]);
+  var d1 = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  var days = Math.round((d1 - d0) / 86400000);
+  if (days < 0)  return '<span style="color:#c0392b;font-weight:700;">Overdue ' + (-days) + ' day' + (days === -1 ? '' : 's') + '</span>';
+  if (days === 0) return '<span style="color:#e07000;font-weight:700;">Due today</span>';
+  if (days === 1) return '<span style="color:#666;">Due tomorrow</span>';
+  if (days < 31)  return '<span style="color:#888;">in ' + days + ' days</span>';
+  var months = Math.round(days / 30);
+  return '<span style="color:#888;">in ' + months + ' month' + (months === 1 ? '' : 's') + '</span>';
+}
+
+function recipientBadge(r) {
+  var label = RECIPIENT_LABEL[r] || r || 'Owner only';
+  return '<span style="font-size:0.72rem;background:#eef2f8;color:#4a5b73;padding:2px 8px;border-radius:10px;font-weight:600;">' + esc(label) + '</span>';
+}
+
+// Renders one follow-up as a card with reschedule / cancel / dismiss actions.
+// `back` is the URL each action returns to. Pending rows get full controls; sent
+// rows render read-only with a "Sent" stamp.
+function followupCard(f, back) {
+  var name = (f.first_name || '') + ' ' + (f.last_name || '');
+  var sentStamp = f.sent
+    ? '<span style="font-size:0.74rem;color:#1a7a3a;font-weight:700;">&#10003; Sent' + (f.sent_at ? ' ' + timeAgo(f.sent_at) : '') + '</span>'
+    : dueLabel(f.due_date);
+  var head = '<div class="row-sb" style="align-items:flex-start;">'
+    + '<div><a href="/admin/quote/' + f.lead_id + '" style="font-weight:700;color:#0a1f3d;text-decoration:none;font-size:0.95rem;">' + esc(name.trim()) + '</a>'
+    + (f.vehicle ? '<span style="color:#888;font-size:0.83rem;"> &middot; ' + esc(f.vehicle) + '</span>' : '') + '</div>'
+    + '<div style="text-align:right;font-size:0.8rem;white-space:nowrap;">' + sentStamp + '</div>'
+    + '</div>';
+  var desc = '<div style="background:#f4f7fb;border-left:3px solid #4169e1;border-radius:5px;padding:9px 12px;margin:9px 0;color:#1a2a3a;font-size:0.88rem;line-height:1.45;">' + esc(f.description) + '</div>';
+  var meta = '<div style="display:flex;align-items:center;gap:10px;font-size:0.78rem;color:#aaa;">'
+    + recipientBadge(f.recipient)
+    + '<span>Due ' + esc(fmtPrefDate(f.due_date)) + '</span>'
+    + '</div>';
+  if (f.sent) {
+    return '<div class="card" style="opacity:.78;">' + head + desc + meta + '</div>';
+  }
+  var actions = '<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;align-items:center;">'
+    + '<form method="POST" action="/admin/followup/' + f.id + '/reschedule" style="display:flex;gap:6px;margin:0;align-items:center;">'
+    + '<input type="hidden" name="back" value="' + esc(back) + '">'
+    + '<input type="date" name="due_date" value="' + esc(f.due_date) + '" style="padding:5px 7px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.8rem;">'
+    + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">Reschedule</button>'
+    + '</form>'
+    + '<form method="POST" action="/admin/followup/' + f.id + '/done" style="margin:0;">'
+    + '<input type="hidden" name="back" value="' + esc(back) + '">'
+    + '<button type="submit" class="btn btn-sm" style="width:auto;background:#1a7a3a;color:#fff;border:none;">&#10003; Mark done</button>'
+    + '</form>'
+    + '<form method="POST" action="/admin/followup/' + f.id + '/cancel" style="margin:0;" onsubmit="return confirm(\'Cancel this follow-up? It will not be sent.\');">'
+    + '<input type="hidden" name="back" value="' + esc(back) + '">'
+    + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:6px 4px;">Cancel</button>'
+    + '</form>'
+    + '</div>';
+  return '<div class="card">' + head + desc + meta + actions + '</div>';
+}
+
+router.get('/followups', requireAuth, function(req, res) {
+  var rows = db.prepare(
+    'SELECT f.*, l.first_name, l.last_name, l.vehicle, l.email AS lead_email '
+    + 'FROM followups f JOIN leads l ON l.id = f.lead_id '
+    + "ORDER BY f.sent ASC, f.due_date ASC, f.id ASC"
+  ).all();
+
+  var today = easternToday();
+  var overdue = [], upcoming = [], sent = [];
+  rows.forEach(function(f) {
+    if (f.sent) sent.push(f);
+    else if (f.due_date <= today) overdue.push(f);
+    else upcoming.push(f);
+  });
+  sent = sent.sort(function(a, b) { return (b.sent_at || '').localeCompare(a.sent_at || ''); }).slice(0, 25);
+
+  var back = '/admin/followups';
+  var alert = '';
+  if (req.query.msg === 'resched')   alert = '<div class="alert alert-success">Follow-up rescheduled.</div>';
+  if (req.query.msg === 'done')      alert = '<div class="alert alert-success">Follow-up marked done.</div>';
+  if (req.query.msg === 'cancelled') alert = '<div class="alert alert-success">Follow-up cancelled.</div>';
+  if (req.query.msg === 'added')     alert = '<div class="alert alert-success">Follow-up added.</div>';
+
+  function section(title, list, emptyNote) {
+    var inner = list.length
+      ? list.map(function(f) { return followupCard(f, back); }).join('')
+      : '<div class="empty" style="padding:18px;color:#aaa;font-size:0.88rem;">' + emptyNote + '</div>';
+    return '<div class="section-title" style="margin:18px 0 10px;">' + title
+      + (list.length ? ' <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + list.length + ')</span>' : '')
+      + '</div>' + inner;
+  }
+
+  var body = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Follow-ups</h1>'
+    + '<span style="color:#aaa;font-size:0.83rem;">' + (overdue.length + upcoming.length) + ' active</span>'
+    + '</div>'
+    + alert
+    + section('Due now', overdue, 'Nothing due. You&rsquo;re all caught up.')
+    + section('Upcoming', upcoming, 'No upcoming follow-ups scheduled.')
+    + (sent.length ? section('Recently sent', sent, '') : '');
+
+  res.send(page('Follow-ups', body, req));
+});
+
+// Add an ad-hoc follow-up to a lead (from the lead/quote page).
+router.post('/followup/new', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var leadId = parseInt(req.body.lead_id, 10);
+  var lead = leadId ? db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId) : null;
+  var back = req.body.back || (lead ? '/admin/quote/' + leadId : '/admin/followups');
+  var desc = (req.body.description || '').trim();
+  var due = (req.body.due_date || '').trim();
+  var recipient = ['owner', 'customer', 'both'].indexOf(req.body.recipient) >= 0 ? req.body.recipient : 'owner';
+  if (lead && desc && /^\d{4}-\d{2}-\d{2}$/.test(due)) {
+    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+      .run(leadId, null, desc, due, recipient);
+    logHistory(leadId, 'Follow-up scheduled', fmtPrefDate(due) + ' · ' + (RECIPIENT_LABEL[recipient] || recipient));
+  }
+  res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=added');
+});
+
+router.post('/followup/:id/reschedule', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var due = (req.body.due_date || '').trim();
+  var back = req.body.back || '/admin/followups';
+  var f = db.prepare('SELECT * FROM followups WHERE id = ?').get(req.params.id);
+  if (f && /^\d{4}-\d{2}-\d{2}$/.test(due)) {
+    db.prepare('UPDATE followups SET due_date = ?, sent = 0, sent_at = NULL WHERE id = ?').run(due, req.params.id);
+    logHistory(f.lead_id, 'Follow-up rescheduled', f.description + ' · now due ' + fmtPrefDate(due));
+  }
+  res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=resched');
+});
+
+// Dismiss without emailing: flag it sent so the cron skips it.
+router.post('/followup/:id/done', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var back = req.body.back || '/admin/followups';
+  var f = db.prepare('SELECT * FROM followups WHERE id = ?').get(req.params.id);
+  db.prepare("UPDATE followups SET sent = 1, sent_at = datetime('now') WHERE id = ?").run(req.params.id);
+  if (f) logHistory(f.lead_id, 'Follow-up marked done', f.description);
+  res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=done');
+});
+
+router.post('/followup/:id/cancel', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var back = req.body.back || '/admin/followups';
+  var f = db.prepare('SELECT * FROM followups WHERE id = ?').get(req.params.id);
+  db.prepare('DELETE FROM followups WHERE id = ?').run(req.params.id);
+  if (f) logHistory(f.lead_id, 'Follow-up cancelled', f.description);
+  res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=cancelled');
+});
+
+// ─── Phase 7A: Quick Quote / Receipt Generator ───────────────────────────────
+// A standalone generator, not bound to any lead, for fast phone/text inquiries.
+// Reuses the pricing engine, the service multi-select + tier toggle, live
+// auto-calc, and the branded buildQuoteEmail / buildReceiptEmail templates.
+//
+// Three quote outcomes: (1) calculator only (Clear, nothing saved); (2) Send —
+// create a "Quick Quote" lead in the Quoted stage, save the quote, email the
+// branded quote with its accept link; (3) Copyable link — create the lead +
+// quote + token and hand back the customer-facing quote URL to paste into a
+// text. Receipt mode mirrors the receipt builder (send or save as a lead).
+
+router.get('/quick', requireAuth, function(req, res) {
+  var serviceNames = Object.keys(PRICING.services);
+  var pricingJson = JSON.stringify(PRICING.services);
+  var taxPct = +(PRICING.taxRate * 100).toFixed(2);
+
+  var serviceCheckboxes = '<div class="svc-check-list">'
+    + serviceNames.map(function(s) {
+        return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
+      }).join('')
+    + '</div>'
+    + '<input type="hidden" name="service" id="qsvcHidden" value="">';
+
+  var paymentOpts = PAYMENT_METHODS.map(function(p) {
+    return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+  }).join('');
+
+  var advisoryRows = advisoryRow(1, false);
+  for (var i = 2; i <= 4; i++) advisoryRows += advisoryRow(i, true);
+  advisoryRows += '<button type="button" id="qqAddAdvBtn" class="svc-clear-btn" style="margin-top:6px;" onclick="qqAddAdvisory()">+ Add Advisory</button>';
+
+  var alert = '';
+  if (req.query.err === 'name')  alert = '<div class="alert alert-error">First and last name are required to save or send.</div>';
+  if (req.query.err === 'email') alert = '<div class="alert alert-error">An email address is required to send a quote or receipt. Use the copyable link instead, or add an email.</div>';
+
+  var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
+    + alert
+    + '<div class="card">'
+    + '<div class="lead-name" style="margin-bottom:4px;">Quick Quote / Receipt</div>'
+    + '<div style="color:#888;font-size:0.85rem;">A standalone generator for phone and text inquiries. Pick services, read the live total off to the customer, then send, save, or grab a copyable link.</div>'
+    + '</div>'
+
+    + '<form method="POST" action="/admin/quick" id="qqf">'
+    + '<input type="hidden" name="mode" id="qmode" value="quote">'
+    + '<input type="hidden" name="action" id="qaction" value="">'
+
+    // Mode switch
+    + '<div class="card">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Mode</label>'
+    + '<div class="tier-toggle">'
+    + '<button type="button" class="tier-btn active" id="qModeQuote" onclick="qSetMode(\'quote\')">Quote</button>'
+    + '<button type="button" class="tier-btn" id="qModeReceipt" onclick="qSetMode(\'receipt\')">Receipt</button>'
+    + '</div></div>'
+    + '</div>'
+
+    // Customer (optional for calculator-only; required to save/send)
+    + '<div class="card">'
+    + '<div class="section-title">Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(needed to save or send, not for calculator-only)</span></div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>First name</label><input type="text" name="firstName" id="qfn"></div>'
+    + '<div class="form-group"><label>Last name</label><input type="text" name="lastName" id="qln"></div>'
+    + '</div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Email <span id="qemHint" style="color:#bbb;font-weight:400;">(to send)</span></label><input type="email" name="email" id="qem" placeholder="customer@email.com"></div>'
+    + '<div class="form-group"><label>Phone <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="tel" name="phone" id="qph" placeholder="703-555-0123"></div>'
+    + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model, optional)</span></label>'
+    + '<input type="text" name="vehicle" id="qveh" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '</div>'
+
+    // Services + tier
+    + '<div class="card">'
+    + '<div class="section-title">Service <span style="font-size:0.8rem;color:#bbb;font-weight:400;">(select all that apply)</span></div>'
+    + serviceCheckboxes
+    + '<button type="button" class="svc-clear-btn" onclick="qClearServices()">&#10005; Clear selection</button>'
+    + '<div class="svc-tags" id="qsvcTags"></div>'
+    + '<div id="qCustomHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
+    + '<div class="form-group" style="margin:14px 0 0;"><label>Tier</label>'
+    + '<div class="tier-toggle">'
+    + '<button type="button" class="tier-btn active" id="qBtnStd" onclick="qSetTier(\'standard\')">Standard</button>'
+    + '<button type="button" class="tier-btn" id="qBtnPrem" onclick="qSetTier(\'premium\')">Premium</button>'
+    + '</div>'
+    + '<input type="hidden" name="tier" id="qtier" value="standard"></div>'
+    + '</div>'
+
+    // Receipt-only date / payment / address
+    + '<div class="card qReceiptOnly" style="display:none;">'
+    + '<div class="section-title">Job Details</div>'
+    + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date of service</label><input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
+    + '<div class="form-group"><label>Payment method</label>'
+    + '<select name="paymentMethod" id="qpm" onchange="qPayToggle()">' + paymentOpts + '</select></div>'
+    + '</div>'
+    + '<div class="form-group" id="qpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
+    + '<input type="text" name="paymentOther" id="qpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
+    + '<input type="text" name="serviceAddress" placeholder="Where the work was performed"></div>'
+    + '</div>'
+
+    // Price breakdown (internal) — shared by both modes
+    + '<div class="card">'
+    + '<div class="price-section">'
+    + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
+    + '<div class="price-row"><span class="price-label">Parts</span>'
+    + '<input class="price-input" type="number" name="parts" id="qparts" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
+    + '<input class="price-input" type="number" name="labor" id="qlabor" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
+    + '<input class="price-input" type="number" name="shopSupplies" id="qss" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
+    + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="qtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="qcalc()">%) on Parts + Supplies</span>'
+    + '<span id="qtaxAmt">$0.00</span></div>'
+    + '</div>'
+
+    // Customer-facing total
+    + '<div class="price-section" style="margin-bottom:0;">'
+    + '<div class="price-section-header"><span id="qSummaryLabel">Customer Quote</span></div>'
+    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span><span id="qplDisplay">$0.00</span></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="qssDisplay">$0.00</span></div>'
+    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="qtaxDisplay">$0.00</span></div>'
+    + '<div class="price-row total-row divider-row"><span id="qTotalLabel">Total</span><span id="qtotalAmt" style="font-size:1.15rem;">$0.00</span></div>'
+    + '</div>'
+    + '<input type="hidden" name="taxAmt"   id="qtaxH"   value="0.00">'
+    + '<input type="hidden" name="totalAmt" id="qtotalH" value="0.00">'
+    + '</div>'
+
+    // Receipt-only advisories + office notes
+    + '<div class="card qReceiptOnly" style="display:none;">'
+    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span></div>'
+    + advisoryRows
+    + '</div>'
+    + '<div class="card qReceiptOnly" style="display:none;">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Notes to Office <span style="color:#bbb;font-weight:400;">(internal only, never sent)</span></label>'
+    + '<textarea name="officeNotes" placeholder="Torque specs, parts used, condition observations, anything for the record…"></textarea></div>'
+    + '</div>'
+
+    // Action buttons
+    + '<div class="card">'
+    + '<div class="qQuoteActions">'
+    + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'quote_send\')">Send Quote to Customer</button>'
+    + '<button type="button" class="btn btn-navy" style="margin-top:8px;" onclick="qSubmit(\'quote_link\')">Get Copyable Quote Link</button>'
+    + '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="qSubmit(\'quote_save\')">Save as New Lead (no email)</button>'
+    + '</div>'
+    + '<div class="qReceiptActions" style="display:none;">'
+    + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'receipt_send\')">&#10003; Send Receipt to Customer</button>'
+    + '</div>'
+    + '<button type="button" id="qPreviewBtn" class="btn btn-outline" style="margin-top:8px;" onclick="qPreview()">Preview Email</button>'
+    + '<div id="qPreviewBox" style="display:none;margin-top:8px;"></div>'
+    + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="if(confirm(\'Clear the form and start over? Nothing will be saved.\'))qClearAll()">&#10005; Clear &amp; Start Over</button>'
+    + '</div>'
+    + '</form>'
+
+    + '<script>'
+    + 'var QPRICING=' + pricingJson + ';'
+    + 'var qtier="standard";var qmode="quote";'
+
+    + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
+    + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+
+    + 'function qSetMode(m){'
+    +   'qmode=m;document.getElementById("qmode").value=m;'
+    +   'document.getElementById("qModeQuote").classList.toggle("active",m==="quote");'
+    +   'document.getElementById("qModeReceipt").classList.toggle("active",m==="receipt");'
+    +   'var rec=m==="receipt";'
+    +   'document.querySelectorAll(".qReceiptOnly").forEach(function(el){el.style.display=rec?"block":"none";});'
+    +   'document.querySelector(".qQuoteActions").style.display=rec?"none":"block";'
+    +   'document.querySelector(".qReceiptActions").style.display=rec?"block":"none";'
+    +   'document.getElementById("qSummaryLabel").textContent=rec?"Customer Receipt":"Customer Quote";'
+    +   'document.getElementById("qTotalLabel").textContent=rec?"Total Paid":"Total";'
+    +   'document.getElementById("qemHint").textContent=rec?"(to send receipt)":"(to send)";'
+    +   'qSaveState();'
+    + '}'
+
+    + 'function qSetTier(t){'
+    +   'qtier=t;document.getElementById("qtier").value=t;'
+    +   'document.getElementById("qBtnStd").classList.toggle("active",t==="standard");'
+    +   'document.getElementById("qBtnPrem").classList.toggle("active",t==="premium");'
+    +   'qAutofill();'
+    +   'qSaveState();'
+    + '}'
+
+    + 'function qRenderTags(){'
+    +   'document.getElementById("qsvcTags").innerHTML=qCheckedServices().map(function(n){'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
+    +   '}).join("");'
+    + '}'
+    + 'function qRemoveTag(btn){'
+    +   'var val=btn.getAttribute("data-val");'
+    +   'var cb=Array.from(document.querySelectorAll(".qsvc-cb")).find(function(c){return c.value===val;});'
+    +   'if(cb)cb.checked=false;qUpdateServices();'
+    + '}'
+    + 'function qClearServices(){'
+    +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;});qUpdateServices();'
+    + '}'
+
+    // Auto-fill the price fields from the pricing table for the checked services + tier.
+    + 'function qAutofill(){'
+    +   'var names=qCheckedServices();'
+    +   'document.getElementById("qsvcHidden").value=names.join(", ");'
+    +   'if(names.length===0){'
+    +     'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";qcalc();return;'
+    +   '}'
+    +   'var parts=0,labor=0,ss=0;'
+    +   'names.forEach(function(s){var sv=QPRICING[s];if(!sv)return;var p=sv[qtier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
+    +   'document.getElementById("qparts").value=parts.toFixed(2);'
+    +   'document.getElementById("qlabor").value=labor.toFixed(2);'
+    +   'document.getElementById("qss").value=ss.toFixed(2);'
+    +   'qcalc();'
+    + '}'
+    + 'function qUpdateServices(){qRenderTags();qHints();qAutofill();}'
+
+    + 'function qHints(){'
+    +   'var names=qCheckedServices();var msgs=[];'
+    +   'var custom=names.filter(function(n){return QPRICING[n]&&QPRICING[n].customQuote;});'
+    +   'if(custom.length){msgs.push("<strong>Custom quote:</strong> "+custom.join(", ")+" "+(custom.length>1?"have":"has")+" no preset price. Look up the exact part(s) and enter Parts and Labor manually.");}'
+    +   'names.forEach(function(n){if(QPRICING[n]&&QPRICING[n].note){msgs.push(QPRICING[n].note);}});'
+    +   'var box=document.getElementById("qCustomHint");'
+    +   'if(msgs.length){box.innerHTML=msgs.join("<br><br>");box.style.display="block";}else{box.style.display="none";}'
+    + '}'
+
+    // Tax is on parts + shop supplies only (not labor — Virginia law).
+    + 'function qcalc(){'
+    +   'var parts=parseFloat(document.getElementById("qparts").value)||0;'
+    +   'var labor=parseFloat(document.getElementById("qlabor").value)||0;'
+    +   'var ss=parseFloat(document.getElementById("qss").value)||0;'
+    +   'var tr=parseFloat(document.getElementById("qtr").value)||0;'
+    +   'var tax=(parts+ss)*tr/100;var total=parts+labor+ss+tax;'
+    +   'document.getElementById("qtaxAmt").textContent="$"+money(tax);'
+    +   'document.getElementById("qplDisplay").textContent="$"+money(parts+labor);'
+    +   'document.getElementById("qssDisplay").textContent="$"+money(ss);'
+    +   'document.getElementById("qtaxDisplay").textContent="$"+money(tax);'
+    +   'document.getElementById("qtotalAmt").textContent="$"+money(total);'
+    +   'document.getElementById("qtaxH").value=tax.toFixed(2);'
+    +   'document.getElementById("qtotalH").value=total.toFixed(2);'
+    + '}'
+
+    + 'function qPayToggle(){'
+    +   'var v=document.getElementById("qpm").value;var show=(v==="Other");'
+    +   'document.getElementById("qpmOtherWrap").style.display=show?"block":"none";'
+    +   'document.getElementById("qpmOther").required=show;'
+    + '}'
+
+    + 'function qqAddAdvisory(){'
+    +   'for(var i=2;i<=4;i++){'
+    +     'var r=document.getElementById("advRow"+i);'
+    +     'if(r&&r.style.display==="none"){r.style.display="";'
+    +       'if(i===4){var b=document.getElementById("qqAddAdvBtn");if(b)b.style.display="none";}'
+    +       'return;}'
+    +   '}'
+    + '}'
+
+    + 'function qPreview(){'
+    +   'var box=document.getElementById("qPreviewBox");'
+    +   'var btn=document.getElementById("qPreviewBtn");'
+    +   'if(box.style.display!=="none"&&box.innerHTML){box.style.display="none";box.innerHTML="";btn.textContent="Preview Email";return;}'
+    +   'var fn=document.getElementById("qfn").value.trim();'
+    +   'var ln=document.getElementById("qln").value.trim();'
+    +   'var em=document.getElementById("qem").value.trim();'
+    +   'var svcs=qCheckedServices();'
+    +   'var total=document.getElementById("qtotalAmt").textContent;'
+    +   'var rec=qmode==="receipt";'
+    +   'var toLine=(fn||ln?(fn+" "+ln).trim()+" ":"")+(em?"&lt;"+em+"&gt;":"<em style=\'color:#e07000\'>(no email entered)</em>");'
+    +   'var rows="<table style=\'width:100%;border-collapse:collapse;font-size:0.88rem;\'>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;white-space:nowrap;vertical-align:top;\'>To</td><td style=\'padding:5px 0;\'>"+toLine+"</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Subject</td><td style=\'padding:5px 0;\'>"+(rec?"Your Brake Knights Service Receipt":"Your Brake Service Quote — Brake Knights")+"</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+(svcs.length?svcs.join(", "):"<em style=\'color:#e07000\'>(none selected)</em>")+"</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+(rec?"Total Paid":"Total")+"</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
+    +   'if(rec){'
+    +     'var pm=(document.getElementById("qpm")||{}).value||"";'
+    +     'var pmo=(document.getElementById("qpmOther")||{}).value||"";'
+    +     'var svcDate=(document.querySelector("[name=serviceDate]")||{}).value||"";'
+    +     'var svcAddr=(document.querySelector("[name=serviceAddress]")||{}).value||"";'
+    +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Payment</td><td style=\'padding:5px 0;\'>"+(pm==="Other"?pmo||"Other":pm)+"</td></tr>";'
+    +     'if(svcDate)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Date</td><td style=\'padding:5px 0;\'>"+svcDate+"</td></tr>";'
+    +     'if(svcAddr)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Address</td><td style=\'padding:5px 0;\'>"+svcAddr+"</td></tr>";'
+    +     'var advs=[];for(var ai=1;ai<=4;ai++){var nt=(document.querySelector("[name=custNote"+ai+"]")||{}).value||"";if(nt)advs.push(nt);}'
+    +     'if(advs.length)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Advisories</td><td style=\'padding:5px 0;\'><ul style=\'margin:0;padding-left:18px;\'>"+advs.map(function(a){return"<li>"+a+"</li>";}).join("")+"</ul></td></tr>";'
+    +   '}'
+    +   'rows+="</table>";'
+    +   'box.innerHTML="<div class=\'preview-box\'><h4>"+(rec?"Receipt":"Quote")+" Email Preview</h4>"+rows+"</div>";'
+    +   'box.style.display="block";btn.textContent="Hide Preview";'
+    + '}'
+
+    + 'function qClearAll(){'
+    +   'qClearServices();'
+    +   'document.getElementById("qfn").value="";document.getElementById("qln").value="";'
+    +   'document.getElementById("qem").value="";document.getElementById("qph").value="";'
+    +   'var veh=document.getElementById("qveh");if(veh)veh.value="";'
+    +   'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";'
+    +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
+    +   'var offN=document.querySelector("[name=officeNotes]");if(offN)offN.value="";'
+    +   '[1,2,3,4].forEach(function(i){'
+    +     'var n=document.querySelector("[name=custNote"+i+"]");if(n)n.value="";'
+    +     'var r=document.querySelector("[name=fuRecipient"+i+"]");if(r)r.value="owner";'
+    +     'var c=document.querySelector("[name=fuCustom"+i+"]");if(c)c.value="";'
+    +     'if(i>1){var row=document.getElementById("advRow"+i);if(row)row.style.display="none";}'
+    +   '});'
+    +   'var addBtn=document.getElementById("qqAddAdvBtn");if(addBtn)addBtn.style.display="";'
+    +   'var pb=document.getElementById("qPreviewBox");if(pb){pb.style.display="none";pb.innerHTML="";}'
+    +   'var pbt=document.getElementById("qPreviewBtn");if(pbt)pbt.textContent="Preview Email";'
+    +   'qSetMode("quote");qSetTier("standard");qcalc();'
+    +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
+    + '}'
+
+    // Auto-save form state to localStorage so navigating away and back preserves work.
+    + 'function qSaveState(){'
+    +   'try{'
+    +     'var adv=[1,2,3,4].map(function(i){'
+    +       'return {'
+    +         'note:(document.querySelector("[name=custNote"+i+"]")||{}).value||"",'
+    +         'recv:(document.querySelector("[name=fuRecipient"+i+"]")||{}).value||"owner",'
+    +         'cust:(document.querySelector("[name=fuCustom"+i+"]")||{}).value||""'
+    +       '};'
+    +     '});'
+    +     'localStorage.setItem("bk_qq_state",JSON.stringify({'
+    +       'mode:qmode,tier:qtier,'
+    +       'fn:document.getElementById("qfn").value,'
+    +       'ln:document.getElementById("qln").value,'
+    +       'em:document.getElementById("qem").value,'
+    +       'ph:document.getElementById("qph").value,'
+    +       'veh:(document.getElementById("qveh")||{}).value||"",'
+    +       'svcs:qCheckedServices(),'
+    +       'parts:document.getElementById("qparts").value,'
+    +       'labor:document.getElementById("qlabor").value,'
+    +       'ss:document.getElementById("qss").value,'
+    +       'tr:document.getElementById("qtr").value,'
+    +       'payMethod:(document.getElementById("qpm")||{}).value||"",'
+    +       'payOther:(document.getElementById("qpmOther")||{}).value||"",'
+    +       'svcDate:(document.querySelector("[name=serviceDate]")||{}).value||"",'
+    +       'svcAddr:(document.querySelector("[name=serviceAddress]")||{}).value||"",'
+    +       'offNotes:(document.querySelector("[name=officeNotes]")||{}).value||"",'
+    +       'adv:adv'
+    +     '}));'
+    +   '}catch(_){}'
+    + '}'
+    + 'function qRestoreState(){'
+    +   'try{'
+    +     'var raw=localStorage.getItem("bk_qq_state");if(!raw)return;'
+    +     'var s=JSON.parse(raw);if(!s)return;'
+    +     'if(s.mode)qSetMode(s.mode);'
+    +     'if(s.tier)qSetTier(s.tier);'
+    +     'if(s.fn)document.getElementById("qfn").value=s.fn;'
+    +     'if(s.ln)document.getElementById("qln").value=s.ln;'
+    +     'if(s.em)document.getElementById("qem").value=s.em;'
+    +     'if(s.ph)document.getElementById("qph").value=s.ph;'
+    +     'if(s.veh&&document.getElementById("qveh"))document.getElementById("qveh").value=s.veh;'
+    +     'if(s.svcs&&s.svcs.length)document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});'
+    +     'if(s.parts!==undefined)document.getElementById("qparts").value=s.parts;'
+    +     'if(s.labor!==undefined)document.getElementById("qlabor").value=s.labor;'
+    +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
+    +     'if(s.tr!==undefined)document.getElementById("qtr").value=s.tr;'
+    +     'if(s.payMethod&&document.getElementById("qpm"))document.getElementById("qpm").value=s.payMethod;'
+    +     'if(s.payOther&&document.getElementById("qpmOther"))document.getElementById("qpmOther").value=s.payOther;'
+    +     'var sa=document.querySelector("[name=serviceAddress]");if(s.svcAddr&&sa)sa.value=s.svcAddr;'
+    +     'var sd=document.querySelector("[name=serviceDate]");if(s.svcDate&&sd)sd.value=s.svcDate;'
+    +     'var on=document.querySelector("[name=officeNotes]");if(s.offNotes&&on)on.value=s.offNotes;'
+    +     'if(s.adv)s.adv.forEach(function(a,idx){'
+    +       'var i=idx+1;'
+    +       'var n=document.querySelector("[name=custNote"+i+"]");if(n&&a.note)n.value=a.note;'
+    +       'var r=document.querySelector("[name=fuRecipient"+i+"]");if(r&&a.recv)r.value=a.recv;'
+    +       'var c=document.querySelector("[name=fuCustom"+i+"]");if(c&&a.cust)c.value=a.cust;'
+    +       'if(i>1&&(a.note||a.cust)){var row=document.getElementById("advRow"+i);if(row)row.style.display="";}'
+    +     '});'
+    +     'var allVis=[2,3,4].every(function(i){var r=document.getElementById("advRow"+i);return !r||r.style.display!=="none";});'
+    +     'if(allVis){var ab=document.getElementById("qqAddAdvBtn");if(ab)ab.style.display="none";}'
+    +     'qUpdateServices();qPayToggle();qcalc();'
+    +   '}catch(_){}'
+    + '}'
+
+    + 'function qSubmit(action){'
+    +   'var fn=document.getElementById("qfn").value.trim();'
+    +   'var ln=document.getElementById("qln").value.trim();'
+    +   'var em=document.getElementById("qem").value.trim();'
+    +   'if(!fn||!ln){alert("Enter the customer first and last name to save or send.");return;}'
+    +   'if((action==="quote_send"||action==="receipt_send")&&!em){alert("Enter an email to send. For texting, use Get Copyable Quote Link instead.");return;}'
+    +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
+    +   'document.getElementById("qaction").value=action;'
+    +   'document.getElementById("qqf").submit();'
+    + '}'
+
+    // Wire up auto-save and restore on page load.
+    + 'var _qqSaveTimer;'
+    + 'document.getElementById("qqf").addEventListener("input",function(){clearTimeout(_qqSaveTimer);_qqSaveTimer=setTimeout(qSaveState,400);});'
+    + 'document.getElementById("qqf").addEventListener("change",function(){clearTimeout(_qqSaveTimer);_qqSaveTimer=setTimeout(qSaveState,400);});'
+    + 'qRenderTags();qPayToggle();'
+    + 'qRestoreState();'
+    + 'qcalc();'
+    + '</script>';
+
+  res.send(page('Quick Quote', body, req));
+});
+
+// Result page for the copyable-link outcome: shows the branded customer URL in a
+// read-only field with a one-tap copy button, plus a link to the new lead.
+function quickLinkResult(req, lead, acceptUrl) {
+  var body = '<a href="/admin/quick" class="back-link">&#8592; New Quick Quote</a>'
+    + '<div class="card">'
+    + '<div class="section-title" style="color:#1a7a3a;">&#10003; Quote link ready</div>'
+    + '<p style="color:#555;font-size:0.9rem;margin-bottom:12px;">A lead for <strong>' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</strong> was created in the Quoted stage and the quote was saved. Copy the link below and paste it into your text to the customer. They can review the quote and pick a time.</p>'
+    + '<div class="form-group" style="margin-bottom:10px;"><label>Customer quote link</label>'
+    + '<input type="text" id="qlink" readonly value="' + esc(acceptUrl) + '" onclick="this.select()" style="font-size:0.85rem;"></div>'
+    + '<button type="button" class="btn btn-blue" onclick="qCopy()" id="qCopyBtn">Copy Link</button>'
+    + '<a href="/admin/quote/' + lead.id + '" class="btn btn-outline" style="margin-top:8px;">Open the Lead</a>'
+    + '</div>'
+    + '<script>'
+    + 'function qCopy(){var el=document.getElementById("qlink");el.select();el.setSelectionRange(0,99999);'
+    + 'function done(){var b=document.getElementById("qCopyBtn");b.textContent="Copied!";setTimeout(function(){b.textContent="Copy Link";},1800);}'
+    + 'if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(el.value).then(done,function(){document.execCommand("copy");done();});}'
+    + 'else{document.execCommand("copy");done();}}'
+    + '</script>';
+  return page('Quote Link', body, req);
+}
+
+router.post('/quick', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
+  var mode   = req.body.mode === 'receipt' ? 'receipt' : 'quote';
+  var action = req.body.action || '';
+
+  var firstName = (req.body.firstName || '').trim();
+  var lastName  = (req.body.lastName  || '').trim();
+  var email     = (req.body.email     || '').trim() || null;
+  var phone     = (req.body.phone     || '').trim();
+  var vehicle   = (req.body.vehicle   || '').trim() || null;
+  if (!firstName || !lastName) return res.redirect('/admin/quick?err=name');
+
+  var isSend = (action === 'quote_send' || action === 'receipt_send');
+  if (isSend && !email) return res.redirect('/admin/quick?err=email');
+
+  var service      = (req.body.service || '').trim();
+  var tier         = req.body.tier === 'premium' ? 'premium' : 'standard';
+  var parts        = parseFloat(req.body.parts)        || 0;
+  var labor        = parseFloat(req.body.labor)        || 0;
+  var shopSupplies = parseFloat(req.body.shopSupplies) || 0;
+  var taxRate      = parseFloat(req.body.taxRate)      || 0;
+  var taxAmt       = parseFloat(req.body.taxAmt)       || 0;
+  var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
+
+  var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+
+  // Every save/send outcome creates a Quick Quote lead. Quote mode lands it in
+  // Quoted; receipt mode reflects a finished job (set further down).
+  var leadInfo = db.prepare(
+    'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status) VALUES (?,?,?,?,?,?,?,?)'
+  ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', mode === 'receipt' ? 'completed' : 'quoted');
+  var leadId = leadInfo.lastInsertRowid;
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId);
+  logHistory(leadId, 'Lead created from Quick Quote', (mode === 'receipt' ? 'Receipt' : 'Quote') + (service ? ' — ' + service : ''));
+
+  // ── Quote mode ──────────────────────────────────────────────────────────────
+  if (mode === 'quote') {
+    var acceptToken = crypto.randomBytes(24).toString('hex');
+    var qStatus = action === 'quote_save' ? 'saved' : 'sent';
+    var qInfo = db.prepare(
+      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, accept_token, sent_at, status) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, acceptToken,
+          null, qStatus);
+    var quoteId = qInfo.lastInsertRowid;
+    var acceptUrl = baseUrl + '/quote/' + quoteId + '/' + acceptToken;
+    logHistory(leadId, action === 'quote_save' ? 'Quote saved' : 'Quote sent', service + ' (' + tier + ') — $' + totalAmt.toFixed(2));
+
+    if (action === 'quote_save') return res.redirect('/admin/quote/' + leadId + '?msg=quick_saved');
+    if (action === 'quote_link') {
+      db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
+      return res.send(quickLinkResult(req, lead, acceptUrl));
+    }
+    // quote_send — email the branded quote
+    if (!process.env.SMTP_PASS) {
+      console.error('SMTP_PASS not set — Quick Quote saved but not emailed');
+      return res.redirect('/admin/quote/' + leadId + '?msg=quick_err');
+    }
+    try {
+      var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      await tx.sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      email,
+        replyTo: 'greetings@brakeknights.com',
+        subject: 'Your Brake Service Quote — Brake Knights',
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl)
+      });
+      db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
+      return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
+    } catch (err) {
+      console.error('Quick Quote email error:', err.message);
+      return res.redirect('/admin/quote/' + leadId + '?msg=quick_err');
+    }
+  }
+
+  // ── Receipt mode ────────────────────────────────────────────────────────────
+  var serviceDate = (req.body.serviceDate || '').trim() || easternToday();
+  var address     = (req.body.serviceAddress || '').trim();
+  var payment     = (req.body.paymentMethod || '').trim();
+  if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
+  var officeNotes = (req.body.officeNotes || '').trim() || null;
+  var partsLabor  = parts + labor;
+
+  // Customer advisories + any timed follow-ups attached to them.
+  var notes = [];
+  var followups = [];
+  for (var i = 1; i <= 4; i++) {
+    var txt = (req.body['custNote' + i] || '').trim();
+    if (txt) notes.push(txt);
+    var due = (req.body['fuCustom' + i] || '').trim();
+    if (due && txt) {
+      followups.push({ description: txt, due_date: due, recipient: req.body['fuRecipient' + i] || 'owner' });
+    }
+  }
+
+  var rInfo = db.prepare(
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, totalAmt, payment, JSON.stringify(notes), officeNotes);
+  var receiptId = rInfo.lastInsertRowid;
+
+  followups.forEach(function(f) {
+    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+      .run(leadId, receiptId, f.description, f.due_date, f.recipient);
+  });
+
+  var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
+  var receiptDetail = '$' + totalAmt.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+
+  if (action === 'receipt_send' && process.env.SMTP_PASS && email) {
+    try {
+      var rtx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      await rtx.sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      email,
+        replyTo: 'greetings@brakeknights.com',
+        subject: 'Your Brake Knights Service Receipt',
+        html:    buildReceiptEmail(lead, receipt, notes)
+      });
+      db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
+      db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(leadId);
+      logHistory(leadId, 'Receipt sent to customer', receiptDetail);
+      return res.redirect('/admin/quote/' + leadId + '?msg=receipt_sent');
+    } catch (err) {
+      console.error('Quick receipt email error:', err.message);
+      logHistory(leadId, 'Receipt saved (email failed)', receiptDetail);
+      return res.redirect('/admin/quote/' + leadId + '?msg=receipt_err');
+    }
+  }
+  logHistory(leadId, 'Receipt saved (not emailed)', receiptDetail);
+  res.redirect('/admin/quote/' + leadId + '?msg=receipt_saved');
+});
 
 module.exports = router;

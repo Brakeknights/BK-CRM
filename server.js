@@ -5,11 +5,14 @@ const nodemailer = require('nodemailer');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 const { toEasternRfc3339 } = require('./datetime');
 const db = require('./db');
+const SqliteStore = require('./sqlite-session-store');
 const adminRouter = require('./routes/admin');
 const quoteRouter = require('./routes/quote');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 hours
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -17,7 +20,8 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'bk-dev-secret-change-in-prod',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 8 * 60 * 60 * 1000 }
+  store: new SqliteStore(db, SESSION_TTL),
+  cookie: { maxAge: SESSION_TTL }
 }));
 
 // 301 redirects for old blog posts and old-format location URLs from previous site
@@ -80,6 +84,19 @@ app.post('/api/contact', async (req, res) => {
 
   if (!firstName || !lastName || !phone) {
     return res.status(400).json({ success: false, error: 'Missing required fields' });
+  }
+
+  // Guard against accidental double-posts: if the same person (name + phone) just
+  // submitted within the last 2 minutes, treat it as a resubmit. Reuse that lead
+  // and skip re-sending emails. Legitimate repeat requests later still create a
+  // new lead.
+  const recentDupe = db.prepare(
+    "SELECT id FROM leads WHERE first_name = ? AND last_name = ? AND phone = ? "
+    + "AND created_at >= datetime('now', '-2 minutes') ORDER BY id DESC LIMIT 1"
+  ).get(firstName, lastName, phone);
+  if (recentDupe) {
+    console.log('Duplicate contact submission ignored for lead', recentDupe.id);
+    return res.json({ success: true, duplicate: true });
   }
 
   // Save lead to database
@@ -413,3 +430,85 @@ setInterval(function() {
     }).catch(function(err) { console.error('Appointment reminder error:', err.message); });
   });
 }, 15 * 60 * 1000); // check every 15 minutes
+
+// ─── Follow-up reminders (Phase 6 foundation) ─────────────────────────────────
+// Receipt advisories can carry a timed reminder. On/after the due date, each
+// fires once to the owner, the customer, or both, then is marked sent.
+function followupOwnerEmail(f) {
+  function e(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  var name = f.first_name + ' ' + f.last_name;
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+    + '<div style="background:#e07000;padding:14px 20px;"><h2 style="color:#fff;margin:0;font-size:1.1rem;">Follow-Up Due</h2></div>'
+    + '<div style="padding:20px;">'
+    + '<p style="margin:0 0 14px;color:#444;font-size:0.95rem;">A follow-up you scheduled for <strong>' + e(name) + '</strong>' + (f.vehicle ? ' (' + e(f.vehicle) + ')' : '') + ' is due.</p>'
+    + '<div style="background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:14px;margin-bottom:16px;color:#7a5a00;font-size:0.95rem;">' + e(f.description) + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.92rem;">'
+    + '<tr><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;width:120px;">Phone</td><td style="padding:6px 10px;"><a href="tel:' + e(f.phone) + '">' + e(f.phone) + '</a></td></tr>'
+    + (f.lead_email ? '<tr style="background:#f9f9f9;"><td style="padding:6px 10px;font-weight:bold;color:#0a1f3d;">Email</td><td style="padding:6px 10px;">' + e(f.lead_email) + '</td></tr>' : '')
+    + '</table>'
+    + '<div style="margin-top:16px;text-align:center;">'
+    + '<a href="https://brakeknights.com/admin/quote/' + f.lead_id + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:12px 28px;border-radius:8px;">Open in Admin</a>'
+    + '</div></div></div>';
+}
+
+function followupCustomerEmail(f) {
+  function e(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
+    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
+    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p></div>'
+    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+    + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Greetings ' + e(f.first_name) + ',</h2>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 16px;">A quick reminder from Brake Knights' + (f.vehicle ? ' about your <strong>' + e(f.vehicle) + '</strong>' : '') + ':</p>'
+    + '<div style="background:#f4f7fb;border-left:4px solid #4169e1;border-radius:6px;padding:16px 18px;margin-bottom:24px;color:#1a2a3a;font-size:0.95rem;line-height:1.6;">' + e(f.description) + '</div>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;font-size:0.9rem;">When you&rsquo;re ready, we&rsquo;ll come to your home or office. No shop visit needed.</p>'
+    + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Schedule your service. Call or text:</p>'
+    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+    + '</div></div>'
+    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div></div>';
+}
+
+setInterval(function() {
+  if (!process.env.SMTP_PASS) return;
+
+  var due = db.prepare(
+    "SELECT f.*, l.first_name, l.last_name, l.phone, l.email AS lead_email, l.vehicle "
+    + "FROM followups f JOIN leads l ON l.id = f.lead_id "
+    + "WHERE f.sent = 0 AND date(f.due_date) <= date('now')"
+  ).all();
+  if (due.length === 0) return;
+
+  var transporter = nodemailer.createTransport({
+    host: 'smtp.hostinger.com',
+    port: 465,
+    secure: true,
+    auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS }
+  });
+
+  due.forEach(function(f) {
+    // Mark sent first so a send error never causes a duplicate on the next tick.
+    db.prepare("UPDATE followups SET sent = 1, sent_at = datetime('now') WHERE id = ?").run(f.id);
+
+    var toOwner    = f.recipient === 'owner' || f.recipient === 'both';
+    var toCustomer = (f.recipient === 'customer' || f.recipient === 'both') && f.lead_email;
+
+    if (toOwner) {
+      transporter.sendMail({
+        from:    '"BK Admin" <greetings@brakeknights.com>',
+        to:      'greetings@brakeknights.com',
+        subject: 'Follow-up due: ' + f.first_name + ' ' + f.last_name,
+        html:    followupOwnerEmail(f)
+      }).catch(function(err) { console.error('Follow-up owner email error:', err.message); });
+    }
+    if (toCustomer) {
+      transporter.sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      f.lead_email,
+        replyTo: 'greetings@brakeknights.com',
+        subject: 'A reminder from Brake Knights',
+        html:    followupCustomerEmail(f)
+      }).catch(function(err) { console.error('Follow-up customer email error:', err.message); });
+    }
+  });
+}, 6 * 60 * 60 * 1000); // check every 6 hours
