@@ -74,7 +74,7 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/busy-wright-wpe7w` (Phase 7A — merged to dev)
+- Current feature branch: `claude/busy-ritchie-GuJOH` (Phase 7A refinements round 2)
 
 ## Square Integration — Platform Build Plan
 
@@ -133,7 +133,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/busy-wright-wpe7w` — merged to `dev` ✅ (pending merge to `master`)
+- Working branch: `claude/busy-ritchie-GuJOH` — Phase 7A refinements round 2 (in progress, not yet on dev)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5 complete. Phase 6 complete (followups table + cron + management UI + receipt/profile refinements). Phase 7A complete (Quick Quote / Receipt Generator at `/admin/quick`) — all on dev.
@@ -145,10 +145,11 @@ Update this section at the end of each session to stay caught up next time.
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - Next steps:
-  1. Test Phase 7A on dev.brakeknights.com/admin/quick; gather any feedback/refinements
+  1. Test Phase 7A refinements on dev.brakeknights.com/admin/quick; gather any feedback
   2. Merge dev → master to ship Phases 5 + 6 + 7A to the live site (user-initiated)
   3. Phase 7: admin CRM dashboard at brakeknights.com/admin
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
+- Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
 
 ## Pre-Launch Checklist (Before Merging to Master)
 
@@ -209,6 +210,7 @@ Update this section at the end of each session to stay caught up next time.
 
 ### Completed This Session
 - [x] Phase 7A: Quick Quote / Receipt Generator at `/admin/quick` (standalone, not bound to a lead) — quote/receipt mode switch, service multi-select + tier toggle with live auto-fill, live recalc; quote outcomes (calculator-only/erase, Send + create lead, copyable quote link with Copy button), Save as New Lead; receipt mode (vehicle/date/payment/address, advisories + timed follow-ups, office notes) Send or Save; "Quick Quote" topbar nav link. Merged to dev.
+- [x] Phase 7A refinements (round 2): delete lead button (cascade-delete all records permanently); receipt address Google Maps autocomplete; advisory reminder: replaced time-period dropdown with direct date picker, no pre-fill; quick quote receipt mode: removed "Save as New Lead" button; email button on lead list/detail now copies address to clipboard on click (fixes desktop where no email client); receipt builder: 1 advisory shown + 3 hidden + Add Advisory button; quick quote: same advisory 1+Add pattern; quick quote POST handler updated to use direct date for followups; Preview Email button on quick quote page (both quote and receipt modes); auto-save localStorage (navigate away and back restores form); "Clear & Start Over" replaces old Clear button.
 
 ### Previously Completed This Session
 - [x] Phase 5: receipt form + branded receipt email + lead auto-completes; receipts + followups tables; Phase 6 follow-up reminder cron in server.js; "Complete Job & Send Receipt" button on lead cards and quote page
