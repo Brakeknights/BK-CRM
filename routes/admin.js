@@ -654,15 +654,61 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
   res.redirect('/admin/quote/' + lead.id + '?msg=approved');
 });
 
-router.get('/quote/:id/deny-schedule', requireAuth, async function(req, res) {
+router.get('/quote/:id/deny-schedule', requireAuth, function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
+  var reqTime = quote ? fmtPrefDate(quote.pref_date) + (quote.pref_time ? ' at ' + quote.pref_time : '') : 'the requested time';
+
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back</a>'
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:4px;">Suggest Alternative Times</div>'
+    + '<div style="font-size:0.85rem;color:#888;margin-bottom:14px;">Customer requested: <strong>' + esc(reqTime) + '</strong></div>'
+    + '<p style="font-size:0.87rem;color:#555;line-height:1.55;margin-bottom:16px;">Enter up to 3 alternatives below. The customer will be asked to choose whichever works best, or reply if none do.</p>'
+    + '<form method="POST" action="/admin/quote/' + lead.id + '/deny-schedule">'
+    + [1,2,3].map(function(n) {
+        return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'
+          + '<span style="font-size:0.8rem;color:#888;font-weight:600;min-width:58px;">Option ' + n + '</span>'
+          + '<input type="date" name="altDate' + n + '" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.85rem;color:#1a2a3a;">'
+          + '<input type="text" name="altTime' + n + '" placeholder="e.g. 10:00 AM" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.85rem;flex:1;min-width:90px;">'
+          + '</div>';
+      }).join('')
+    + '<div style="margin-top:16px;display:flex;gap:8px;">'
+    + '<button type="submit" class="btn btn-blue" style="flex:1;">Send to Customer</button>'
+    + '<a href="/admin/quote/' + lead.id + '" class="btn btn-outline" style="flex:1;text-align:center;">Cancel</a>'
+    + '</div></form></div>';
+
+  res.send(page('Suggest Alternatives', body, req));
+});
+
+router.post('/quote/:id/deny-schedule', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).send('Lead not found');
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
 
   logHistory(lead.id, 'Time denied', quote ? ((quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '')) : null);
 
+  var alts = [];
+  for (var i = 1; i <= 3; i++) {
+    var d = (req.body['altDate' + i] || '').trim();
+    var t = (req.body['altTime' + i] || '').trim();
+    if (d || t) alts.push({ date: d, time: t });
+  }
+
   if (process.env.SMTP_PASS && lead.email) {
     try {
+      var altHtml = alts.length
+        ? '<div style="margin:16px 0;">'
+          + alts.map(function(a, idx) {
+              var when = (a.date ? fmtPrefDate(a.date) : '') + (a.time ? ' at ' + a.time : '');
+              return '<div style="padding:9px 14px;background:#f4f7fb;border-radius:7px;margin-bottom:7px;font-size:0.92rem;color:#1a2a3a;font-weight:600;">'
+                + (idx + 1) + '. ' + esc(when) + '</div>';
+            }).join('')
+          + '</div>'
+        : '';
+      var bodyText = alts.length
+        ? 'We\'re sorry, the time you requested isn\'t available. Here are a few options that may work for you. Please let us know which one fits best, or if none of these work for you, just reply and we\'ll find a time that does.'
+        : 'We\'re sorry, the time you requested isn\'t available. Please reply with your availability and we\'ll work with you to find a time that fits your schedule.';
       var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
       var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
         + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
@@ -670,14 +716,14 @@ router.get('/quote/:id/deny-schedule', requireAuth, async function(req, res) {
         + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p></div>'
         + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
         + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Greetings ' + esc(lead.first_name) + ',</h2>'
-        + '<p style="color:#444;line-height:1.6;margin:0 0 16px;">Unfortunately that date and time is not available. We will reach out to you shortly to discuss available times and confirm your booking.</p>'
-        + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">We apologize for the inconvenience and look forward to getting you scheduled soon.</p>'
-        + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
-        + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Feel free to call or text us directly:</p>'
+        + '<p style="color:#444;line-height:1.6;margin:0 0 4px;">' + bodyText + '</p>'
+        + altHtml
+        + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;margin-top:20px;">'
+        + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">You can also reach us directly:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, subject: 'Scheduling update — Brake Knights', html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, replyTo: 'greetings@brakeknights.com', subject: 'Scheduling update — Brake Knights', html });
     } catch (err) { console.error('Deny schedule email error:', err.message); }
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=denied');
@@ -1072,7 +1118,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Customer-facing totals
     + '<div class="price-section" style="margin-bottom:0;">'
     + '<div class="price-section-header">Customer Quote</div>'
-    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
+    + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
+    + '<span style="font-size:0.77rem;color:#888;font-weight:600;">Show pricing as:</span>'
+    + '<div class="tier-toggle" style="margin:0;">'
+    + '<button type="button" class="tier-btn active" id="btnCombined" onclick="setLineItems(\'combined\')">Combined</button>'
+    + '<button type="button" class="tier-btn" id="btnSeparate" onclick="setLineItems(\'separate\')">Separate</button>'
+    + '</div></div>'
+    + '<input type="hidden" name="lineItems" id="lineItemsVal" value="combined">'
+    + '<div class="price-row" id="liCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
+    + '<div class="price-row" id="liPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="partsOnlyDisplay">$' + money(q.price_parts || 0) + '</span></div>'
+    + '<div class="price-row" id="liLaborRow" style="display:none;"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span><span id="laborOnlyDisplay">$' + money(q.price_labor || 0) + '</span></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + money(q.shop_supplies) + '</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + money(q.tax) + '</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
@@ -1103,6 +1158,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("btnStd").classList.toggle("active",t==="standard");'
     +   'document.getElementById("btnPrem").classList.toggle("active",t==="premium");'
     +   'updatePrices();'
+    + '}'
+
+    + 'var lineItems="combined";'
+    + 'function setLineItems(v){'
+    +   'lineItems=v;document.getElementById("lineItemsVal").value=v;'
+    +   'document.getElementById("btnCombined").classList.toggle("active",v==="combined");'
+    +   'document.getElementById("btnSeparate").classList.toggle("active",v==="separate");'
+    +   'document.getElementById("liCombinedRow").style.display=v==="combined"?"":"none";'
+    +   'document.getElementById("liPartsRow").style.display=v==="separate"?"":"none";'
+    +   'document.getElementById("liLaborRow").style.display=v==="separate"?"":"none";'
     + '}'
 
     + 'function renderTags(){'
@@ -1174,6 +1239,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var total=parts+labor+ss+tax;'
     +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
+    +   'document.getElementById("partsOnlyDisplay").textContent="$"+money(parts);'
+    +   'document.getElementById("laborOnlyDisplay").textContent="$"+money(labor);'
     +   'document.getElementById("ssDisplay").textContent="$"+money(ss);'
     +   'document.getElementById("taxDisplay").textContent="$"+money(tax);'
     +   'document.getElementById("totalAmt").textContent="$"+money(total);'
@@ -1208,7 +1275,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+"<p style=\'margin:0 0 6px;font-size:0.92rem;font-weight:600;color:#1a2a3a;\'>"+svcLine+"</p>"'
     +     '+(durTxt?"<p style=\'margin:0 0 12px;font-size:0.85rem;color:#555;\'>Estimated time on site: about "+durTxt+"</p>":"")'
     +     '+"<table style=\'width:100%;margin:12px 0;font-size:0.88rem;border-collapse:collapse;\'>"'
-    +     '+"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>"'
+    +     '+(lineItems==="separate"?"<tr><td>Parts</td><td style=\'text-align:right;\'>$"+money(parts)+"</td></tr><tr><td>Labor</td><td style=\'text-align:right;\'>$"+money(labor)+"</td></tr>":"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>")'
     +     '+"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>"'
     +     '+"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>"'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
@@ -1301,7 +1368,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       to:      lead.email,
       replyTo: 'greetings@brakeknights.com',
       subject: 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl)
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined')
     });
 
     res.redirect('/admin?msg=sent');
@@ -1313,7 +1380,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
 // ─── Quote email (Phase 3C upgrades this to fully branded template) ───────────
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems) {
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
   return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">'
@@ -1331,7 +1398,10 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '<p style="margin:0 0 6px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">' + esc(joinServices(service)) + '</p>'
     + (totalServiceMinutes(service) ? '<p style="margin:0 0 16px;font-size:0.86rem;color:#555;">Estimated time on site: about <strong>' + formatDuration(totalServiceMinutes(service)) + '</strong>. Please pick a time that allows for it.</p>' : '')
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
-    + '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(partsLabor) + '</td></tr>'
+    + (lineItems === 'separate'
+        ? '<tr><td style="padding:6px 0;">Parts</td><td style="text-align:right;">$' + money(parts) + '</td></tr>'
+          + '<tr><td style="padding:6px 0;">Labor</td><td style="text-align:right;">$' + money(labor) + '</td></tr>'
+        : '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(partsLabor) + '</td></tr>')
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(shopSupplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(tax) + '</td></tr>'
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total</td>'
@@ -1348,7 +1418,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
           + '<p style="color:#888;font-size:0.82rem;margin:12px 0 0;">You&rsquo;ll pick a preferred day and time. We&rsquo;ll confirm it or reach out about other openings.</p>'
           + '</div>'
         : '')
-    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All parts are <strong>premium quality, meeting or exceeding OEM manufacturer specifications</strong>. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
     + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
@@ -2440,7 +2510,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         to:      email,
         replyTo: 'greetings@brakeknights.com',
         subject: 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl)
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined')
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
