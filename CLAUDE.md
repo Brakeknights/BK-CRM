@@ -133,11 +133,11 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Working branch: `claude/busy-ritchie-GuJOH` — Phase 7A refinements round 2 (in progress, not yet on dev)
+- Working branch: `claude/busy-ritchie-GuJOH` — Phase 7A refinements round 2 (merged to dev)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Phases 2, 3, 4, 5 complete. Phase 6 complete (followups table + cron + management UI + receipt/profile refinements). Phase 7A complete (Quick Quote / Receipt Generator at `/admin/quick`) — all on dev.
-- Phases 5 + 6 + 7A on dev, not yet on master — needs user to merge.
+- Phases 2, 3, 4, 5 complete. Phase 6 complete (followups table + cron + management UI + receipt/profile refinements). Phase 7A complete with all refinements (Quick Quote / Receipt Generator at `/admin/quick`, delete lead, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store) — all on dev.
+- Phases 5 + 6 + 7A (including all refinements) on dev, not yet on master — needs user to merge.
 - Pre-push hook in place — direct pushes to `master` blocked; override with "go master" keyword ✅
 - "go skill" keyword added — pushes tooling-only changes to both dev and master in one shot ✅
 - Session startup hook shows pending dev-vs-master commits at session start ✅
@@ -145,9 +145,9 @@ Update this section at the end of each session to stay caught up next time.
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - Next steps:
-  1. Test Phase 7A refinements on dev.brakeknights.com/admin/quick; gather any feedback
+  1. Test dev.brakeknights.com/admin/quick and the lead list (delete button, preview, advisories)
   2. Merge dev → master to ship Phases 5 + 6 + 7A to the live site (user-initiated)
-  3. Phase 7: admin CRM dashboard at brakeknights.com/admin
+  3. Phase 7: full CRM dashboard (customer profiles, vehicle history, job history)
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
 
