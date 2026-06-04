@@ -242,6 +242,13 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
+function gracefulShutdown() {
+  try { db.close(); } catch (_) {}
+  process.exit(0);
+}
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
 app.listen(PORT, () => {
   console.log(`Brakeknights server running on port ${PORT}`);
 });

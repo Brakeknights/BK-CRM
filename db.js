@@ -2,10 +2,11 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dataDir = path.join(__dirname, 'data');
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'data', 'brakeknights.db');
+const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-const db = new Database(path.join(dataDir, 'brakeknights.db'));
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -118,3 +119,9 @@ addLeadCol('vin',                'TEXT');
 addLeadCol('internal_notes',     'TEXT');
 
 module.exports = db;
+
+// Flush WAL to the main DB file every 5 minutes so recent data is never stranded
+// in the side-file if the process is stopped abruptly for a deployment.
+setInterval(function() {
+  try { db.pragma('wal_checkpoint(PASSIVE)'); } catch (_) {}
+}, 5 * 60 * 1000);

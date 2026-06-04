@@ -237,6 +237,48 @@ function schedulingPanel(lead, quote, compact) {
     + '</div></div>';
 }
 
+function stageTracker(status) {
+  var STAGES = [
+    { key: 'new',            label: 'New' },
+    { key: 'quoted',         label: 'Quoted' },
+    { key: 'quote_accepted', label: 'Accepted' },
+    { key: 'booked',         label: 'Booked' },
+    { key: 'completed',      label: 'Complete' },
+    { key: 'receipt',        label: 'Receipt' }
+  ];
+  var IDX = { new: 0, quoted: 1, follow_up: 1, quote_accepted: 2, booked: 3, completed: 4, receipt: 5 };
+  var cur = IDX[status] != null ? IDX[status] : 0;
+  var parts = [];
+  STAGES.forEach(function(s, i) {
+    var past = i < cur, active = i === cur;
+    var pill;
+    if (past) {
+      pill = '<span style="display:inline-flex;align-items:center;padding:4px 11px;border-radius:20px;font-size:0.75rem;font-weight:600;background:#1a7a3a;color:#fff;white-space:nowrap;">&#10003; ' + s.label + '</span>';
+    } else if (active) {
+      pill = '<span style="display:inline-flex;align-items:center;padding:4px 11px;border-radius:20px;font-size:0.75rem;font-weight:700;background:#4169e1;color:#fff;white-space:nowrap;">' + s.label + '</span>';
+    } else {
+      pill = '<span style="display:inline-flex;align-items:center;padding:4px 11px;border-radius:20px;font-size:0.75rem;font-weight:600;background:#f0f4f8;color:#aaa;border:1.5px solid #dde3ea;white-space:nowrap;">' + s.label + '</span>';
+    }
+    parts.push(pill);
+    if (i < STAGES.length - 1) parts.push('<span style="color:#ccc;font-size:0.9rem;flex-shrink:0;">›</span>');
+  });
+  return '<div style="display:flex;align-items:center;gap:3px;overflow-x:auto;padding-bottom:12px;margin-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;">' + parts.join('') + '</div>';
+}
+
+function nextStageHint(lead) {
+  var hints = {
+    new:            { text: 'Next: build and send a quote using the form on this page.', bg: '#e3f0ff', border: '#b9d4f5', color: '#1a2a3a' },
+    quoted:         { text: 'Waiting for the customer to accept the quote.', bg: '#dde7fb', border: '#b9c9f5', color: '#3a4fb8' },
+    quote_accepted: { text: 'Review the appointment request above and Approve or Deny.', bg: '#e0f4f8', border: '#b9dde8', color: '#0e7490' },
+    booked:         { text: 'Job is booked. After the service, click Complete Job &amp; Send Receipt.', bg: '#e6f9ee', border: '#bfe3cb', color: '#1a7a3a' },
+    completed:      { text: 'Job done. Send the customer a receipt to wrap up.', bg: '#fff1de', border: '#f5d9b0', color: '#7a4a00' },
+    receipt:        { text: 'Receipt sent. Follow-ups are scheduled if applicable.', bg: '#e6f9ee', border: '#bfe3cb', color: '#0a6b2e' }
+  };
+  var h = hints[lead.status];
+  if (!h) return '';
+  return '<div style="font-size:0.82rem;color:' + h.color + ';background:' + h.bg + ';border:1px solid ' + h.border + ';border-radius:8px;padding:8px 12px;margin-bottom:12px;line-height:1.5;">' + h.text + '</div>';
+}
+
 async function notifyStageChange(req, lead, newStatus) {
   if (!process.env.SMTP_PASS) return;
   var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed' };
@@ -373,6 +415,7 @@ function page(title, body, req) {
     + '<meta charset="UTF-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
     + '<meta name="robots" content="noindex,nofollow">'
+    + '<link rel="icon" type="image/png" href="/images/favicon.png">'
     + '<title>BK Admin' + (title && title !== 'Leads' ? ' — ' + esc(title) : '') + '</title>'
     + '<style>' + CSS + '</style>'
     + '</head><body>'
@@ -381,6 +424,7 @@ function page(title, body, req) {
     + nav
     + '</div>'
     + '<div class="wrap">' + body + '</div>'
+    + '<script>function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}</script>'
     + '</body></html>';
 }
 
@@ -712,7 +756,7 @@ router.get('/', requireAuth, function(req, res) {
           + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">'
           + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
           + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128172; Text</a>'
-          + (l.email ? '<a href="mailto:' + esc(l.email) + '" onclick="try{navigator.clipboard.writeText(this.href.slice(7))}catch(e){}" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#9993; Email</a>' : '')
+          + (l.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(l.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#9993; Email</button>' : '')
           + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;min-width:120px;">Open Quote</a>'
           + '</div>'
           + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">&#10003; Complete Job &amp; Send Receipt</a>')
@@ -802,6 +846,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + quoteAlert
+    + stageTracker(lead.status)
+    + nextStageHint(lead)
 
     // Scheduling request / Approve-Deny (pending) or confirmed banner
     + schedulingPanel(lead, q, false)
@@ -825,7 +871,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
     + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128222; Call</a>'
     + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128172; Text</a>'
-    + (lead.email ? '<a href="mailto:' + esc(lead.email) + '" onclick="try{navigator.clipboard.writeText(this.href.slice(7))}catch(e){}" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</a>' : '')
+    + (lead.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(lead.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</button>' : '')
     + '</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
@@ -862,12 +908,15 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<button type="submit" class="btn btn-outline" style="width:auto;">Save</button>'
     + '</form></div>'
 
-    // Complete Job — opens the receipt form (Phase 5)
-    + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>'
+    // Sections below are reordered client-side based on the pipeline stage
+    + '<div id="sects">'
 
-    // Receipt history — each receipt is a clickable card that opens the customer
-    // copy, and surfaces its advisories + office (internal) notes right here so
-    // they're easy to find without opening the receipt.
+    + '<div data-section="complete-job">'
+    + (!lead.archived ? '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>' : '')
+    + '</div>'
+
+    // Receipt history
+    + '<div data-section="receipts">'
     + (function() {
         var receipts = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
         if (receipts.length === 0) return '';
@@ -903,8 +952,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '<div class="section-title" style="margin-bottom:10px;">Receipts <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + receipts.length + ')</span></div>'
           + cards + '</div>';
       })()
+    + '</div>'
 
-    // Follow-ups for this lead (pending + recent), plus an add form.
+    // Follow-ups
+    + '<div data-section="followups">'
     + (function() {
         var fus = db.prepare(
           'SELECT f.*, ? AS first_name, ? AS last_name, ? AS vehicle FROM followups f WHERE f.lead_id = ? ORDER BY f.sent ASC, f.due_date ASC, f.id ASC'
@@ -931,8 +982,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + cards
           + '<div class="card">' + addForm + '</div>';
       })()
+    + '</div>'
 
     // Quote history
+    + '<div data-section="quote-history">'
     + (allQuotes.length > 0
         ? '<div class="card">'
           + '<div class="section-title" style="margin-bottom:10px;">Quote History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + allQuotes.length + ')</span></div>'
@@ -957,8 +1010,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
             }).join('')
           + '</tbody></table></div></div>'
         : '')
+    + '</div>'
 
-    // Lead history timeline
+    // Lead history
+    + '<div data-section="lead-history">'
     + (function() {
         var history = db.prepare('SELECT * FROM lead_history WHERE lead_id = ? ORDER BY id ASC').all(lead.id);
         if (history.length === 0) return '';
@@ -975,8 +1030,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '<div style="padding-left:4px;">' + rows + '</div>'
           + '</div>';
       })()
+    + '</div>'
 
-    // Quote form
+    // Build Quote form
+    + '<div data-section="build-quote">'
     + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf">'
     + '<div class="card">'
     + '<div class="section-title">Build Quote</div>'
@@ -1030,6 +1087,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div id="previewBox" style="display:none;"></div>'
     + '<button type="submit" class="btn btn-blue" style="margin-top:10px;">Send Quote</button>'
     + '</form>'
+    + '</div>'
+    + '</div>'
 
     + '<script>'
     + 'var PRICING=' + pricingJson + ';'
@@ -1169,6 +1228,22 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
     + 'updateServiceHints(Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;}));'
     + 'renderTags();'
+    + '(function(){'
+    +   'var STATUS="' + esc(lead.status) + '";'
+    +   'var ORDER={'
+    +     'new:["build-quote","followups","complete-job","receipts","quote-history","lead-history"],'
+    +     'quoted:["followups","build-quote","complete-job","receipts","quote-history","lead-history"],'
+    +     'follow_up:["followups","build-quote","complete-job","receipts","quote-history","lead-history"],'
+    +     'quote_accepted:["complete-job","followups","build-quote","receipts","quote-history","lead-history"],'
+    +     'booked:["complete-job","followups","build-quote","receipts","quote-history","lead-history"],'
+    +     'completed:["receipts","complete-job","followups","build-quote","quote-history","lead-history"],'
+    +     'receipt:["receipts","complete-job","followups","build-quote","quote-history","lead-history"]'
+    +   '};'
+    +   'var order=ORDER[STATUS]||ORDER.new;'
+    +   'var c=document.getElementById("sects");'
+    +   'if(!c)return;'
+    +   'order.forEach(function(n){var el=c.querySelector("[data-section=\'"+n+"\']");if(el)c.appendChild(el);});'
+    + '})();'
     + '</script>';
 
   res.send(page('Quote — ' + lead.first_name + ' ' + lead.last_name, body, req));
@@ -2029,7 +2104,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="qQuoteActions">'
     + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'quote_send\')">Send Quote to Customer</button>'
     + '<button type="button" class="btn btn-navy" style="margin-top:8px;" onclick="qSubmit(\'quote_link\')">Get Copyable Quote Link</button>'
-    + '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="qSubmit(\'quote_save\')">Save as New Lead (no email)</button>'
+    + '<button type="button" class="btn" style="margin-top:8px;background:#e0e0e0;border:1.5px solid #b4b4b4;color:#444;" onclick="qSubmit(\'quote_save\')">Save as New Lead (no email)</button>'
     + '</div>'
     + '<div class="qReceiptActions" style="display:none;">'
     + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'receipt_send\')">&#10003; Send Receipt to Customer</button>'
