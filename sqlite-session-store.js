@@ -1,8 +1,10 @@
-const { EventEmitter } = require('events');
+const session = require('express-session');
+const Store = session.Store;
 
 // Minimal SQLite-backed session store for express-session.
+// Extends Store (not EventEmitter) so express-session's createSession() is inherited.
 // Survives Node process restarts so admin sessions persist across git auto-deploys.
-class SqliteStore extends EventEmitter {
+class SqliteStore extends Store {
   constructor(db, ttlMs) {
     super();
     this.db = db;
