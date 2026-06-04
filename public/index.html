@@ -287,7 +287,7 @@
       <div>
         <div class="section-label">Reach Out</div>
         <h2 class="section-title">Get in Touch with Your Mobile Brake Repair Heroes!</h2>
-        <p class="section-sub">Getting your brakes fixed has never been easier. Fill out the form and a knight will be in touch shortly to schedule your service.</p>
+        <p class="section-sub">Fill out the form and we'll send you a personalized quote — specific to your vehicle and service — typically within a few hours. Every quote is reviewed by us personally, not generated automatically.</p>
 
         <div class="contact-detail">
           <div class="contact-detail-icon"><i class="fa-solid fa-phone"></i></div>
@@ -360,6 +360,34 @@
           </div>
 
           <div class="form-group">
+            <label for="service">Service Requested *</label>
+            <select id="service" required onchange="handleServiceChange(this)">
+              <option value="" disabled selected>Select a service...</option>
+              <option value="Front Pads">Front Pads</option>
+              <option value="Rear Pads">Rear Pads</option>
+              <option value="Front and Rear Pads">Front and Rear Pads</option>
+              <option value="Front Pads and Rotors">Front Pads and Rotors</option>
+              <option value="Rear Pads and Rotors">Rear Pads and Rotors</option>
+              <option value="Front and Rear Pads and Rotors">Front and Rear Pads and Rotors</option>
+              <option value="Front Rotors">Front Rotors</option>
+              <option value="Rear Rotors">Rear Rotors</option>
+              <option value="Front and Rear Rotors">Front and Rear Rotors</option>
+              <option value="Drums and Shoes">Drums and Shoes</option>
+              <option value="Front Pads, Rotors, and Drums and Shoes">Front Pads, Rotors, and Drums and Shoes</option>
+              <option value="Brake Fluid Flush">Brake Fluid Flush</option>
+              <option value="Brake Inspection">Brake Inspection</option>
+              <option value="Caliper Replacement">Caliper Replacement</option>
+              <option value="Brake Hose Replacement">Brake Hose Replacement</option>
+              <option value="Describe Issue / Not Sure">Describe Issue / Not Sure</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="message-group" style="display:none;">
+            <label for="message" id="message-label">Notes (optional)</label>
+            <textarea id="message" placeholder="Any additional details..."></textarea>
+          </div>
+
+          <div class="form-group">
             <label for="preferred-contact">Preferred Contact Method *</label>
             <select id="preferred-contact" required>
               <option value="" disabled selected>Select one...</option>
@@ -367,11 +395,6 @@
               <option value="Text">Text</option>
               <option value="Email">Email</option>
             </select>
-          </div>
-
-          <div class="form-group">
-            <label for="message">Message *</label>
-            <textarea id="message" placeholder="Describe your brake issue or questions..." required></textarea>
           </div>
 
           <button type="submit" class="btn-primary" style="width:100%;padding:14px;">Submit Your Request</button>
@@ -630,7 +653,7 @@
   <div class="container">
     <div class="section-label">Service Territory</div>
     <h2 class="section-title">We Serve All of Northern Virginia</h2>
-    <p class="section-sub">Based in Sterling, covering Loudoun, Fairfax, Prince William, Arlington, and Alexandria. <a href="/location" style="color:var(--gold);font-weight:600;">View all service areas →</a></p>
+    <p class="section-sub">Based in Sterling, covering Loudoun, Fairfax, Prince William, Arlington, and Alexandria. <a href="/location" style="color:var(--royal-blue);font-weight:600;">View all service areas →</a></p>
 
     <div class="areas-cols">
       <div>
@@ -901,6 +924,24 @@
     }
   }
 
+  function handleServiceChange(sel) {
+    const val = sel.value;
+    const group = document.getElementById('message-group');
+    const textarea = document.getElementById('message');
+    const label = document.getElementById('message-label');
+    const freeform = val === 'Describe Issue / Not Sure';
+    group.style.display = val ? 'flex' : 'none';
+    if (freeform) {
+      label.textContent = 'Describe your issue *';
+      textarea.placeholder = 'Tell us what you\'re experiencing...';
+      textarea.required = true;
+    } else {
+      label.textContent = 'Notes (optional)';
+      textarea.placeholder = 'Any additional details...';
+      textarea.required = false;
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     const btn = e.target.querySelector('[type=submit]');
@@ -912,6 +953,7 @@
       phone:            document.getElementById('phone')?.value,
       email:            document.getElementById('email')?.value,
       vehicle:          document.getElementById('vehicle')?.value,
+      service:          document.getElementById('service')?.value,
       preferredContact: document.getElementById('preferred-contact')?.value,
       message:          document.getElementById('message')?.value,
       source:           window.location.pathname

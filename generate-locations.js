@@ -210,7 +210,7 @@ function generatePage({ slug, name, county, zip, nearby }) {
     <p class="section-sub">Brake Knights covers a wide area around ${name}. If you're nearby, we can help.</p>
     <div style="display:flex;gap:12px;flex-wrap:wrap;">
       ${nearby.map(city => `<a href="/brake-repair-${city.toLowerCase().replace(/ /g, '-')}" style="background:var(--off-white);border:1px solid var(--gray-light);border-radius:8px;padding:10px 18px;font-size:.9rem;font-weight:600;color:var(--navy);">${city}</a>`).join('\n      ')}
-      <a href="/location" style="background:var(--gold);border-radius:8px;padding:10px 18px;font-size:.9rem;font-weight:600;color:#fff;">View All Areas →</a>
+      <a href="/location" style="background:var(--royal-blue);border-radius:8px;padding:10px 18px;font-size:.9rem;font-weight:600;color:#fff;">View All Areas →</a>
     </div>
   </div>
 </section>
@@ -218,7 +218,7 @@ function generatePage({ slug, name, county, zip, nearby }) {
 <!-- CTA Section -->
 <section style="background:var(--navy);color:var(--white);padding:72px 0;">
   <div class="container">
-    <div class="section-label" style="color:var(--gold-light);">Ready to Book?</div>
+    <div class="section-label" style="color:var(--royal-blue-light);">Ready to Book?</div>
     <h2 class="section-title" style="color:var(--white);">Book Mobile Brake Repair in ${name} Today</h2>
     <p style="color:#8fa8c0;max-width:600px;margin-bottom:32px;">Call, text, or fill out the form. We'll confirm your appointment and give you an upfront estimate — no shop visit required.</p>
     <div style="display:flex;gap:14px;flex-wrap:wrap;">
