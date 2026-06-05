@@ -133,10 +133,10 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/busy-ritchie-GuJOH` — Phase 7A refinements round 2 (merged to dev and master ✅)
+- Last working branch: `claude/funny-ritchie-atzTm` — Phase 7B fixes (merged to dev and master via PR #8 ✅)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Phases 2, 3, 4, 5, 6, 7A all complete and live on master. Includes: receipt builder, follow-up reminders + dashboard, Quick Quote / Receipt Generator at `/admin/quick`, delete lead, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store.
+- Phases 2, 3, 4, 5, 6, 7A, 7B all complete and live on master. Includes: receipt builder, follow-up reminders + dashboard, Quick Quote / Receipt Generator at `/admin/quick`, delete lead, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store, blog fix, modern calendar widget on accept page, dynamic admin URL in emails, admin favicon.
 - dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - Pre-push hook in place — direct pushes to `master` blocked; override with "go master" keyword ✅
@@ -208,6 +208,9 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Phase 7B fixes (merged to dev and master via PR #8): blog page fix (infinite redirect loop on live site); modern inline calendar widget on customer accept page (replaces native selects — month nav, day grid, Sundays blocked, Sat 3pm cutoff, submit blocked until both date+time picked); dynamic admin URL in alt-times emails (no longer hardcoded to brakeknights.com); admin favicon now live on master.
+- [x] Phase 7B (previous batch, merged to dev): remove "(not taxed)" label from labor line in quote builder; alt-times form date/time replaced with select dropdowns (no Sundays, business-hour slots); per-service warranty language in quote emails (rotors/drums = full warranty, pads-only = labor warranty, inspection/fluid = none); removed em dashes from scheduling flow; scheduling panel hides Approve/Deny after alt times sent (shows amber waiting state instead); alt time options in customer email are clickable token-based buttons.
+- [x] Quick Quote additions (merged to dev): custom service open-text field (combinable with brake services for non-standard jobs); save draft to DB to resume later without rebuilding.
 - [x] Phase 7A: Quick Quote / Receipt Generator at `/admin/quick` (standalone, not bound to a lead) — quote/receipt mode switch, service multi-select + tier toggle with live auto-fill, live recalc; quote outcomes (calculator-only/erase, Send + create lead, copyable quote link with Copy button), Save as New Lead; receipt mode (vehicle/date/payment/address, advisories + timed follow-ups, office notes) Send or Save; "Quick Quote" topbar nav link. Merged to dev.
 - [x] Phase 7A refinements (round 2): delete lead button (cascade-delete all records permanently); receipt address Google Maps autocomplete; advisory reminder: replaced time-period dropdown with direct date picker, no pre-fill; quick quote receipt mode: removed "Save as New Lead" button; email button on lead list/detail now copies address to clipboard on click (fixes desktop where no email client); receipt builder: 1 advisory shown + 3 hidden + Add Advisory button; quick quote: same advisory 1+Add pattern; quick quote POST handler updated to use direct date for followups; Preview Email button on quick quote page (both quote and receipt modes); auto-save localStorage (navigate away and back restores form); "Clear & Start Over" replaces old Clear button.
 
