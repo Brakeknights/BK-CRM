@@ -514,7 +514,7 @@ router.post('/lead/:id/restore', requireAuth, express.urlencoded({ extended: fal
 
 router.post('/lead/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect(req.body.back || '/admin');
   db.prepare('DELETE FROM followups WHERE lead_id = ?').run(lead.id);
   db.prepare('DELETE FROM receipts WHERE lead_id = ?').run(lead.id);
   db.prepare('DELETE FROM quotes WHERE lead_id = ?').run(lead.id);
