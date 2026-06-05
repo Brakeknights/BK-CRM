@@ -2,10 +2,11 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dataDir = path.join(__dirname, 'data');
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'data', 'brakeknights.db');
+const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-const db = new Database(path.join(dataDir, 'brakeknights.db'));
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -74,6 +75,14 @@ db.exec(`
     office_notes    TEXT
   );
 
+  -- Phase 7B: Quick Quote drafts. Saved form state the owner can come back to.
+  CREATE TABLE IF NOT EXISTS quick_drafts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    label      TEXT NOT NULL DEFAULT 'Untitled',
+    form_data  TEXT NOT NULL
+  );
+
   -- Phase 6 foundation: timed follow-up reminders created from receipt advisories.
   -- recipient is 'owner', 'customer', or 'both'. The daily cron in server.js fires
   -- the email(s) on/after due_date and flips sent = 1.
@@ -105,6 +114,16 @@ addQuoteCol('scheduling_notes',    'TEXT');
 addQuoteCol('quote_followup_sent', 'INTEGER DEFAULT 0');
 addQuoteCol('reminder_24h_sent',   'INTEGER DEFAULT 0');
 addQuoteCol('reminder_2h_sent',    'INTEGER DEFAULT 0');
+addQuoteCol('alt_times_sent',      'INTEGER DEFAULT 0');
+addQuoteCol('alt_token1',          'TEXT');
+addQuoteCol('alt_date1',           'TEXT');
+addQuoteCol('alt_time1',           'TEXT');
+addQuoteCol('alt_token2',          'TEXT');
+addQuoteCol('alt_date2',           'TEXT');
+addQuoteCol('alt_time2',           'TEXT');
+addQuoteCol('alt_token3',          'TEXT');
+addQuoteCol('alt_date3',           'TEXT');
+addQuoteCol('alt_time3',           'TEXT');
 
 const leadCols = db.prepare("PRAGMA table_info(leads)").all().map(c => c.name);
 const addLeadCol = (name, def) => {
@@ -118,3 +137,9 @@ addLeadCol('vin',                'TEXT');
 addLeadCol('internal_notes',     'TEXT');
 
 module.exports = db;
+
+// Flush WAL to the main DB file every 5 minutes so recent data is never stranded
+// in the side-file if the process is stopped abruptly for a deployment.
+setInterval(function() {
+  try { db.pragma('wal_checkpoint(PASSIVE)'); } catch (_) {}
+}, 5 * 60 * 1000);

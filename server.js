@@ -72,6 +72,13 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// The trailing-slash stripper causes a redirect loop for directory index files
+// (express.static redirects /blog → /blog/, stripper strips it back → loop).
+// Explicit routes for directories with index files avoid this.
+app.get('/blog', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'blog', 'index.html'));
+});
+
 app.get('/api/square/verify', async (req, res) => {
   const result = await verifyConnection();
   const ok = result.customers === 'ok' && result.bookings === 'ok';
@@ -241,6 +248,13 @@ app.post('/api/contact', async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to send email' });
   }
 });
+
+function gracefulShutdown() {
+  try { db.close(); } catch (_) {}
+  process.exit(0);
+}
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 app.listen(PORT, () => {
   console.log(`Brakeknights server running on port ${PORT}`);

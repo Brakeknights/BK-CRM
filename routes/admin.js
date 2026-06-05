@@ -226,15 +226,64 @@ function schedulingPanel(lead, quote, compact) {
       + '</div>';
   }
   if (lead.status !== 'quote_accepted') return '';
+  // Alternatives were sent and the customer hasn't responded yet: show waiting state.
+  if (quote.alt_times_sent) {
+    return '<div style="background:#fff8e1;border:1px solid #f0d080;border-left:4px solid #e07000;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
+      + '<div style="font-weight:700;color:#7a5a00;font-size:0.9rem;margin-bottom:4px;">Alternative Times Sent</div>'
+      + '<div style="font-size:0.85rem;color:#7a5a00;line-height:1.5;">Waiting for the customer to select a time from the options you sent. The Approve button will reappear once they choose.</div>'
+      + '</div>';
+  }
   return '<div style="background:#e3f0ff;border:1px solid #b9d4f5;border-left:4px solid #4169e1;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
     + '<div style="font-weight:700;color:#0a1f3d;font-size:0.9rem;margin-bottom:8px;">Requested Appointment</div>'
-    + '<div style="font-size:0.88rem;color:#1a2a3a;">' + esc(fmtPrefDate(quote.pref_date)) + ' at <strong>' + esc(quote.pref_time || '—') + '</strong></div>'
+    + '<div style="font-size:0.88rem;color:#1a2a3a;">' + esc(fmtPrefDate(quote.pref_date)) + ' at <strong>' + esc(quote.pref_time || 'time TBD') + '</strong></div>'
     + (quote.pref_location ? '<div style="font-size:0.83rem;color:#666;margin-top:2px;">' + esc(quote.pref_location) + '</div>' : '')
     + (quote.scheduling_notes ? '<div style="font-size:0.82rem;color:#666;font-style:italic;margin-top:4px;">' + esc(quote.scheduling_notes) + '</div>' : '')
     + '<div style="display:flex;gap:8px;margin-top:12px;">'
     + '<a href="/admin/quote/' + lead.id + '/approve-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#1a7a3a;color:#fff;border:none;">&#10003; Approve Time</a>'
     + '<a href="/admin/quote/' + lead.id + '/deny-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#c0392b;color:#fff;border:none;">&#10005; Not Available</a>'
     + '</div></div>';
+}
+
+function stageTracker(status) {
+  var STAGES = [
+    { key: 'new',            label: 'New' },
+    { key: 'quoted',         label: 'Quoted' },
+    { key: 'quote_accepted', label: 'Accepted' },
+    { key: 'booked',         label: 'Booked' },
+    { key: 'completed',      label: 'Complete' },
+    { key: 'receipt',        label: 'Receipt' }
+  ];
+  var IDX = { new: 0, quoted: 1, follow_up: 1, quote_accepted: 2, booked: 3, completed: 4, receipt: 5 };
+  var cur = IDX[status] != null ? IDX[status] : 0;
+  var parts = [];
+  STAGES.forEach(function(s, i) {
+    var past = i < cur, active = i === cur;
+    var pill;
+    if (past) {
+      pill = '<span style="display:inline-flex;align-items:center;padding:4px 11px;border-radius:20px;font-size:0.75rem;font-weight:600;background:#1a7a3a;color:#fff;white-space:nowrap;">&#10003; ' + s.label + '</span>';
+    } else if (active) {
+      pill = '<span style="display:inline-flex;align-items:center;padding:4px 11px;border-radius:20px;font-size:0.75rem;font-weight:700;background:#4169e1;color:#fff;white-space:nowrap;">' + s.label + '</span>';
+    } else {
+      pill = '<span style="display:inline-flex;align-items:center;padding:4px 11px;border-radius:20px;font-size:0.75rem;font-weight:600;background:#f0f4f8;color:#aaa;border:1.5px solid #dde3ea;white-space:nowrap;">' + s.label + '</span>';
+    }
+    parts.push(pill);
+    if (i < STAGES.length - 1) parts.push('<span style="color:#ccc;font-size:0.9rem;flex-shrink:0;">›</span>');
+  });
+  return '<div style="display:flex;align-items:center;gap:3px;overflow-x:auto;padding-bottom:12px;margin-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;">' + parts.join('') + '</div>';
+}
+
+function nextStageHint(lead) {
+  var hints = {
+    new:            { text: 'Next: build and send a quote using the form on this page.', bg: '#e3f0ff', border: '#b9d4f5', color: '#1a2a3a' },
+    quoted:         { text: 'Waiting for the customer to accept the quote.', bg: '#dde7fb', border: '#b9c9f5', color: '#3a4fb8' },
+    quote_accepted: { text: 'Review the appointment request above and Approve or Deny.', bg: '#e0f4f8', border: '#b9dde8', color: '#0e7490' },
+    booked:         { text: 'Job is booked. After the service, click Complete Job &amp; Send Receipt.', bg: '#e6f9ee', border: '#bfe3cb', color: '#1a7a3a' },
+    completed:      { text: 'Job done. Send the customer a receipt to wrap up.', bg: '#fff1de', border: '#f5d9b0', color: '#7a4a00' },
+    receipt:        { text: 'Receipt sent. Follow-ups are scheduled if applicable.', bg: '#e6f9ee', border: '#bfe3cb', color: '#0a6b2e' }
+  };
+  var h = hints[lead.status];
+  if (!h) return '';
+  return '<div style="font-size:0.82rem;color:' + h.color + ';background:' + h.bg + ';border:1px solid ' + h.border + ';border-radius:8px;padding:8px 12px;margin-bottom:12px;line-height:1.5;">' + h.text + '</div>';
 }
 
 async function notifyStageChange(req, lead, newStatus) {
@@ -373,6 +422,7 @@ function page(title, body, req) {
     + '<meta charset="UTF-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
     + '<meta name="robots" content="noindex,nofollow">'
+    + '<link rel="icon" type="image/png" href="/images/favicon.png">'
     + '<title>BK Admin' + (title && title !== 'Leads' ? ' — ' + esc(title) : '') + '</title>'
     + '<style>' + CSS + '</style>'
     + '</head><body>'
@@ -381,6 +431,7 @@ function page(title, body, req) {
     + nav
     + '</div>'
     + '<div class="wrap">' + body + '</div>'
+    + '<script>function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}</script>'
     + '</body></html>';
 }
 
@@ -509,6 +560,40 @@ router.get('/square-info', requireAuth, async function(req, res) {
   res.type('json').send(JSON.stringify(out, null, 2));
 });
 
+// ─── Alt-time date/time option builders (for deny-schedule form) ─────────────
+
+var ALT_WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+var ALT_MONTHS   = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function buildAltDateOptions() {
+  var opts = '<option value="" disabled selected>Select a day...</option>';
+  var d = new Date();
+  d.setHours(0, 0, 0, 0);
+  for (var added = 0, days = 0; added < 35 && days < 60; days++) {
+    var day = new Date(d.getTime() + days * 86400000);
+    if (day.getDay() === 0) continue;
+    var iso = day.getFullYear() + '-'
+      + String(day.getMonth() + 1).padStart(2, '0') + '-'
+      + String(day.getDate()).padStart(2, '0');
+    opts += '<option value="' + iso + '">' + ALT_WEEKDAYS[day.getDay()] + ', ' + ALT_MONTHS[day.getMonth()] + ' ' + day.getDate() + '</option>';
+    added++;
+  }
+  return opts;
+}
+
+function buildAltTimeOptions() {
+  var opts = '<option value="" disabled selected>Select a time...</option>';
+  for (var mins = 9 * 60; mins <= 18 * 60; mins += 30) {
+    var h24 = Math.floor(mins / 60);
+    var m = mins % 60;
+    var ampm = h24 < 12 ? 'AM' : 'PM';
+    var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    var label = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+    opts += '<option value="' + label + '">' + label + '</option>';
+  }
+  return opts;
+}
+
 // ─── Approve / deny scheduling ────────────────────────────────────────────────
 
 router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) {
@@ -518,7 +603,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
   if (!quote) return res.redirect('/admin/quote/' + lead.id + '?msg=no_accepted_quote');
 
   db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
-  logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ' — ' + quote.pref_location : ''));
+  logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ', ' + quote.pref_location : ''));
 
   // Square calendar booking
   try {
@@ -610,30 +695,100 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
   res.redirect('/admin/quote/' + lead.id + '?msg=approved');
 });
 
-router.get('/quote/:id/deny-schedule', requireAuth, async function(req, res) {
+router.get('/quote/:id/deny-schedule', requireAuth, function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.status(404).send('Lead not found');
+  var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
+  var reqTime = quote ? fmtPrefDate(quote.pref_date) + (quote.pref_time ? ' at ' + quote.pref_time : '') : 'the requested time';
+
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back</a>'
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:4px;">Suggest Alternative Times</div>'
+    + '<div style="font-size:0.85rem;color:#888;margin-bottom:14px;">Customer requested: <strong>' + esc(reqTime) + '</strong></div>'
+    + '<p style="font-size:0.87rem;color:#555;line-height:1.55;margin-bottom:16px;">Enter up to 3 alternatives below. The customer will be asked to choose whichever works best, or reply if none do.</p>'
+    + '<form method="POST" action="/admin/quote/' + lead.id + '/deny-schedule">'
+    + [1,2,3].map(function(n) {
+        var dateOpts = buildAltDateOptions();
+        var timeOpts = buildAltTimeOptions();
+        return '<div style="margin-bottom:12px;">'
+          + '<div style="font-size:0.8rem;color:#888;font-weight:600;margin-bottom:5px;">Option ' + n + '</div>'
+          + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+          + '<select name="altDate' + n + '" style="flex:1;min-width:160px;padding:8px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.85rem;background:#fff;color:#1a2a3a;">' + dateOpts + '</select>'
+          + '<select name="altTime' + n + '" style="flex:1;min-width:130px;padding:8px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.85rem;background:#fff;color:#1a2a3a;">' + timeOpts + '</select>'
+          + '</div></div>';
+      }).join('')
+    + '<div style="margin-top:16px;display:flex;gap:8px;">'
+    + '<button type="submit" class="btn btn-blue" style="flex:1;">Send to Customer</button>'
+    + '<a href="/admin/quote/' + lead.id + '" class="btn btn-outline" style="flex:1;text-align:center;">Cancel</a>'
+    + '</div></form></div>';
+
+  res.send(page('Suggest Alternatives', body, req));
+});
+
+router.post('/quote/:id/deny-schedule', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.status(404).send('Lead not found');
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
 
   logHistory(lead.id, 'Time denied', quote ? ((quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '')) : null);
 
+  var alts = [];
+  for (var i = 1; i <= 3; i++) {
+    var d = (req.body['altDate' + i] || '').trim();
+    var t = (req.body['altTime' + i] || '').trim();
+    if (d || t) alts.push({ date: d, time: t, token: crypto.randomBytes(20).toString('hex') });
+  }
+
+  // Store alt tokens + dates + times on the quote so the customer's tap can be validated.
+  if (quote) {
+    var upd = db.prepare(
+      'UPDATE quotes SET alt_times_sent=1,'
+      + 'alt_token1=?,alt_date1=?,alt_time1=?,'
+      + 'alt_token2=?,alt_date2=?,alt_time2=?,'
+      + 'alt_token3=?,alt_date3=?,alt_time3=? WHERE id=?'
+    );
+    upd.run(
+      alts[0] ? alts[0].token : null, alts[0] ? alts[0].date : null, alts[0] ? alts[0].time : null,
+      alts[1] ? alts[1].token : null, alts[1] ? alts[1].date : null, alts[1] ? alts[1].time : null,
+      alts[2] ? alts[2].token : null, alts[2] ? alts[2].date : null, alts[2] ? alts[2].time : null,
+      quote.id
+    );
+  }
+
   if (process.env.SMTP_PASS && lead.email) {
     try {
+      var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+      var altHtml = '';
+      if (alts.length) {
+        altHtml = '<div style="margin:20px 0;">'
+          + '<p style="font-size:0.85rem;color:#888;margin:0 0 10px;">Tap the time that works best for you:</p>'
+          + alts.map(function(a, idx) {
+              var when = (a.date ? fmtPrefDate(a.date) : '') + (a.time ? ' at ' + a.time : '');
+              var link = quote ? (baseUrl + '/quote/alt/' + quote.id + '/' + a.token) : '';
+              return '<a href="' + esc(link) + '" style="display:block;padding:14px 18px;background:#4169e1;color:#fff;border-radius:9px;margin-bottom:10px;font-size:0.95rem;font-weight:700;text-align:center;text-decoration:none;">'
+                + (idx + 1) + '. ' + esc(when) + '</a>';
+            }).join('')
+          + '<p style="font-size:0.82rem;color:#888;margin:10px 0 0;">If none of these times work, just reply to this email and we\'ll find one that does.</p>'
+          + '</div>';
+      }
+      var bodyText = alts.length
+        ? 'We\'re sorry, the time you requested isn\'t available. Here are a few options that work on our end. Tap the one that works for you and we\'ll lock it in.'
+        : 'We\'re sorry, the time you requested isn\'t available. Please reply with your availability and we\'ll work with you to find a time that fits your schedule.';
       var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
       var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
         + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
         + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
-        + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p></div>'
+        + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service, Northern Virginia</p></div>'
         + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
         + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Greetings ' + esc(lead.first_name) + ',</h2>'
-        + '<p style="color:#444;line-height:1.6;margin:0 0 16px;">Unfortunately that date and time is not available. We will reach out to you shortly to discuss available times and confirm your booking.</p>'
-        + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">We apologize for the inconvenience and look forward to getting you scheduled soon.</p>'
-        + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
-        + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Feel free to call or text us directly:</p>'
+        + '<p style="color:#444;line-height:1.6;margin:0 0 4px;">' + bodyText + '</p>'
+        + altHtml
+        + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;margin-top:20px;">'
+        + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">You can also reach us directly:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, subject: 'Scheduling update — Brake Knights', html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, replyTo: 'greetings@brakeknights.com', subject: 'Scheduling update from Brake Knights', html });
     } catch (err) { console.error('Deny schedule email error:', err.message); }
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=denied');
@@ -712,7 +867,7 @@ router.get('/', requireAuth, function(req, res) {
           + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">'
           + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
           + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128172; Text</a>'
-          + (l.email ? '<a href="mailto:' + esc(l.email) + '" onclick="try{navigator.clipboard.writeText(this.href.slice(7))}catch(e){}" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#9993; Email</a>' : '')
+          + (l.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(l.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#9993; Email</button>' : '')
           + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;min-width:120px;">Open Quote</a>'
           + '</div>'
           + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">&#10003; Complete Job &amp; Send Receipt</a>')
@@ -802,6 +957,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + quoteAlert
+    + stageTracker(lead.status)
+    + nextStageHint(lead)
 
     // Scheduling request / Approve-Deny (pending) or confirmed banner
     + schedulingPanel(lead, q, false)
@@ -825,7 +982,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
     + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128222; Call</a>'
     + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128172; Text</a>'
-    + (lead.email ? '<a href="mailto:' + esc(lead.email) + '" onclick="try{navigator.clipboard.writeText(this.href.slice(7))}catch(e){}" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</a>' : '')
+    + (lead.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(lead.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</button>' : '')
     + '</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
@@ -862,12 +1019,15 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<button type="submit" class="btn btn-outline" style="width:auto;">Save</button>'
     + '</form></div>'
 
-    // Complete Job — opens the receipt form (Phase 5)
-    + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>'
+    // Sections below are reordered client-side based on the pipeline stage
+    + '<div id="sects">'
 
-    // Receipt history — each receipt is a clickable card that opens the customer
-    // copy, and surfaces its advisories + office (internal) notes right here so
-    // they're easy to find without opening the receipt.
+    + '<div data-section="complete-job">'
+    + (!lead.archived ? '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>' : '')
+    + '</div>'
+
+    // Receipt history
+    + '<div data-section="receipts">'
     + (function() {
         var receipts = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
         if (receipts.length === 0) return '';
@@ -903,8 +1063,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '<div class="section-title" style="margin-bottom:10px;">Receipts <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + receipts.length + ')</span></div>'
           + cards + '</div>';
       })()
+    + '</div>'
 
-    // Follow-ups for this lead (pending + recent), plus an add form.
+    // Follow-ups
+    + '<div data-section="followups">'
     + (function() {
         var fus = db.prepare(
           'SELECT f.*, ? AS first_name, ? AS last_name, ? AS vehicle FROM followups f WHERE f.lead_id = ? ORDER BY f.sent ASC, f.due_date ASC, f.id ASC'
@@ -931,8 +1093,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + cards
           + '<div class="card">' + addForm + '</div>';
       })()
+    + '</div>'
 
     // Quote history
+    + '<div data-section="quote-history">'
     + (allQuotes.length > 0
         ? '<div class="card">'
           + '<div class="section-title" style="margin-bottom:10px;">Quote History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + allQuotes.length + ')</span></div>'
@@ -957,8 +1121,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
             }).join('')
           + '</tbody></table></div></div>'
         : '')
+    + '</div>'
 
-    // Lead history timeline
+    // Lead history
+    + '<div data-section="lead-history">'
     + (function() {
         var history = db.prepare('SELECT * FROM lead_history WHERE lead_id = ? ORDER BY id ASC').all(lead.id);
         if (history.length === 0) return '';
@@ -975,8 +1141,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '<div style="padding-left:4px;">' + rows + '</div>'
           + '</div>';
       })()
+    + '</div>'
 
-    // Quote form
+    // Build Quote form
+    + '<div data-section="build-quote">'
     + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf">'
     + '<div class="card">'
     + '<div class="section-title">Build Quote</div>'
@@ -1015,7 +1183,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Customer-facing totals
     + '<div class="price-section" style="margin-bottom:0;">'
     + '<div class="price-section-header">Customer Quote</div>'
-    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
+    + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
+    + '<span style="font-size:0.77rem;color:#888;font-weight:600;">Show pricing as:</span>'
+    + '<div class="tier-toggle" style="margin:0;">'
+    + '<button type="button" class="tier-btn active" id="btnCombined" onclick="setLineItems(\'combined\')">Combined</button>'
+    + '<button type="button" class="tier-btn" id="btnSeparate" onclick="setLineItems(\'separate\')">Separate</button>'
+    + '</div></div>'
+    + '<input type="hidden" name="lineItems" id="lineItemsVal" value="combined">'
+    + '<div class="price-row" id="liCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
+    + '<div class="price-row" id="liPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="partsOnlyDisplay">$' + money(q.price_parts || 0) + '</span></div>'
+    + '<div class="price-row" id="liLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="laborOnlyDisplay">$' + money(q.price_labor || 0) + '</span></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + money(q.shop_supplies) + '</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + money(q.tax) + '</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
@@ -1030,6 +1207,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div id="previewBox" style="display:none;"></div>'
     + '<button type="submit" class="btn btn-blue" style="margin-top:10px;">Send Quote</button>'
     + '</form>'
+    + '</div>'
+    + '</div>'
 
     + '<script>'
     + 'var PRICING=' + pricingJson + ';'
@@ -1044,6 +1223,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("btnStd").classList.toggle("active",t==="standard");'
     +   'document.getElementById("btnPrem").classList.toggle("active",t==="premium");'
     +   'updatePrices();'
+    + '}'
+
+    + 'var lineItems="combined";'
+    + 'function setLineItems(v){'
+    +   'lineItems=v;document.getElementById("lineItemsVal").value=v;'
+    +   'document.getElementById("btnCombined").classList.toggle("active",v==="combined");'
+    +   'document.getElementById("btnSeparate").classList.toggle("active",v==="separate");'
+    +   'document.getElementById("liCombinedRow").style.display=v==="combined"?"":"none";'
+    +   'document.getElementById("liPartsRow").style.display=v==="separate"?"":"none";'
+    +   'document.getElementById("liLaborRow").style.display=v==="separate"?"":"none";'
     + '}'
 
     + 'function renderTags(){'
@@ -1115,6 +1304,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var total=parts+labor+ss+tax;'
     +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
+    +   'document.getElementById("partsOnlyDisplay").textContent="$"+money(parts);'
+    +   'document.getElementById("laborOnlyDisplay").textContent="$"+money(labor);'
     +   'document.getElementById("ssDisplay").textContent="$"+money(ss);'
     +   'document.getElementById("taxDisplay").textContent="$"+money(tax);'
     +   'document.getElementById("totalAmt").textContent="$"+money(total);'
@@ -1149,7 +1340,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+"<p style=\'margin:0 0 6px;font-size:0.92rem;font-weight:600;color:#1a2a3a;\'>"+svcLine+"</p>"'
     +     '+(durTxt?"<p style=\'margin:0 0 12px;font-size:0.85rem;color:#555;\'>Estimated time on site: about "+durTxt+"</p>":"")'
     +     '+"<table style=\'width:100%;margin:12px 0;font-size:0.88rem;border-collapse:collapse;\'>"'
-    +     '+"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>"'
+    +     '+(lineItems==="separate"?"<tr><td>Parts</td><td style=\'text-align:right;\'>$"+money(parts)+"</td></tr><tr><td>Labor</td><td style=\'text-align:right;\'>$"+money(labor)+"</td></tr>":"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>")'
     +     '+"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>"'
     +     '+"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>"'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
@@ -1169,6 +1360,22 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
     + 'updateServiceHints(Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;}));'
     + 'renderTags();'
+    + '(function(){'
+    +   'var STATUS="' + esc(lead.status) + '";'
+    +   'var ORDER={'
+    +     'new:["build-quote","followups","complete-job","receipts","quote-history","lead-history"],'
+    +     'quoted:["followups","build-quote","complete-job","receipts","quote-history","lead-history"],'
+    +     'follow_up:["followups","build-quote","complete-job","receipts","quote-history","lead-history"],'
+    +     'quote_accepted:["complete-job","followups","build-quote","receipts","quote-history","lead-history"],'
+    +     'booked:["complete-job","followups","build-quote","receipts","quote-history","lead-history"],'
+    +     'completed:["receipts","complete-job","followups","build-quote","quote-history","lead-history"],'
+    +     'receipt:["receipts","complete-job","followups","build-quote","quote-history","lead-history"]'
+    +   '};'
+    +   'var order=ORDER[STATUS]||ORDER.new;'
+    +   'var c=document.getElementById("sects");'
+    +   'if(!c)return;'
+    +   'order.forEach(function(n){var el=c.querySelector("[data-section=\'"+n+"\']");if(el)c.appendChild(el);});'
+    + '})();'
     + '</script>';
 
   res.send(page('Quote — ' + lead.first_name + ' ' + lead.last_name, body, req));
@@ -1226,7 +1433,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       to:      lead.email,
       replyTo: 'greetings@brakeknights.com',
       subject: 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl)
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined')
     });
 
     res.redirect('/admin?msg=sent');
@@ -1238,7 +1445,24 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
 // ─── Quote email (Phase 3C upgrades this to fully branded template) ───────────
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl) {
+// Returns the warranty paragraph for a given service string (comma-separated names).
+// Rotors/drums: full parts + labor warranty.
+// Pads/shoes only: labor warranty (pads wear; no parts warranty).
+// Inspection or fluid flush only: no warranty clause.
+function buildWarrantyClause(service) {
+  var svcs = String(service || '').split(',').map(function(s) { return s.trim().toLowerCase(); });
+  if (!svcs.length) return '';
+  var allNoWarranty = svcs.every(function(s) { return /inspection|fluid/i.test(s); });
+  if (allNoWarranty) return '';
+  var partsQuality = 'All parts are <strong>premium quality, meeting or exceeding OEM manufacturer specifications</strong>.';
+  var hasRotorsOrDrums = svcs.some(function(s) { return /rotor|drum/i.test(s); });
+  if (hasRotorsOrDrums) {
+    return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>';
+  }
+  return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
+}
+
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems) {
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
   return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">'
@@ -1256,7 +1480,10 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '<p style="margin:0 0 6px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">' + esc(joinServices(service)) + '</p>'
     + (totalServiceMinutes(service) ? '<p style="margin:0 0 16px;font-size:0.86rem;color:#555;">Estimated time on site: about <strong>' + formatDuration(totalServiceMinutes(service)) + '</strong>. Please pick a time that allows for it.</p>' : '')
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
-    + '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(partsLabor) + '</td></tr>'
+    + (lineItems === 'separate'
+        ? '<tr><td style="padding:6px 0;">Parts</td><td style="text-align:right;">$' + money(parts) + '</td></tr>'
+          + '<tr><td style="padding:6px 0;">Labor</td><td style="text-align:right;">$' + money(labor) + '</td></tr>'
+        : '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(partsLabor) + '</td></tr>')
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(shopSupplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(tax) + '</td></tr>'
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total</td>'
@@ -1273,7 +1500,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
           + '<p style="color:#888;font-size:0.82rem;margin:12px 0 0;">You&rsquo;ll pick a preferred day and time. We&rsquo;ll confirm it or reach out about other openings.</p>'
           + '</div>'
         : '')
-    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All qualifying pad and rotor replacements come with a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
+    + buildWarrantyClause(service)
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
     + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
@@ -1905,6 +2132,32 @@ router.get('/quick', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(PRICING.services);
   var taxPct = +(PRICING.taxRate * 100).toFixed(2);
 
+  // Drafts list
+  var allDrafts = db.prepare('SELECT id, label, created_at FROM quick_drafts ORDER BY id DESC').all();
+
+  // Load a specific draft when ?draft=:id
+  var draftJson = 'null';
+  if (req.query.draft) {
+    var draftRow = db.prepare('SELECT form_data FROM quick_drafts WHERE id = ?').get(req.query.draft);
+    if (draftRow) draftJson = draftRow.form_data;
+  }
+
+  var draftsHtml = allDrafts.length
+    ? '<div class="card" style="margin-bottom:12px;">'
+      + '<div class="section-title" style="margin-bottom:10px;">Saved Drafts</div>'
+      + allDrafts.map(function(d) {
+          return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0;">'
+            + '<div><div style="font-size:0.88rem;font-weight:600;color:#0a1f3d;">' + esc(d.label) + '</div>'
+            + '<div style="font-size:0.78rem;color:#aaa;">' + timeAgo(d.created_at) + '</div></div>'
+            + '<div style="display:flex;gap:6px;flex-shrink:0;">'
+            + '<a href="/admin/quick?draft=' + d.id + '" class="btn btn-navy btn-sm" style="width:auto;padding:6px 12px;font-size:0.8rem;">Load</a>'
+            + '<form method="POST" action="/admin/quick/draft/' + d.id + '/delete" style="margin:0;" onsubmit="return confirm(\'Delete this draft?\');">'
+            + '<button type="submit" class="btn btn-sm" style="width:auto;padding:6px 10px;font-size:0.8rem;background:#fff;border:1.5px solid #e0c0c0;color:#c0392b;">Delete</button>'
+            + '</form></div></div>';
+        }).join('')
+      + '</div>'
+    : '';
+
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
         return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
@@ -1921,11 +2174,13 @@ router.get('/quick', requireAuth, function(req, res) {
   advisoryRows += '<button type="button" id="qqAddAdvBtn" class="svc-clear-btn" style="margin-top:6px;" onclick="qqAddAdvisory()">+ Add Advisory</button>';
 
   var alert = '';
-  if (req.query.err === 'name')  alert = '<div class="alert alert-error">First and last name are required to save or send.</div>';
-  if (req.query.err === 'email') alert = '<div class="alert alert-error">An email address is required to send a quote or receipt. Use the copyable link instead, or add an email.</div>';
+  if (req.query.err === 'name')    alert = '<div class="alert alert-error">First and last name are required to save or send.</div>';
+  if (req.query.err === 'email')   alert = '<div class="alert alert-error">An email address is required to send a quote or receipt. Use the copyable link instead, or add an email.</div>';
+  if (req.query.msg === 'draft_saved') alert = '<div class="alert alert-success">Draft saved. Load it any time from the Saved Drafts list above.</div>';
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + alert
+    + draftsHtml
     + '<div class="card">'
     + '<div class="lead-name" style="margin-bottom:4px;">Quick Quote / Receipt</div>'
     + '<div style="color:#888;font-size:0.85rem;">A standalone generator for phone and text inquiries. Pick services, read the live total off to the customer, then send, save, or grab a copyable link.</div>'
@@ -1966,6 +2221,11 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<button type="button" class="svc-clear-btn" onclick="qClearServices()">&#10005; Clear selection</button>'
     + '<div class="svc-tags" id="qsvcTags"></div>'
     + '<div id="qCustomHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
+    + '<div class="form-group" style="margin:14px 0 6px;">'
+    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
+    + '<input type="text" id="qCustomSvc" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" oninput="qOnCustomSvc()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
+    + '<div id="qCustomSvcHint" style="display:none;font-size:0.82rem;color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;margin-top:6px;">Custom service added to the quote. Enter its parts and labor costs in the price fields below.</div>'
+    + '</div>'
     + '<div class="form-group" style="margin:14px 0 0;"><label>Tier</label>'
     + '<div class="tier-toggle">'
     + '<button type="button" class="tier-btn active" id="qBtnStd" onclick="qSetTier(\'standard\')">Standard</button>'
@@ -2029,22 +2289,25 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="qQuoteActions">'
     + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'quote_send\')">Send Quote to Customer</button>'
     + '<button type="button" class="btn btn-navy" style="margin-top:8px;" onclick="qSubmit(\'quote_link\')">Get Copyable Quote Link</button>'
-    + '<button type="button" class="btn btn-outline" style="margin-top:8px;" onclick="qSubmit(\'quote_save\')">Save as New Lead (no email)</button>'
+    + '<button type="button" class="btn" style="margin-top:8px;background:#e0e0e0;border:1.5px solid #b4b4b4;color:#444;" onclick="qSubmit(\'quote_save\')">Save as New Lead (no email)</button>'
     + '</div>'
     + '<div class="qReceiptActions" style="display:none;">'
     + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'receipt_send\')">&#10003; Send Receipt to Customer</button>'
     + '</div>'
     + '<button type="button" id="qPreviewBtn" class="btn btn-outline" style="margin-top:8px;" onclick="qPreview()">Preview Email</button>'
     + '<div id="qPreviewBox" style="display:none;margin-top:8px;"></div>'
+    + '<button type="button" class="btn btn-outline" style="margin-top:8px;border-color:#aaa;color:#555;" onclick="qSaveDraft()">&#128190; Save Draft</button>'
     + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="if(confirm(\'Clear the form and start over? Nothing will be saved.\'))qClearAll()">&#10005; Clear &amp; Start Over</button>'
     + '</div>'
     + '</form>'
 
     + '<script>'
     + 'var QPRICING=' + pricingJson + ';'
+    + 'var QDRAFT=' + draftJson + ';'
     + 'var qtier="standard";var qmode="quote";'
 
     + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
+    + 'function qCustomSvcVal(){var el=document.getElementById("qCustomSvc");return el?el.value.trim():"";}'
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
 
     + 'function qSetMode(m){'
@@ -2070,14 +2333,32 @@ router.get('/quick', requireAuth, function(req, res) {
     + '}'
 
     + 'function qRenderTags(){'
-    +   'document.getElementById("qsvcTags").innerHTML=qCheckedServices().map(function(n){'
+    +   'var tags=qCheckedServices().map(function(n){'
     +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
-    +   '}).join("");'
+    +   '});'
+    +   'var cv=qCustomSvcVal();'
+    +   'if(cv)tags.push("<span class=\'svc-tag\' style=\'background:#e07000;\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qClearCustomSvc()\'>&#10005;</button>"+cv+" <em style=\'opacity:.8;font-style:normal;font-size:0.72rem;\'>(custom)</em></span>");'
+    +   'document.getElementById("qsvcTags").innerHTML=tags.join("");'
     + '}'
     + 'function qRemoveTag(btn){'
     +   'var val=btn.getAttribute("data-val");'
     +   'var cb=Array.from(document.querySelectorAll(".qsvc-cb")).find(function(c){return c.value===val;});'
     +   'if(cb)cb.checked=false;qUpdateServices();'
+    + '}'
+    + 'function qClearCustomSvc(){'
+    +   'var el=document.getElementById("qCustomSvc");if(el)el.value="";'
+    +   'document.getElementById("qCustomSvcHint").style.display="none";'
+    +   'qUpdateFullService();'
+    + '}'
+    + 'function qOnCustomSvc(){'
+    +   'var cv=qCustomSvcVal();'
+    +   'document.getElementById("qCustomSvcHint").style.display=cv?"block":"none";'
+    +   'qUpdateFullService();qSaveState();'
+    + '}'
+    + 'function qUpdateFullService(){'
+    +   'var all=qCheckedServices().slice();var cv=qCustomSvcVal();if(cv)all.push(cv);'
+    +   'document.getElementById("qsvcHidden").value=all.join(", ");'
+    +   'qRenderTags();'
     + '}'
     + 'function qClearServices(){'
     +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;});qUpdateServices();'
@@ -2086,10 +2367,11 @@ router.get('/quick', requireAuth, function(req, res) {
     // Auto-fill the price fields from the pricing table for the checked services + tier.
     + 'function qAutofill(){'
     +   'var names=qCheckedServices();'
-    +   'document.getElementById("qsvcHidden").value=names.join(", ");'
-    +   'if(names.length===0){'
+    +   'qUpdateFullService();'
+    +   'if(names.length===0&&!qCustomSvcVal()){'
     +     'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";qcalc();return;'
     +   '}'
+    +   'if(names.length===0){qcalc();return;}'
     +   'var parts=0,labor=0,ss=0;'
     +   'names.forEach(function(s){var sv=QPRICING[s];if(!sv)return;var p=sv[qtier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
     +   'document.getElementById("qparts").value=parts.toFixed(2);'
@@ -2176,6 +2458,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qfn").value="";document.getElementById("qln").value="";'
     +   'document.getElementById("qem").value="";document.getElementById("qph").value="";'
     +   'var veh=document.getElementById("qveh");if(veh)veh.value="";'
+    +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
+    +   'document.getElementById("qCustomSvcHint").style.display="none";'
     +   'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";'
     +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
     +   'var offN=document.querySelector("[name=officeNotes]");if(offN)offN.value="";'
@@ -2210,6 +2494,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'ph:document.getElementById("qph").value,'
     +       'veh:(document.getElementById("qveh")||{}).value||"",'
     +       'svcs:qCheckedServices(),'
+    +       'customSvc:qCustomSvcVal(),'
     +       'parts:document.getElementById("qparts").value,'
     +       'labor:document.getElementById("qlabor").value,'
     +       'ss:document.getElementById("qss").value,'
@@ -2225,8 +2510,9 @@ router.get('/quick', requireAuth, function(req, res) {
     + '}'
     + 'function qRestoreState(){'
     +   'try{'
-    +     'var raw=localStorage.getItem("bk_qq_state");if(!raw)return;'
-    +     'var s=JSON.parse(raw);if(!s)return;'
+    +     'var s=QDRAFT;'
+    +     'if(!s){var raw=localStorage.getItem("bk_qq_state");if(!raw)return;s=JSON.parse(raw);}'
+    +     'if(!s)return;'
     +     'if(s.mode)qSetMode(s.mode);'
     +     'if(s.tier)qSetTier(s.tier);'
     +     'if(s.fn)document.getElementById("qfn").value=s.fn;'
@@ -2235,6 +2521,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(s.ph)document.getElementById("qph").value=s.ph;'
     +     'if(s.veh&&document.getElementById("qveh"))document.getElementById("qveh").value=s.veh;'
     +     'if(s.svcs&&s.svcs.length)document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});'
+    +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
     +     'if(s.parts!==undefined)document.getElementById("qparts").value=s.parts;'
     +     'if(s.labor!==undefined)document.getElementById("qlabor").value=s.labor;'
     +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
@@ -2253,8 +2540,14 @@ router.get('/quick', requireAuth, function(req, res) {
     +     '});'
     +     'var allVis=[2,3,4].every(function(i){var r=document.getElementById("advRow"+i);return !r||r.style.display!=="none";});'
     +     'if(allVis){var ab=document.getElementById("qqAddAdvBtn");if(ab)ab.style.display="none";}'
-    +     'qUpdateServices();qPayToggle();qcalc();'
+    +     'qUpdateFullService();qHints();qPayToggle();qcalc();'
     +   '}catch(_){}'
+    + '}'
+
+    + 'function qSaveDraft(){'
+    +   'qSaveState();'
+    +   'document.getElementById("qaction").value="draft_save";'
+    +   'document.getElementById("qqf").submit();'
     + '}'
 
     + 'function qSubmit(action){'
@@ -2310,6 +2603,34 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var email     = (req.body.email     || '').trim() || null;
   var phone     = (req.body.phone     || '').trim();
   var vehicle   = (req.body.vehicle   || '').trim() || null;
+
+  // Save Draft: persist form state to quick_drafts, no lead created, no validation.
+  if (action === 'draft_save') {
+    var customSvcD = (req.body.customService || '').trim();
+    var serviceD   = (req.body.service || '').trim();
+    var allSvcsD   = serviceD ? serviceD.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+    var presetSvcsD = allSvcsD.filter(function(s){ return !!PRICING.services[s]; });
+    var draftLabel = (firstName || lastName) ? (firstName + ' ' + lastName).trim() : 'Untitled';
+    var firstSvcD  = allSvcsD[0] || '';
+    if (firstSvcD) draftLabel += ' - ' + firstSvcD.substring(0, 28);
+    var draftData = {
+      mode: mode, tier: req.body.tier === 'premium' ? 'premium' : 'standard',
+      fn: firstName, ln: lastName, em: email || '', ph: phone, veh: vehicle || '',
+      svcs: presetSvcsD, customSvc: customSvcD,
+      parts: req.body.parts || '0.00', labor: req.body.labor || '0.00',
+      ss: req.body.shopSupplies || '0.00',
+      tr: req.body.taxRate || String(+(PRICING.taxRate * 100).toFixed(2)),
+      payMethod: req.body.paymentMethod || '', payOther: req.body.paymentOther || '',
+      svcDate: req.body.serviceDate || '', svcAddr: req.body.serviceAddress || '',
+      offNotes: req.body.officeNotes || '',
+      adv: [1,2,3,4].map(function(i) {
+        return { note: req.body['custNote'+i]||'', recv: req.body['fuRecipient'+i]||'owner', cust: req.body['fuCustom'+i]||'' };
+      })
+    };
+    db.prepare("INSERT INTO quick_drafts (label, form_data) VALUES (?, ?)").run(draftLabel, JSON.stringify(draftData));
+    return res.redirect('/admin/quick?msg=draft_saved');
+  }
+
   if (!firstName || !lastName) return res.redirect('/admin/quick?err=name');
 
   var isSend = (action === 'quote_send' || action === 'receipt_send');
@@ -2365,7 +2686,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         to:      email,
         replyTo: 'greetings@brakeknights.com',
         subject: 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl)
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined')
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
@@ -2431,6 +2752,11 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
   logHistory(leadId, 'Receipt saved (not emailed)', receiptDetail);
   res.redirect('/admin/quote/' + leadId + '?msg=receipt_saved');
+});
+
+router.post('/quick/draft/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  db.prepare('DELETE FROM quick_drafts WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/quick');
 });
 
 module.exports = router;

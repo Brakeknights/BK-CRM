@@ -162,6 +162,28 @@ function shell(title, inner) {
     + '.footer a{color:#7a8794;text-decoration:none}'
     + '.callbar{text-align:center;margin-top:18px}'
     + '.callbar a{color:#0a1f3d;font-weight:700;text-decoration:none}'
+    + '.bk-date-val{font-size:0.92rem;font-weight:600;color:#0a1f3d;background:#f0f4f8;border-radius:8px;padding:10px 14px;margin-bottom:10px;min-height:42px;display:flex;align-items:center}'
+    + '.bk-date-val.placeholder{color:#aab;font-weight:400}'
+    + '.bk-cal-wrap{border:1.5px solid #dde3ea;border-radius:12px;overflow:hidden;background:#fff;user-select:none}'
+    + '.bk-cal-hdr{display:flex;align-items:center;justify-content:space-between;background:#0a1f3d;padding:12px 16px}'
+    + '.bk-cal-hdr span{color:#fff;font-weight:700;font-size:0.95rem}'
+    + '.bk-cal-nav{background:rgba(255,255,255,.15);border:none;color:#fff;font-size:1rem;width:32px;height:32px;border-radius:6px;cursor:pointer;line-height:1}'
+    + '.bk-cal-nav:hover{background:rgba(255,255,255,.28)}'
+    + '.bk-cal-nav:disabled{opacity:.25;cursor:default}'
+    + '.bk-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:10px 8px 12px}'
+    + '.bk-dh{text-align:center;font-size:0.7rem;font-weight:700;color:#aaa;padding:0 0 6px;letter-spacing:.04em}'
+    + '.bk-dh.sun{color:#e0c0c0}'
+    + '.bk-day{text-align:center;font-size:0.88rem;padding:8px 2px;border-radius:8px;cursor:default;color:#ddd;line-height:1}'
+    + '.bk-day.avail{cursor:pointer;color:#1a2a3a}'
+    + '.bk-day.avail:hover{background:#deeeff;color:#0a1f3d}'
+    + '.bk-day.today{font-weight:700;box-shadow:inset 0 0 0 1.5px #4169e1}'
+    + '.bk-day.sel{background:#0a1f3d!important;color:#fff!important;font-weight:700}'
+    + '.bk-time-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}'
+    + '.bk-tb{padding:9px 14px;border:1.5px solid #dde3ea;border-radius:20px;background:#fff;color:#1a2a3a;font-size:0.88rem;cursor:pointer;font-weight:500;transition:background .12s,color .12s,border-color .12s}'
+    + '.bk-tb:hover{background:#e3f0ff;border-color:#b9d4f5}'
+    + '.bk-tb.sel{background:#0a1f3d!important;color:#fff!important;border-color:#0a1f3d!important;font-weight:700}'
+    + '.bk-tb.off{color:#ccc;cursor:default;pointer-events:none}'
+    + '.bk-pick-err{color:#c0392b;font-size:0.84rem;margin-top:5px;display:none}'
     + '</style></head><body>'
     + '<div class="topbar"><a href="https://brakeknights.com"><img src="/images/favicon.png" alt=""> Brake Knights'
     + '<span class="tag">Mobile Brake Service — Northern Virginia</span></a></div>'
@@ -192,6 +214,76 @@ function loadQuote(id, token) {
   if (!q || !q.accept_token || q.accept_token !== token) return null;
   return q;
 }
+
+// ─── Alternative time selection (customer taps a link from the scheduling email) ─
+// Route must appear BEFORE /:id/:token to prevent Express matching "alt" as :id.
+router.get('/alt/:quoteId/:token', async function(req, res) {
+  var quote = db.prepare(
+    'SELECT q.*, l.id AS lead_id, l.first_name, l.last_name, l.email AS lead_email '
+    + 'FROM quotes q JOIN leads l ON l.id = q.lead_id WHERE q.id = ?'
+  ).get(req.params.quoteId);
+
+  // Find which alt slot this token matches.
+  var slot = null;
+  if (quote && quote.alt_token1 && quote.alt_token1 === req.params.token) slot = 1;
+  else if (quote && quote.alt_token2 && quote.alt_token2 === req.params.token) slot = 2;
+  else if (quote && quote.alt_token3 && quote.alt_token3 === req.params.token) slot = 3;
+
+  if (!slot) {
+    return res.status(404).send(shell('Link Not Found',
+      '<div class="card" style="text-align:center;">'
+      + '<h1>Link not found</h1>'
+      + '<p>This link may have already been used or is no longer valid.</p>'
+      + '<p class="muted">Call or text us at <a href="tel:+17039774475" style="color:#0a1f3d;font-weight:700;">703-977-4475</a> and we\'ll sort it out.</p>'
+      + '</div>'));
+  }
+
+  var altDate = quote['alt_date' + slot];
+  var altTime = quote['alt_time' + slot];
+  var when = (altDate ? formatPrefDate(altDate) : '') + (altTime ? ' at ' + altTime : '');
+
+  // Update quote: store chosen time, clear alt tokens, reset alt_times_sent.
+  db.prepare(
+    'UPDATE quotes SET pref_date=?, pref_time=?, alt_times_sent=0,'
+    + 'alt_token1=NULL, alt_date1=NULL, alt_time1=NULL,'
+    + 'alt_token2=NULL, alt_date2=NULL, alt_time2=NULL,'
+    + 'alt_token3=NULL, alt_date3=NULL, alt_time3=NULL WHERE id=?'
+  ).run(altDate, altTime, quote.id);
+
+  db.prepare("UPDATE leads SET status='quote_accepted', status_updated_at=datetime('now') WHERE id=?").run(quote.lead_id);
+  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(quote.lead_id, 'Customer selected alternative time', when);
+
+  // Notify admin.
+  if (process.env.SMTP_PASS) {
+    try {
+      var name = quote.first_name + ' ' + quote.last_name;
+      var adminUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host') + '/admin/quote/' + quote.lead_id;
+      var adminHtml = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+        + '<div style="background:#0a1f3d;padding:14px 20px;"><h2 style="color:#6b8ff5;margin:0;font-size:1.1rem;">Customer Selected a Time</h2></div>'
+        + '<div style="padding:20px;">'
+        + '<p style="margin:0 0 14px;color:#444;">' + esc(name) + ' tapped an alternative time from your scheduling email.</p>'
+        + '<p style="font-weight:700;font-size:1.05rem;color:#0a1f3d;margin:0 0 18px;">' + esc(when) + '</p>'
+        + '<div style="text-align:center;">'
+        + '<a href="' + adminUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:12px 28px;border-radius:8px;">Review in Admin</a>'
+        + '</div></div></div>';
+      await transporter().sendMail({
+        from:    '"BK Admin" <greetings@brakeknights.com>',
+        to:      'greetings@brakeknights.com',
+        subject: name + ' selected a time: ' + when,
+        html:    adminHtml
+      });
+    } catch (_) {}
+  }
+
+  return res.send(shell('Time Confirmed',
+    '<div class="card" style="text-align:center;">'
+    + '<div class="check">&#10003;</div>'
+    + '<h1>Got it, ' + esc(quote.first_name) + '!</h1>'
+    + '<p style="margin-bottom:6px;">You selected: <strong>' + esc(when) + '</strong></p>'
+    + '<p>We\'ll review and send a confirmation once the appointment is locked in. You\'ll hear from us shortly.</p>'
+    + '<p class="muted" style="margin-top:16px;">Questions? Call or text <a href="tel:+17039774475" style="color:#0a1f3d;font-weight:700;">703-977-4475</a>.</p>'
+    + '</div>'));
+});
 
 // ─── Calendar file (.ics) ─────────────────────────────────────────────────────
 // Token-protected so it works straight from the confirmation email. Universal:
@@ -269,14 +361,27 @@ router.get('/:id/:token', function(req, res) {
     + '<div class="card">'
     + '<h2>Choose Your Preferred Time</h2>'
     + (totalMinutes(q.service) ? '<p class="muted" style="margin:-6px 0 14px;">This service takes about <strong style="color:#0a1f3d;">' + formatDuration(totalMinutes(q.service)) + '</strong> on site. Please pick a time that allows for it.</p>' : '')
-    + '<form method="POST" action="/quote/' + q.id + '/' + q.accept_token + '/accept">'
-    + '<div class="row2">'
-    + '<div class="form-group"><label>Preferred date</label>'
-    + '<select name="prefDate" required>' + buildDateOptions() + '</select></div>'
-    + '<div class="form-group"><label>Preferred time</label>'
-    + '<select name="prefTime" required>' + buildTimeOptions() + '</select></div>'
+    + '<form method="POST" action="/quote/' + q.id + '/' + q.accept_token + '/accept" id="bkAcceptForm" novalidate>'
+    + '<input type="hidden" name="prefDate" id="bkPrefDate">'
+    + '<input type="hidden" name="prefTime" id="bkPrefTime">'
+
+    // Date picker
+    + '<div class="form-group">'
+    + '<label>Preferred date</label>'
+    + '<div id="bkDateVal" class="bk-date-val placeholder">Select a date below</div>'
+    + '<div class="bk-cal-wrap"><div id="bkCalBox"></div></div>'
+    + '<div id="bkDateErr" class="bk-pick-err">Please select a date.</div>'
     + '</div>'
-    + '<div class="form-group"><label>Service address</label>'
+
+    // Time picker
+    + '<div class="form-group" style="margin-top:18px;">'
+    + '<label>Preferred time</label>'
+    + '<div id="bkTimeVal" class="bk-date-val placeholder">Select a time</div>'
+    + '<div class="bk-time-grid" id="bkTimeGrid"></div>'
+    + '<div id="bkTimeErr" class="bk-pick-err">Please select a time.</div>'
+    + '</div>'
+
+    + '<div class="form-group" style="margin-top:18px;"><label>Service address</label>'
     + '<input type="text" id="prefLocation" name="prefLocation" placeholder="Where should we meet you? Home or work address" autocomplete="off" required></div>'
     + '<div class="form-group"><label>Anything else? <span style="color:#aab;font-weight:400;">(optional)</span></label>'
     + '<textarea name="schedulingNotes" placeholder="Gate codes, second choice of time, parking notes…"></textarea></div>'
@@ -285,27 +390,101 @@ router.get('/:id/:token', function(req, res) {
     + '</form>'
     + '</div>'
     + '<div class="callbar"><span class="muted">Questions first? Call or text </span><a href="tel:+17039774475">703-977-4475</a></div>'
+
     + '<script>'
     + '(function(){'
-    +   'var dateEl=document.querySelector(\'select[name="prefDate"]\');'
-    +   'var timeEl=document.querySelector(\'select[name="prefTime"]\');'
-    +   'if(!dateEl||!timeEl)return;'
-    +   'function capTimes(){'
-    +     'var sel=dateEl.options[dateEl.selectedIndex];'
-    +     'var isSat=sel&&sel.getAttribute("data-wday")==="6";'
-    +     'Array.from(timeEl.options).forEach(function(o){'
-    +       'if(!o.value)return;'
-    +       'var parts=o.value.match(/(\\d+):(\\d+) (AM|PM)/);'
-    +       'if(!parts)return;'
-    +       'var h=parseInt(parts[1]);var m=parseInt(parts[2]);var ap=parts[3];'
-    +       'var h24=(ap==="PM"&&h!==12)?h+12:(ap==="AM"&&h===12)?0:h;'
-    +       'var mins=h24*60+m;'
-    +       'o.disabled=isSat&&mins>15*60;'
-    +       'if(o.disabled&&o.selected){o.selected=false;timeEl.value=""}'
+    +   'var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];'
+    +   'var WDAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];'
+    +   'var TIMES=["Anytime","9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM","12:00 PM","12:30 PM","1:00 PM","1:30 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM","5:00 PM","5:30 PM","6:00 PM"];'
+    +   'var SAT_CUTOFF_MINS=15*60;'
+
+    +   'var today=new Date();today.setHours(0,0,0,0);'
+    +   'var calY=today.getFullYear(),calM=today.getMonth();'
+    +   'var selDate="",selTime="";'
+
+    +   'function isoToDate(iso){var p=iso.split("-");return new Date(+p[0],+p[1]-1,+p[2]);}'
+    +   'function timeMins(t){var m=t.match(/(\\d+):(\\d+)\\s*(AM|PM)/i);if(!m)return -1;'
+    +     'var h=+m[1],mn=+m[2],ap=m[3].toUpperCase();'
+    +     'var h24=(ap==="PM"&&h!==12)?h+12:(ap==="AM"&&h===12)?0:h;return h24*60+mn;}'
+
+    +   'function renderCal(){'
+    +     'var firstDay=new Date(calY,calM,1);'
+    +     'var lastDay=new Date(calY,calM+1,0);'
+    +     'var prevY=calM===0?calY-1:calY,prevM=calM===0?11:calM-1;'
+    +     'var nextY=calM===11?calY+1:calY,nextM=calM===11?0:calM+1;'
+    +     'var prevDisabled=(prevY<today.getFullYear()||(prevY===today.getFullYear()&&prevM<today.getMonth()));'
+    +     'var html=\'<div class="bk-cal-hdr">\''
+    +       '+\'<button type="button" class="bk-cal-nav" onclick="bkPrevM()"\'+( prevDisabled?\' disabled\':\'\')+ \'>&#8592;</button>\''
+    +       '+\'<span>\'+MONTHS[calM]+\' \'+calY+\'</span>\''
+    +       '+\'<button type="button" class="bk-cal-nav" onclick="bkNextM()">&#8594;</button>\''
+    +       '+\'</div><div class="bk-cal-grid">\';'
+    +     '["Su","Mo","Tu","We","Th","Fr","Sa"].forEach(function(d,i){'
+    +       'html+=\'<div class="bk-dh\'+(i===0?\' sun\':\'\')+\'">\'+ d +\'</div>\';'
     +     '});'
+    +     'for(var pad=0;pad<firstDay.getDay();pad++)html+=\'<div></div>\';'
+    +     'for(var d=1;d<=lastDay.getDate();d++){'
+    +       'var dt=new Date(calY,calM,d);'
+    +       'var iso=calY+"-"+String(calM+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");'
+    +       'var isSun=dt.getDay()===0,isPast=dt<today,isSel=iso===selDate,isToday=dt.getTime()===today.getTime();'
+    +       'var cls="bk-day";'
+    +       'if(!isSun&&!isPast)cls+=" avail";'
+    +       'if(isSel)cls+=" sel";'
+    +       'if(isToday&&!isPast)cls+=" today";'
+    +       'var click=(!isSun&&!isPast)?\' onclick="bkPickDate(\\\'"+iso+"\\\')"\':\'\';'
+    +       'html+=\'<div class="\'+cls+\'"\'+click+\'>\'+d+\'</div>\';'
+    +     '}'
+    +     'html+=\'</div>\';'
+    +     'document.getElementById("bkCalBox").innerHTML=html;'
     +   '}'
-    +   'dateEl.addEventListener("change",capTimes);'
-    +   'capTimes();'
+
+    +   'function renderTimes(){'
+    +     'var isSat=selDate&&isoToDate(selDate).getDay()===6;'
+    +     'var html=TIMES.map(function(t){'
+    +       'var isOff=isSat&&t!=="Anytime"&&timeMins(t)>SAT_CUTOFF_MINS;'
+    +       'var isSel=t===selTime;'
+    +       'var cls="bk-tb"+(isSel?" sel":"")+(isOff?" off":"");'
+    +       'var click=isOff?"":\' onclick="bkPickTime(\\\'"+t+"\\\')"\';\''
+    +       'return \'<button type="button" class="\'+cls+\'"\'+click+\'>\'+t+\'</button>\';'
+    +     '}).join("");'
+    +     'document.getElementById("bkTimeGrid").innerHTML=html;'
+    +   '}'
+
+    +   'function bkPickDate(iso){'
+    +     'selDate=iso;'
+    +     'document.getElementById("bkPrefDate").value=iso;'
+    +     'var dt=isoToDate(iso);'
+    +     'document.getElementById("bkDateVal").textContent=WDAYS[dt.getDay()]+", "+MONTHS[dt.getMonth()]+" "+dt.getDate()+", "+dt.getFullYear();'
+    +     'document.getElementById("bkDateVal").classList.remove("placeholder");'
+    +     'document.getElementById("bkDateErr").style.display="none";'
+    +     'if(selTime&&dt.getDay()===6&&timeMins(selTime)>SAT_CUTOFF_MINS){'
+    +       'selTime="";document.getElementById("bkPrefTime").value="";'
+    +       'document.getElementById("bkTimeVal").textContent="Select a time";'
+    +       'document.getElementById("bkTimeVal").classList.add("placeholder");'
+    +     '}'
+    +     'renderCal();renderTimes();'
+    +   '}'
+
+    +   'function bkPickTime(t){'
+    +     'selTime=t;'
+    +     'document.getElementById("bkPrefTime").value=t;'
+    +     'document.getElementById("bkTimeVal").textContent=t;'
+    +     'document.getElementById("bkTimeVal").classList.remove("placeholder");'
+    +     'document.getElementById("bkTimeErr").style.display="none";'
+    +     'renderTimes();'
+    +   '}'
+
+    +   'window.bkPickDate=bkPickDate;window.bkPickTime=bkPickTime;'
+    +   'window.bkPrevM=function(){calM--;if(calM<0){calM=11;calY--;}renderCal();};'
+    +   'window.bkNextM=function(){calM++;if(calM>11){calM=0;calY++;}renderCal();};'
+
+    +   'document.getElementById("bkAcceptForm").addEventListener("submit",function(e){'
+    +     'var ok=true;'
+    +     'if(!selDate){document.getElementById("bkDateErr").style.display="block";ok=false;}'
+    +     'if(!selTime){document.getElementById("bkTimeErr").style.display="block";ok=false;}'
+    +     'if(!ok)e.preventDefault();'
+    +   '});'
+
+    +   'renderCal();renderTimes();'
     + '})();'
     + '</script>'
     + addressAutocomplete;
