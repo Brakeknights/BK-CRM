@@ -72,6 +72,13 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// The trailing-slash stripper causes a redirect loop for directory index files
+// (express.static redirects /blog → /blog/, stripper strips it back → loop).
+// Explicit routes for directories with index files avoid this.
+app.get('/blog', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'blog', 'index.html'));
+});
+
 app.get('/api/square/verify', async (req, res) => {
   const result = await verifyConnection();
   const ok = result.customers === 'ok' && result.bookings === 'ok';
