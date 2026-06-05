@@ -75,6 +75,14 @@ db.exec(`
     office_notes    TEXT
   );
 
+  -- Phase 7B: Quick Quote drafts. Saved form state the owner can come back to.
+  CREATE TABLE IF NOT EXISTS quick_drafts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    label      TEXT NOT NULL DEFAULT 'Untitled',
+    form_data  TEXT NOT NULL
+  );
+
   -- Phase 6 foundation: timed follow-up reminders created from receipt advisories.
   -- recipient is 'owner', 'customer', or 'both'. The daily cron in server.js fires
   -- the email(s) on/after due_date and flips sent = 1.

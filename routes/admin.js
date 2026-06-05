@@ -2132,6 +2132,32 @@ router.get('/quick', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(PRICING.services);
   var taxPct = +(PRICING.taxRate * 100).toFixed(2);
 
+  // Drafts list
+  var allDrafts = db.prepare('SELECT id, label, created_at FROM quick_drafts ORDER BY id DESC').all();
+
+  // Load a specific draft when ?draft=:id
+  var draftJson = 'null';
+  if (req.query.draft) {
+    var draftRow = db.prepare('SELECT form_data FROM quick_drafts WHERE id = ?').get(req.query.draft);
+    if (draftRow) draftJson = draftRow.form_data;
+  }
+
+  var draftsHtml = allDrafts.length
+    ? '<div class="card" style="margin-bottom:12px;">'
+      + '<div class="section-title" style="margin-bottom:10px;">Saved Drafts</div>'
+      + allDrafts.map(function(d) {
+          return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0;">'
+            + '<div><div style="font-size:0.88rem;font-weight:600;color:#0a1f3d;">' + esc(d.label) + '</div>'
+            + '<div style="font-size:0.78rem;color:#aaa;">' + timeAgo(d.created_at) + '</div></div>'
+            + '<div style="display:flex;gap:6px;flex-shrink:0;">'
+            + '<a href="/admin/quick?draft=' + d.id + '" class="btn btn-navy btn-sm" style="width:auto;padding:6px 12px;font-size:0.8rem;">Load</a>'
+            + '<form method="POST" action="/admin/quick/draft/' + d.id + '/delete" style="margin:0;" onsubmit="return confirm(\'Delete this draft?\');">'
+            + '<button type="submit" class="btn btn-sm" style="width:auto;padding:6px 10px;font-size:0.8rem;background:#fff;border:1.5px solid #e0c0c0;color:#c0392b;">Delete</button>'
+            + '</form></div></div>';
+        }).join('')
+      + '</div>'
+    : '';
+
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
         return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
@@ -2148,11 +2174,13 @@ router.get('/quick', requireAuth, function(req, res) {
   advisoryRows += '<button type="button" id="qqAddAdvBtn" class="svc-clear-btn" style="margin-top:6px;" onclick="qqAddAdvisory()">+ Add Advisory</button>';
 
   var alert = '';
-  if (req.query.err === 'name')  alert = '<div class="alert alert-error">First and last name are required to save or send.</div>';
-  if (req.query.err === 'email') alert = '<div class="alert alert-error">An email address is required to send a quote or receipt. Use the copyable link instead, or add an email.</div>';
+  if (req.query.err === 'name')    alert = '<div class="alert alert-error">First and last name are required to save or send.</div>';
+  if (req.query.err === 'email')   alert = '<div class="alert alert-error">An email address is required to send a quote or receipt. Use the copyable link instead, or add an email.</div>';
+  if (req.query.msg === 'draft_saved') alert = '<div class="alert alert-success">Draft saved. Load it any time from the Saved Drafts list above.</div>';
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + alert
+    + draftsHtml
     + '<div class="card">'
     + '<div class="lead-name" style="margin-bottom:4px;">Quick Quote / Receipt</div>'
     + '<div style="color:#888;font-size:0.85rem;">A standalone generator for phone and text inquiries. Pick services, read the live total off to the customer, then send, save, or grab a copyable link.</div>'
@@ -2193,6 +2221,11 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<button type="button" class="svc-clear-btn" onclick="qClearServices()">&#10005; Clear selection</button>'
     + '<div class="svc-tags" id="qsvcTags"></div>'
     + '<div id="qCustomHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
+    + '<div class="form-group" style="margin:14px 0 6px;">'
+    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
+    + '<input type="text" id="qCustomSvc" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" oninput="qOnCustomSvc()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
+    + '<div id="qCustomSvcHint" style="display:none;font-size:0.82rem;color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;margin-top:6px;">Custom service added to the quote. Enter its parts and labor costs in the price fields below.</div>'
+    + '</div>'
     + '<div class="form-group" style="margin:14px 0 0;"><label>Tier</label>'
     + '<div class="tier-toggle">'
     + '<button type="button" class="tier-btn active" id="qBtnStd" onclick="qSetTier(\'standard\')">Standard</button>'
@@ -2263,15 +2296,18 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</div>'
     + '<button type="button" id="qPreviewBtn" class="btn btn-outline" style="margin-top:8px;" onclick="qPreview()">Preview Email</button>'
     + '<div id="qPreviewBox" style="display:none;margin-top:8px;"></div>'
+    + '<button type="button" class="btn btn-outline" style="margin-top:8px;border-color:#aaa;color:#555;" onclick="qSaveDraft()">&#128190; Save Draft</button>'
     + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="if(confirm(\'Clear the form and start over? Nothing will be saved.\'))qClearAll()">&#10005; Clear &amp; Start Over</button>'
     + '</div>'
     + '</form>'
 
     + '<script>'
     + 'var QPRICING=' + pricingJson + ';'
+    + 'var QDRAFT=' + draftJson + ';'
     + 'var qtier="standard";var qmode="quote";'
 
     + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
+    + 'function qCustomSvcVal(){var el=document.getElementById("qCustomSvc");return el?el.value.trim():"";}'
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
 
     + 'function qSetMode(m){'
@@ -2297,14 +2333,32 @@ router.get('/quick', requireAuth, function(req, res) {
     + '}'
 
     + 'function qRenderTags(){'
-    +   'document.getElementById("qsvcTags").innerHTML=qCheckedServices().map(function(n){'
+    +   'var tags=qCheckedServices().map(function(n){'
     +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
-    +   '}).join("");'
+    +   '});'
+    +   'var cv=qCustomSvcVal();'
+    +   'if(cv)tags.push("<span class=\'svc-tag\' style=\'background:#e07000;\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qClearCustomSvc()\'>&#10005;</button>"+cv+" <em style=\'opacity:.8;font-style:normal;font-size:0.72rem;\'>(custom)</em></span>");'
+    +   'document.getElementById("qsvcTags").innerHTML=tags.join("");'
     + '}'
     + 'function qRemoveTag(btn){'
     +   'var val=btn.getAttribute("data-val");'
     +   'var cb=Array.from(document.querySelectorAll(".qsvc-cb")).find(function(c){return c.value===val;});'
     +   'if(cb)cb.checked=false;qUpdateServices();'
+    + '}'
+    + 'function qClearCustomSvc(){'
+    +   'var el=document.getElementById("qCustomSvc");if(el)el.value="";'
+    +   'document.getElementById("qCustomSvcHint").style.display="none";'
+    +   'qUpdateFullService();'
+    + '}'
+    + 'function qOnCustomSvc(){'
+    +   'var cv=qCustomSvcVal();'
+    +   'document.getElementById("qCustomSvcHint").style.display=cv?"block":"none";'
+    +   'qUpdateFullService();qSaveState();'
+    + '}'
+    + 'function qUpdateFullService(){'
+    +   'var all=qCheckedServices().slice();var cv=qCustomSvcVal();if(cv)all.push(cv);'
+    +   'document.getElementById("qsvcHidden").value=all.join(", ");'
+    +   'qRenderTags();'
     + '}'
     + 'function qClearServices(){'
     +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;});qUpdateServices();'
@@ -2313,10 +2367,11 @@ router.get('/quick', requireAuth, function(req, res) {
     // Auto-fill the price fields from the pricing table for the checked services + tier.
     + 'function qAutofill(){'
     +   'var names=qCheckedServices();'
-    +   'document.getElementById("qsvcHidden").value=names.join(", ");'
-    +   'if(names.length===0){'
+    +   'qUpdateFullService();'
+    +   'if(names.length===0&&!qCustomSvcVal()){'
     +     'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";qcalc();return;'
     +   '}'
+    +   'if(names.length===0){qcalc();return;}'
     +   'var parts=0,labor=0,ss=0;'
     +   'names.forEach(function(s){var sv=QPRICING[s];if(!sv)return;var p=sv[qtier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
     +   'document.getElementById("qparts").value=parts.toFixed(2);'
@@ -2403,6 +2458,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qfn").value="";document.getElementById("qln").value="";'
     +   'document.getElementById("qem").value="";document.getElementById("qph").value="";'
     +   'var veh=document.getElementById("qveh");if(veh)veh.value="";'
+    +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
+    +   'document.getElementById("qCustomSvcHint").style.display="none";'
     +   'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";'
     +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
     +   'var offN=document.querySelector("[name=officeNotes]");if(offN)offN.value="";'
@@ -2437,6 +2494,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'ph:document.getElementById("qph").value,'
     +       'veh:(document.getElementById("qveh")||{}).value||"",'
     +       'svcs:qCheckedServices(),'
+    +       'customSvc:qCustomSvcVal(),'
     +       'parts:document.getElementById("qparts").value,'
     +       'labor:document.getElementById("qlabor").value,'
     +       'ss:document.getElementById("qss").value,'
@@ -2452,8 +2510,9 @@ router.get('/quick', requireAuth, function(req, res) {
     + '}'
     + 'function qRestoreState(){'
     +   'try{'
-    +     'var raw=localStorage.getItem("bk_qq_state");if(!raw)return;'
-    +     'var s=JSON.parse(raw);if(!s)return;'
+    +     'var s=QDRAFT;'
+    +     'if(!s){var raw=localStorage.getItem("bk_qq_state");if(!raw)return;s=JSON.parse(raw);}'
+    +     'if(!s)return;'
     +     'if(s.mode)qSetMode(s.mode);'
     +     'if(s.tier)qSetTier(s.tier);'
     +     'if(s.fn)document.getElementById("qfn").value=s.fn;'
@@ -2462,6 +2521,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(s.ph)document.getElementById("qph").value=s.ph;'
     +     'if(s.veh&&document.getElementById("qveh"))document.getElementById("qveh").value=s.veh;'
     +     'if(s.svcs&&s.svcs.length)document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});'
+    +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
     +     'if(s.parts!==undefined)document.getElementById("qparts").value=s.parts;'
     +     'if(s.labor!==undefined)document.getElementById("qlabor").value=s.labor;'
     +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
@@ -2480,8 +2540,14 @@ router.get('/quick', requireAuth, function(req, res) {
     +     '});'
     +     'var allVis=[2,3,4].every(function(i){var r=document.getElementById("advRow"+i);return !r||r.style.display!=="none";});'
     +     'if(allVis){var ab=document.getElementById("qqAddAdvBtn");if(ab)ab.style.display="none";}'
-    +     'qUpdateServices();qPayToggle();qcalc();'
+    +     'qUpdateFullService();qHints();qPayToggle();qcalc();'
     +   '}catch(_){}'
+    + '}'
+
+    + 'function qSaveDraft(){'
+    +   'qSaveState();'
+    +   'document.getElementById("qaction").value="draft_save";'
+    +   'document.getElementById("qqf").submit();'
     + '}'
 
     + 'function qSubmit(action){'
@@ -2537,6 +2603,34 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var email     = (req.body.email     || '').trim() || null;
   var phone     = (req.body.phone     || '').trim();
   var vehicle   = (req.body.vehicle   || '').trim() || null;
+
+  // Save Draft: persist form state to quick_drafts, no lead created, no validation.
+  if (action === 'draft_save') {
+    var customSvcD = (req.body.customService || '').trim();
+    var serviceD   = (req.body.service || '').trim();
+    var allSvcsD   = serviceD ? serviceD.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+    var presetSvcsD = allSvcsD.filter(function(s){ return !!PRICING.services[s]; });
+    var draftLabel = (firstName || lastName) ? (firstName + ' ' + lastName).trim() : 'Untitled';
+    var firstSvcD  = allSvcsD[0] || '';
+    if (firstSvcD) draftLabel += ' - ' + firstSvcD.substring(0, 28);
+    var draftData = {
+      mode: mode, tier: req.body.tier === 'premium' ? 'premium' : 'standard',
+      fn: firstName, ln: lastName, em: email || '', ph: phone, veh: vehicle || '',
+      svcs: presetSvcsD, customSvc: customSvcD,
+      parts: req.body.parts || '0.00', labor: req.body.labor || '0.00',
+      ss: req.body.shopSupplies || '0.00',
+      tr: req.body.taxRate || String(+(PRICING.taxRate * 100).toFixed(2)),
+      payMethod: req.body.paymentMethod || '', payOther: req.body.paymentOther || '',
+      svcDate: req.body.serviceDate || '', svcAddr: req.body.serviceAddress || '',
+      offNotes: req.body.officeNotes || '',
+      adv: [1,2,3,4].map(function(i) {
+        return { note: req.body['custNote'+i]||'', recv: req.body['fuRecipient'+i]||'owner', cust: req.body['fuCustom'+i]||'' };
+      })
+    };
+    db.prepare("INSERT INTO quick_drafts (label, form_data) VALUES (?, ?)").run(draftLabel, JSON.stringify(draftData));
+    return res.redirect('/admin/quick?msg=draft_saved');
+  }
+
   if (!firstName || !lastName) return res.redirect('/admin/quick?err=name');
 
   var isSend = (action === 'quote_send' || action === 'receipt_send');
@@ -2658,6 +2752,11 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
   logHistory(leadId, 'Receipt saved (not emailed)', receiptDetail);
   res.redirect('/admin/quote/' + leadId + '?msg=receipt_saved');
+});
+
+router.post('/quick/draft/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  db.prepare('DELETE FROM quick_drafts WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/quick');
 });
 
 module.exports = router;
