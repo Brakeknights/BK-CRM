@@ -106,6 +106,16 @@ addQuoteCol('scheduling_notes',    'TEXT');
 addQuoteCol('quote_followup_sent', 'INTEGER DEFAULT 0');
 addQuoteCol('reminder_24h_sent',   'INTEGER DEFAULT 0');
 addQuoteCol('reminder_2h_sent',    'INTEGER DEFAULT 0');
+addQuoteCol('alt_times_sent',      'INTEGER DEFAULT 0');
+addQuoteCol('alt_token1',          'TEXT');
+addQuoteCol('alt_date1',           'TEXT');
+addQuoteCol('alt_time1',           'TEXT');
+addQuoteCol('alt_token2',          'TEXT');
+addQuoteCol('alt_date2',           'TEXT');
+addQuoteCol('alt_time2',           'TEXT');
+addQuoteCol('alt_token3',          'TEXT');
+addQuoteCol('alt_date3',           'TEXT');
+addQuoteCol('alt_time3',           'TEXT');
 
 const leadCols = db.prepare("PRAGMA table_info(leads)").all().map(c => c.name);
 const addLeadCol = (name, def) => {

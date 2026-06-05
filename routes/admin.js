@@ -226,9 +226,16 @@ function schedulingPanel(lead, quote, compact) {
       + '</div>';
   }
   if (lead.status !== 'quote_accepted') return '';
+  // Alternatives were sent and the customer hasn't responded yet: show waiting state.
+  if (quote.alt_times_sent) {
+    return '<div style="background:#fff8e1;border:1px solid #f0d080;border-left:4px solid #e07000;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
+      + '<div style="font-weight:700;color:#7a5a00;font-size:0.9rem;margin-bottom:4px;">Alternative Times Sent</div>'
+      + '<div style="font-size:0.85rem;color:#7a5a00;line-height:1.5;">Waiting for the customer to select a time from the options you sent. The Approve button will reappear once they choose.</div>'
+      + '</div>';
+  }
   return '<div style="background:#e3f0ff;border:1px solid #b9d4f5;border-left:4px solid #4169e1;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
     + '<div style="font-weight:700;color:#0a1f3d;font-size:0.9rem;margin-bottom:8px;">Requested Appointment</div>'
-    + '<div style="font-size:0.88rem;color:#1a2a3a;">' + esc(fmtPrefDate(quote.pref_date)) + ' at <strong>' + esc(quote.pref_time || '—') + '</strong></div>'
+    + '<div style="font-size:0.88rem;color:#1a2a3a;">' + esc(fmtPrefDate(quote.pref_date)) + ' at <strong>' + esc(quote.pref_time || 'time TBD') + '</strong></div>'
     + (quote.pref_location ? '<div style="font-size:0.83rem;color:#666;margin-top:2px;">' + esc(quote.pref_location) + '</div>' : '')
     + (quote.scheduling_notes ? '<div style="font-size:0.82rem;color:#666;font-style:italic;margin-top:4px;">' + esc(quote.scheduling_notes) + '</div>' : '')
     + '<div style="display:flex;gap:8px;margin-top:12px;">'
@@ -553,6 +560,40 @@ router.get('/square-info', requireAuth, async function(req, res) {
   res.type('json').send(JSON.stringify(out, null, 2));
 });
 
+// ─── Alt-time date/time option builders (for deny-schedule form) ─────────────
+
+var ALT_WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+var ALT_MONTHS   = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function buildAltDateOptions() {
+  var opts = '<option value="" disabled selected>Select a day...</option>';
+  var d = new Date();
+  d.setHours(0, 0, 0, 0);
+  for (var added = 0, days = 0; added < 35 && days < 60; days++) {
+    var day = new Date(d.getTime() + days * 86400000);
+    if (day.getDay() === 0) continue;
+    var iso = day.getFullYear() + '-'
+      + String(day.getMonth() + 1).padStart(2, '0') + '-'
+      + String(day.getDate()).padStart(2, '0');
+    opts += '<option value="' + iso + '">' + ALT_WEEKDAYS[day.getDay()] + ', ' + ALT_MONTHS[day.getMonth()] + ' ' + day.getDate() + '</option>';
+    added++;
+  }
+  return opts;
+}
+
+function buildAltTimeOptions() {
+  var opts = '<option value="" disabled selected>Select a time...</option>';
+  for (var mins = 9 * 60; mins <= 18 * 60; mins += 30) {
+    var h24 = Math.floor(mins / 60);
+    var m = mins % 60;
+    var ampm = h24 < 12 ? 'AM' : 'PM';
+    var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    var label = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+    opts += '<option value="' + label + '">' + label + '</option>';
+  }
+  return opts;
+}
+
 // ─── Approve / deny scheduling ────────────────────────────────────────────────
 
 router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) {
@@ -562,7 +603,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
   if (!quote) return res.redirect('/admin/quote/' + lead.id + '?msg=no_accepted_quote');
 
   db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
-  logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ' — ' + quote.pref_location : ''));
+  logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ', ' + quote.pref_location : ''));
 
   // Square calendar booking
   try {
@@ -667,11 +708,14 @@ router.get('/quote/:id/deny-schedule', requireAuth, function(req, res) {
     + '<p style="font-size:0.87rem;color:#555;line-height:1.55;margin-bottom:16px;">Enter up to 3 alternatives below. The customer will be asked to choose whichever works best, or reply if none do.</p>'
     + '<form method="POST" action="/admin/quote/' + lead.id + '/deny-schedule">'
     + [1,2,3].map(function(n) {
-        return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'
-          + '<span style="font-size:0.8rem;color:#888;font-weight:600;min-width:58px;">Option ' + n + '</span>'
-          + '<input type="date" name="altDate' + n + '" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.85rem;color:#1a2a3a;">'
-          + '<input type="text" name="altTime' + n + '" placeholder="e.g. 10:00 AM" style="padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.85rem;flex:1;min-width:90px;">'
-          + '</div>';
+        var dateOpts = buildAltDateOptions();
+        var timeOpts = buildAltTimeOptions();
+        return '<div style="margin-bottom:12px;">'
+          + '<div style="font-size:0.8rem;color:#888;font-weight:600;margin-bottom:5px;">Option ' + n + '</div>'
+          + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+          + '<select name="altDate' + n + '" style="flex:1;min-width:160px;padding:8px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.85rem;background:#fff;color:#1a2a3a;">' + dateOpts + '</select>'
+          + '<select name="altTime' + n + '" style="flex:1;min-width:130px;padding:8px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.85rem;background:#fff;color:#1a2a3a;">' + timeOpts + '</select>'
+          + '</div></div>';
       }).join('')
     + '<div style="margin-top:16px;display:flex;gap:8px;">'
     + '<button type="submit" class="btn btn-blue" style="flex:1;">Send to Customer</button>'
@@ -692,28 +736,49 @@ router.post('/quote/:id/deny-schedule', requireAuth, express.urlencoded({ extend
   for (var i = 1; i <= 3; i++) {
     var d = (req.body['altDate' + i] || '').trim();
     var t = (req.body['altTime' + i] || '').trim();
-    if (d || t) alts.push({ date: d, time: t });
+    if (d || t) alts.push({ date: d, time: t, token: crypto.randomBytes(20).toString('hex') });
+  }
+
+  // Store alt tokens + dates + times on the quote so the customer's tap can be validated.
+  if (quote) {
+    var upd = db.prepare(
+      'UPDATE quotes SET alt_times_sent=1,'
+      + 'alt_token1=?,alt_date1=?,alt_time1=?,'
+      + 'alt_token2=?,alt_date2=?,alt_time2=?,'
+      + 'alt_token3=?,alt_date3=?,alt_time3=? WHERE id=?'
+    );
+    upd.run(
+      alts[0] ? alts[0].token : null, alts[0] ? alts[0].date : null, alts[0] ? alts[0].time : null,
+      alts[1] ? alts[1].token : null, alts[1] ? alts[1].date : null, alts[1] ? alts[1].time : null,
+      alts[2] ? alts[2].token : null, alts[2] ? alts[2].date : null, alts[2] ? alts[2].time : null,
+      quote.id
+    );
   }
 
   if (process.env.SMTP_PASS && lead.email) {
     try {
-      var altHtml = alts.length
-        ? '<div style="margin:16px 0;">'
+      var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+      var altHtml = '';
+      if (alts.length) {
+        altHtml = '<div style="margin:20px 0;">'
+          + '<p style="font-size:0.85rem;color:#888;margin:0 0 10px;">Tap the time that works best for you:</p>'
           + alts.map(function(a, idx) {
               var when = (a.date ? fmtPrefDate(a.date) : '') + (a.time ? ' at ' + a.time : '');
-              return '<div style="padding:9px 14px;background:#f4f7fb;border-radius:7px;margin-bottom:7px;font-size:0.92rem;color:#1a2a3a;font-weight:600;">'
-                + (idx + 1) + '. ' + esc(when) + '</div>';
+              var link = quote ? (baseUrl + '/quote/alt/' + quote.id + '/' + a.token) : '';
+              return '<a href="' + esc(link) + '" style="display:block;padding:14px 18px;background:#4169e1;color:#fff;border-radius:9px;margin-bottom:10px;font-size:0.95rem;font-weight:700;text-align:center;text-decoration:none;">'
+                + (idx + 1) + '. ' + esc(when) + '</a>';
             }).join('')
-          + '</div>'
-        : '';
+          + '<p style="font-size:0.82rem;color:#888;margin:10px 0 0;">If none of these times work, just reply to this email and we\'ll find one that does.</p>'
+          + '</div>';
+      }
       var bodyText = alts.length
-        ? 'We\'re sorry, the time you requested isn\'t available. Here are a few options that may work for you. Please let us know which one fits best, or if none of these work for you, just reply and we\'ll find a time that does.'
+        ? 'We\'re sorry, the time you requested isn\'t available. Here are a few options that work on our end. Tap the one that works for you and we\'ll lock it in.'
         : 'We\'re sorry, the time you requested isn\'t available. Please reply with your availability and we\'ll work with you to find a time that fits your schedule.';
       var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
       var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
         + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
         + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
-        + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p></div>'
+        + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service, Northern Virginia</p></div>'
         + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
         + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Greetings ' + esc(lead.first_name) + ',</h2>'
         + '<p style="color:#444;line-height:1.6;margin:0 0 4px;">' + bodyText + '</p>'
@@ -723,7 +788,7 @@ router.post('/quote/:id/deny-schedule', requireAuth, express.urlencoded({ extend
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, replyTo: 'greetings@brakeknights.com', subject: 'Scheduling update — Brake Knights', html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, replyTo: 'greetings@brakeknights.com', subject: 'Scheduling update from Brake Knights', html });
     } catch (err) { console.error('Deny schedule email error:', err.message); }
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=denied');
@@ -1127,7 +1192,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<input type="hidden" name="lineItems" id="lineItemsVal" value="combined">'
     + '<div class="price-row" id="liCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
     + '<div class="price-row" id="liPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="partsOnlyDisplay">$' + money(q.price_parts || 0) + '</span></div>'
-    + '<div class="price-row" id="liLaborRow" style="display:none;"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span><span id="laborOnlyDisplay">$' + money(q.price_labor || 0) + '</span></div>'
+    + '<div class="price-row" id="liLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="laborOnlyDisplay">$' + money(q.price_labor || 0) + '</span></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + money(q.shop_supplies) + '</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + money(q.tax) + '</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
@@ -1380,6 +1445,23 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
 // ─── Quote email (Phase 3C upgrades this to fully branded template) ───────────
 
+// Returns the warranty paragraph for a given service string (comma-separated names).
+// Rotors/drums: full parts + labor warranty.
+// Pads/shoes only: labor warranty (pads wear; no parts warranty).
+// Inspection or fluid flush only: no warranty clause.
+function buildWarrantyClause(service) {
+  var svcs = String(service || '').split(',').map(function(s) { return s.trim().toLowerCase(); });
+  if (!svcs.length) return '';
+  var allNoWarranty = svcs.every(function(s) { return /inspection|fluid/i.test(s); });
+  if (allNoWarranty) return '';
+  var partsQuality = 'All parts are <strong>premium quality, meeting or exceeding OEM manufacturer specifications</strong>.';
+  var hasRotorsOrDrums = svcs.some(function(s) { return /rotor|drum/i.test(s); });
+  if (hasRotorsOrDrums) {
+    return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>';
+  }
+  return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
+}
+
 function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems) {
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
@@ -1418,7 +1500,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
           + '<p style="color:#888;font-size:0.82rem;margin:12px 0 0;">You&rsquo;ll pick a preferred day and time. We&rsquo;ll confirm it or reach out about other openings.</p>'
           + '</div>'
         : '')
-    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">This quote includes all parts and labor. All parts are <strong>premium quality, meeting or exceeding OEM manufacturer specifications</strong>. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>'
+    + buildWarrantyClause(service)
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
     + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'

@@ -193,6 +193,76 @@ function loadQuote(id, token) {
   return q;
 }
 
+// ─── Alternative time selection (customer taps a link from the scheduling email) ─
+// Route must appear BEFORE /:id/:token to prevent Express matching "alt" as :id.
+router.get('/alt/:quoteId/:token', async function(req, res) {
+  var quote = db.prepare(
+    'SELECT q.*, l.id AS lead_id, l.first_name, l.last_name, l.email AS lead_email '
+    + 'FROM quotes q JOIN leads l ON l.id = q.lead_id WHERE q.id = ?'
+  ).get(req.params.quoteId);
+
+  // Find which alt slot this token matches.
+  var slot = null;
+  if (quote && quote.alt_token1 && quote.alt_token1 === req.params.token) slot = 1;
+  else if (quote && quote.alt_token2 && quote.alt_token2 === req.params.token) slot = 2;
+  else if (quote && quote.alt_token3 && quote.alt_token3 === req.params.token) slot = 3;
+
+  if (!slot) {
+    return res.status(404).send(shell('Link Not Found',
+      '<div class="card" style="text-align:center;">'
+      + '<h1>Link not found</h1>'
+      + '<p>This link may have already been used or is no longer valid.</p>'
+      + '<p class="muted">Call or text us at <a href="tel:+17039774475" style="color:#0a1f3d;font-weight:700;">703-977-4475</a> and we\'ll sort it out.</p>'
+      + '</div>'));
+  }
+
+  var altDate = quote['alt_date' + slot];
+  var altTime = quote['alt_time' + slot];
+  var when = (altDate ? formatPrefDate(altDate) : '') + (altTime ? ' at ' + altTime : '');
+
+  // Update quote: store chosen time, clear alt tokens, reset alt_times_sent.
+  db.prepare(
+    'UPDATE quotes SET pref_date=?, pref_time=?, alt_times_sent=0,'
+    + 'alt_token1=NULL, alt_date1=NULL, alt_time1=NULL,'
+    + 'alt_token2=NULL, alt_date2=NULL, alt_time2=NULL,'
+    + 'alt_token3=NULL, alt_date3=NULL, alt_time3=NULL WHERE id=?'
+  ).run(altDate, altTime, quote.id);
+
+  db.prepare("UPDATE leads SET status='quote_accepted', status_updated_at=datetime('now') WHERE id=?").run(quote.lead_id);
+  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(quote.lead_id, 'Customer selected alternative time', when);
+
+  // Notify admin.
+  if (process.env.SMTP_PASS) {
+    try {
+      var name = quote.first_name + ' ' + quote.last_name;
+      var adminUrl = 'https://brakeknights.com/admin/quote/' + quote.lead_id;
+      var adminHtml = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+        + '<div style="background:#0a1f3d;padding:14px 20px;"><h2 style="color:#6b8ff5;margin:0;font-size:1.1rem;">Customer Selected a Time</h2></div>'
+        + '<div style="padding:20px;">'
+        + '<p style="margin:0 0 14px;color:#444;">' + esc(name) + ' tapped an alternative time from your scheduling email.</p>'
+        + '<p style="font-weight:700;font-size:1.05rem;color:#0a1f3d;margin:0 0 18px;">' + esc(when) + '</p>'
+        + '<div style="text-align:center;">'
+        + '<a href="' + adminUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:12px 28px;border-radius:8px;">Review in Admin</a>'
+        + '</div></div></div>';
+      await transporter().sendMail({
+        from:    '"BK Admin" <greetings@brakeknights.com>',
+        to:      'greetings@brakeknights.com',
+        subject: name + ' selected a time: ' + when,
+        html:    adminHtml
+      });
+    } catch (_) {}
+  }
+
+  return res.send(shell('Time Confirmed',
+    '<div class="card" style="text-align:center;">'
+    + '<div class="check">&#10003;</div>'
+    + '<h1>Got it, ' + esc(quote.first_name) + '!</h1>'
+    + '<p style="margin-bottom:6px;">You selected: <strong>' + esc(when) + '</strong></p>'
+    + '<p>We\'ll review and send a confirmation once the appointment is locked in. You\'ll hear from us shortly.</p>'
+    + '<p class="muted" style="margin-top:16px;">Questions? Call or text <a href="tel:+17039774475" style="color:#0a1f3d;font-weight:700;">703-977-4475</a>.</p>'
+    + '</div>'));
+});
+
 // ─── Calendar file (.ics) ─────────────────────────────────────────────────────
 // Token-protected so it works straight from the confirmation email. Universal:
 // adds the appointment on Apple Calendar, Google Calendar, and Outlook.
