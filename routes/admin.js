@@ -394,6 +394,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .svc-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;min-height:0;}
 .svc-tag{display:inline-flex;align-items:center;gap:5px;background:#4169e1;color:#fff;border-radius:20px;padding:4px 12px 4px 10px;font-size:0.78rem;font-weight:600;}
 .svc-tag-x{cursor:pointer;font-size:0.9rem;line-height:1;opacity:.8;border:none;background:none;color:#fff;padding:0;}
+#deleteModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;}
+#deleteModal.active{display:flex;}
+#deleteModalBox{background:#fff;border-radius:12px;padding:28px 24px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.28);}
+#deleteModalTitle{font-size:1.1rem;font-weight:700;color:#0a1f3d;margin-bottom:8px;}
+#deleteModalName{font-size:0.95rem;color:#444;margin-bottom:8px;}
+#deleteModalWarn{font-size:0.82rem;color:#c0392b;font-weight:600;margin-bottom:20px;}
+#deleteModalBtns{display:flex;gap:10px;}
+#deleteModalBtns button{flex:1;padding:11px;border-radius:8px;font-weight:700;font-size:0.92rem;cursor:pointer;}
+#deleteModalCancel{border:1.5px solid #dde3ea;background:#fff;color:#444;}
+#deleteModalConfirm{border:none;background:#c0392b;color:#fff;}
 `;
 
 function page(title, body, req) {
@@ -431,7 +441,22 @@ function page(title, body, req) {
     + nav
     + '</div>'
     + '<div class="wrap">' + body + '</div>'
-    + '<script>function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}</script>'
+    + '<div id="deleteModal"><div id="deleteModalBox">'
+    + '<div id="deleteModalTitle">&#128465; Permanently Delete Lead?</div>'
+    + '<div id="deleteModalName"></div>'
+    + '<div id="deleteModalWarn">All quotes, receipts, and follow-ups will be permanently erased. This cannot be undone.</div>'
+    + '<div id="deleteModalBtns">'
+    + '<button id="deleteModalCancel" onclick="closeDeleteModal()">Cancel</button>'
+    + '<button id="deleteModalConfirm" onclick="submitDeleteForm()">Yes, Delete</button>'
+    + '</div></div></div>'
+    + '<script>'
+    + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
+    + 'var _delForm=null;'
+    + 'function showDeleteConfirm(btn){_delForm=btn.closest("form");var n=btn.getAttribute("data-name");document.getElementById("deleteModalName").textContent="You are about to delete: "+n;document.getElementById("deleteModal").classList.add("active");}'
+    + 'function closeDeleteModal(){document.getElementById("deleteModal").classList.remove("active");_delForm=null;}'
+    + 'function submitDeleteForm(){if(_delForm)_delForm.submit();}'
+    + 'document.getElementById("deleteModal").addEventListener("click",function(e){if(e.target===this)closeDeleteModal();});'
+    + '</script>'
     + '</body></html>';
 }
 
@@ -892,9 +917,9 @@ router.get('/', requireAuth, function(req, res) {
                 + '<input type="hidden" name="back" value="' + backVal + '">'
                 + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128451; Archive</button>'
                 + '</form>'
-                + '<form method="POST" action="/admin/lead/' + l.id + '/delete" style="flex:1;" onsubmit="return confirm(\'Permanently delete ' + esc(l.first_name) + ' ' + esc(l.last_name) + '? All quotes, receipts, and follow-ups will be erased. This cannot be undone.\');">'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/delete" style="flex:1;">'
                 + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="submit" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete</button>'
+                + '<button type="button" data-name="' + esc(l.first_name + ' ' + l.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete</button>'
                 + '</form></div>')
           + '</div>';
       }).join('');
@@ -946,8 +971,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var noEmail = !lead.email;
 
   var quoteAlert = '';
-  if (req.query.msg === 'approved') quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
-  if (req.query.msg === 'denied')   quoteAlert = '<div class="alert alert-error" style="background:#fff8e1;color:#7a5a00;border-color:#f0d080;">Time denied. Customer notified — we\'ll reach out to reschedule.</div>';
+  if (req.query.msg === 'approved')   quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
+  if (req.query.msg === 'denied')     quoteAlert = '<div class="alert alert-error" style="background:#fff8e1;color:#7a5a00;border-color:#f0d080;">Time denied. Customer notified — we\'ll reach out to reschedule.</div>';
+  if (req.query.msg === 'quote_sent') quoteAlert = '<div class="alert alert-success">Quote sent to customer successfully.</div>';
+  if (req.query.msg === 'quote_err')  quoteAlert = '<div class="alert alert-error">Quote was saved but the email failed to send. Check your connection and hit Send Quote again from the form below.</div>';
   if (req.query.msg === 'receipt_sent')  quoteAlert = '<div class="alert alert-success">Receipt sent to the customer. Lead moved to Receipt.</div>';
   if (req.query.msg === 'receipt_saved') quoteAlert = '<div class="alert alert-success">Receipt saved. No email on file for this lead.</div>';
   if (req.query.msg === 'receipt_err')   quoteAlert = '<div class="alert alert-error">Receipt saved, but the email failed to send. Try again.</div>';
@@ -999,9 +1026,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<input type="hidden" name="back" value="/admin">'
     + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128451; Archive lead</button>'
     + '</form>'
-    + '<form method="POST" action="/admin/lead/' + lead.id + '/delete" style="flex:1;" onsubmit="return confirm(\'Permanently delete ' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '? All quotes, receipts, and follow-ups will be erased. This cannot be undone.\');">'
+    + '<form method="POST" action="/admin/lead/' + lead.id + '/delete" style="flex:1;">'
     + '<input type="hidden" name="back" value="/admin">'
-    + '<button type="submit" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete lead permanently</button>'
+    + '<button type="button" data-name="' + esc(lead.first_name + ' ' + lead.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete lead permanently</button>'
     + '</form>'
     + '</div>'
     + '</div>'
@@ -1417,7 +1444,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
   if (!process.env.SMTP_PASS) {
     console.error('SMTP_PASS not set — quote saved but not emailed');
-    return res.redirect('/admin?msg=err');
+    return res.redirect('/admin/quote/' + lead.id + '?msg=quote_err');
   }
 
   try {
@@ -1436,10 +1463,10 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined')
     });
 
-    res.redirect('/admin?msg=sent');
+    res.redirect('/admin/quote/' + lead.id + '?msg=quote_sent');
   } catch (err) {
     console.error('Quote email error:', err.message);
-    res.redirect('/admin?msg=err');
+    res.redirect('/admin/quote/' + lead.id + '?msg=quote_err');
   }
 });
 

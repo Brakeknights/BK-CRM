@@ -2,7 +2,14 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dbPath = process.env.DB_PATH || path.join(__dirname, 'data', 'brakeknights.db');
+// In production (Hostinger), default to one level above the git working directory
+// so the DB survives deployments that clean gitignored files. Set DB_PATH to override.
+const dbPath = process.env.DB_PATH || (
+  process.env.NODE_ENV === 'production'
+    ? path.join(__dirname, '..', 'brakeknights-data', 'brakeknights.db')
+    : path.join(__dirname, 'data', 'brakeknights.db')
+);
+console.log('[DB] path:', dbPath);
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
