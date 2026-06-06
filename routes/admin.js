@@ -507,7 +507,7 @@ router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: fals
   var status = req.body.status;
   if (!validStatuses.includes(status)) return res.status(400).send('Invalid status');
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
   if (lead.status !== status) {
     var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
     db.prepare("UPDATE leads SET status = ?, status_updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
@@ -523,7 +523,7 @@ router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: fals
 // leads are just hidden from the working lists.
 router.post('/lead/:id/archive', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
   db.prepare("UPDATE leads SET archived = 1, archived_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, 'Lead archived');
   res.redirect(req.body.back || '/admin');
@@ -531,7 +531,7 @@ router.post('/lead/:id/archive', requireAuth, express.urlencoded({ extended: fal
 
 router.post('/lead/:id/restore', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
   db.prepare("UPDATE leads SET archived = 0, archived_at = NULL WHERE id = ?").run(lead.id);
   logHistory(lead.id, 'Lead restored from archive');
   res.redirect(req.body.back || '/admin?status=archived');
@@ -551,7 +551,7 @@ router.post('/lead/:id/delete', requireAuth, express.urlencoded({ extended: fals
 // Lead-level VIN + internal notes (item 5). Saved independently of any quote.
 router.post('/lead/:id/notes', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
   var vin = (req.body.vin || '').trim() || null;
   var notes = (req.body.internalNotes || '').trim() || null;
   db.prepare('UPDATE leads SET vin = ?, internal_notes = ? WHERE id = ?').run(vin, notes, lead.id);
@@ -623,7 +623,7 @@ function buildAltTimeOptions() {
 
 router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
   if (!quote) return res.redirect('/admin/quote/' + lead.id + '?msg=no_accepted_quote');
 
@@ -722,7 +722,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
 
 router.get('/quote/:id/deny-schedule', requireAuth, function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
   var reqTime = quote ? fmtPrefDate(quote.pref_date) + (quote.pref_time ? ' at ' + quote.pref_time : '') : 'the requested time';
 
@@ -752,7 +752,7 @@ router.get('/quote/:id/deny-schedule', requireAuth, function(req, res) {
 
 router.post('/quote/:id/deny-schedule', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
 
   logHistory(lead.id, 'Time denied', quote ? ((quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '')) : null);
@@ -948,7 +948,7 @@ router.get('/', requireAuth, function(req, res) {
 
 router.get('/quote/:id', requireAuth, function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
 
   var allQuotes = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
   var existing = allQuotes[0] || {};
@@ -1412,7 +1412,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
 router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
 
   var service       = req.body.service       || '';
   var tier          = req.body.tier          || 'standard';
@@ -1588,7 +1588,7 @@ function advisoryRow(i, hidden) {
 
 router.get('/receipt/:id', requireAuth, function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
 
   // Prefill from the accepted quote if there is one, otherwise the most recent quote.
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id)
@@ -1827,7 +1827,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
 
 router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
 
   var service      = (req.body.service || '').trim();
   var vehicle      = (req.body.vehicle || '').trim();
@@ -1905,7 +1905,7 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(req.params.id);
   if (!receipt) return res.status(404).send('Receipt not found');
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(receipt.lead_id);
-  if (!lead) return res.status(404).send('Lead not found');
+  if (!lead) return res.redirect('/admin');
 
   var notes = [];
   try { notes = JSON.parse(receipt.customer_notes || '[]'); } catch (_) {}
