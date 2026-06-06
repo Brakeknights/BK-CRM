@@ -362,6 +362,16 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .app{margin-left:240px}
 .content{padding:24px 32px}
 }
+/* ── Collapsible sections (lead profile) ── */
+.collapse{background:#fff;border:1px solid var(--gray-200);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:12px;overflow:hidden}
+.collapse-head{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:none;border:none;cursor:pointer;padding:14px 16px;min-height:48px;font-family:inherit;text-align:left}
+.collapse-head:hover{background:var(--gray-50)}
+.collapse-title{font-size:0.95rem;font-weight:700;color:#0a1f3d;display:flex;align-items:center;gap:8px}
+.collapse-chev{width:20px;height:20px;color:#94a3b8;flex-shrink:0;transition:transform .18s}
+.collapse.collapsed .collapse-chev{transform:rotate(-90deg)}
+.collapse-body{padding:2px 16px 16px}
+.collapse.collapsed .collapse-body{display:none}
+.collapse-body>.card{box-shadow:none;border-color:var(--gray-200)}
 .topbar{background:#0a1f3d;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .topbar-brand{color:#6b8ff5;font-weight:700;font-size:0.95rem;letter-spacing:.5px;display:flex;align-items:center;gap:8px;text-decoration:none}
 .topbar-brand img{width:22px;height:22px;border-radius:4px}
@@ -506,6 +516,23 @@ function navActive(p) {
   return 'leads';
 }
 
+// Collapsible section (accordion) for the lead profile. Open/closed state is
+// remembered per key in localStorage (see toggleCollapse in the page script).
+function collapseOpen(key, title, open) {
+  return '<div class="collapse' + (open ? '' : ' collapsed') + '" data-ckey="' + esc(key) + '">'
+    + '<button type="button" class="collapse-head" onclick="toggleCollapse(this)">'
+    + '<span class="collapse-title">' + title + '</span>'
+    + '<svg class="collapse-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>'
+    + '</button><div class="collapse-body">';
+}
+var COLLAPSE_CLOSE = '</div></div>';
+// Whole-section helper: returns '' when there's no inner content so empty
+// sections don't render a dangling header.
+function collapsible(key, title, inner, open) {
+  if (inner == null || String(inner).trim() === '') return '';
+  return collapseOpen(key, title, open) + inner + COLLAPSE_CLOSE;
+}
+
 function page(title, body, req) {
   var authed = req.session && req.session.adminAuthed;
   var head = '<!DOCTYPE html><html lang="en"><head>'
@@ -566,6 +593,8 @@ function page(title, body, req) {
     + '<button id="deleteModalConfirm" onclick="submitDeleteForm()">Yes, Delete</button>'
     + '</div></div></div>'
     + '<script>'
+    + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
+    + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="1")els[i].classList.remove("collapsed");else if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
     + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
     + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
@@ -1089,6 +1118,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var pricingJson = JSON.stringify(PRICING.services);
   var noEmail = !lead.email;
+  // Build Quote opens by default only at the quoting stages; later stages keep it
+  // collapsed so the page stays compact. Owner's manual toggle is remembered.
+  var buildQuoteOpen = ['new', 'quoted', 'follow_up'].indexOf(lead.status) !== -1;
 
   var quoteAlert = '';
   if (req.query.msg === 'approved')   quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
@@ -1115,8 +1147,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Scheduling request / Approve-Deny (pending) or confirmed banner
     + schedulingPanel(lead, q, false)
 
-    // Customer info card
-    + '<div class="card">'
+    // Customer info card (collapsible, open by default)
+    + collapseOpen('cust', 'Customer Information', true)
     + '<div class="row-sb" style="margin-bottom:10px;">'
     + '<div><div class="lead-name">' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
     + '<div style="color:#aaa;font-size:0.8rem;">' + timeAgo(lead.created_at) + '</div></div>'
@@ -1156,20 +1188,19 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<button type="button" data-name="' + esc(lead.first_name + ' ' + lead.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete lead permanently</button>'
     + '</form>'
     + '</div>'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
-    // Lead-level VIN + Internal Notes — the running record for this customer,
-    // saved on its own and shown right under the profile (item 5).
-    + '<div class="card">'
+    // Lead-level VIN + Internal Notes — collapsible, collapsed by default.
+    + collapseOpen('notes', 'VIN &amp; Internal Notes', false)
     + (req.query.msg === 'notes_saved' ? '<div class="alert alert-success" style="margin-bottom:10px;">Saved.</div>' : '')
-    + '<div class="section-title" style="margin-bottom:10px;">VIN &amp; Internal Notes <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(internal only, never sent)</span></div>'
+    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Internal only, never sent.</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/notes">'
     + '<div class="form-group"><label>VIN</label>'
     + '<input type="text" name="vin" placeholder="17-character VIN" value="' + esc(lead.vin || '') + '" maxlength="17"></div>'
     + '<div class="form-group" style="margin-bottom:10px;"><label>Internal Notes</label>'
     + '<textarea name="internalNotes" placeholder="Running notes about this customer or vehicle...">' + esc(lead.internal_notes || '') + '</textarea></div>'
     + '<button type="submit" class="btn btn-outline" style="width:auto;">Save</button>'
-    + '</form></div>'
+    + '</form>' + COLLAPSE_CLOSE
 
     // Sections below are reordered client-side based on the pipeline stage
     + '<div id="sects">'
@@ -1211,9 +1242,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
             + '<div style="margin-top:11px;"><a href="/admin/receipt/view/' + rc.id + '" class="btn btn-outline btn-sm" style="width:auto;">View customer copy &rarr;</a></div>'
             + '</div>';
         }).join('');
-        return '<div class="card">'
-          + '<div class="section-title" style="margin-bottom:10px;">Receipts <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + receipts.length + ')</span></div>'
-          + cards + '</div>';
+        return collapsible('receipts',
+          'Receipts <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + receipts.length + ')</span>',
+          cards, false);
       })()
     + '</div>'
 
@@ -1240,18 +1271,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '</select>'
           + '<button type="submit" class="btn btn-navy btn-sm" style="width:auto;">+ Add</button>'
           + '</div></form>';
-        return '<div class="section-title" style="margin:18px 0 10px;">Follow-ups'
-          + (fus.length ? ' <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + fus.length + ')</span>' : '') + '</div>'
-          + cards
-          + '<div class="card">' + addForm + '</div>';
+        return collapsible('followups',
+          'Follow-ups' + (fus.length ? ' <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + fus.length + ')</span>' : ''),
+          cards + '<div class="card">' + addForm + '</div>', false);
       })()
     + '</div>'
 
     // Quote history
     + '<div data-section="quote-history">'
     + (allQuotes.length > 0
-        ? '<div class="card">'
-          + '<div class="section-title" style="margin-bottom:10px;">Quote History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + allQuotes.length + ')</span></div>'
+        ? collapseOpen('quotehist', 'Quote History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + allQuotes.length + ')</span>', false)
           + '<div style="overflow-x:auto;">'
           + '<table style="width:100%;border-collapse:collapse;font-size:0.83rem;">'
           + '<thead><tr style="border-bottom:2px solid #f0f0f0;">'
@@ -1271,7 +1300,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
                 + '<td style="padding:7px 0 7px 8px;text-align:right;">$' + money(pq.total) + '</td>'
                 + '</tr>';
             }).join('')
-          + '</tbody></table></div></div>'
+          + '</tbody></table></div>' + COLLAPSE_CLOSE
         : '')
     + '</div>'
 
@@ -1288,18 +1317,15 @@ router.get('/quote/:id', requireAuth, function(req, res) {
             + '<div style="font-size:0.78rem;color:#bbb;margin-top:2px;">' + fmtHistoryTime(h.created_at) + '</div>'
             + '</div></div>';
         }).join('');
-        return '<div class="card">'
-          + '<div class="section-title" style="margin-bottom:10px;">Lead History</div>'
-          + '<div style="padding-left:4px;">' + rows + '</div>'
-          + '</div>';
+        return collapsible('leadhist', 'Lead History',
+          '<div style="padding-left:4px;">' + rows + '</div>', false);
       })()
     + '</div>'
 
     // Build Quote form
     + '<div data-section="build-quote">'
+    + collapseOpen('buildquote', 'Build Quote', buildQuoteOpen)
     + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf">'
-    + '<div class="card">'
-    + '<div class="section-title">Build Quote</div>'
 
     + '<div class="form-group"><label>Service <span style="color:#bbb;font-weight:400;">(select all that apply)</span></label>'
     + serviceCheckboxes
@@ -1352,13 +1378,13 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
     + '<input type="hidden" name="taxAmt"   id="taxH"   value="' + fmt(q.tax)   + '">'
     + '<input type="hidden" name="totalAmt" id="totalH" value="' + fmt(q.total) + '">'
-    + '</div>'
 
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
     + '<button type="button" class="btn btn-outline" onclick="togglePreview()" id="prevBtn">Preview Email</button>'
     + '<div id="previewBox" style="display:none;"></div>'
     + '<button type="submit" class="btn btn-blue" style="margin-top:10px;">Send Quote</button>'
     + '</form>'
+    + COLLAPSE_CLOSE
     + '</div>'
     + '</div>'
 
