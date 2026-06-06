@@ -111,6 +111,16 @@ function money(n) {
   return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Display a phone number with dashes: 7039774475 -> 703-977-4475 (and a leading
+// 1 country code as 1-703-977-4475). Non-standard lengths are returned as-is.
+function fmtPhone(p) {
+  if (!p) return '';
+  var d = String(p).replace(/\D/g, '');
+  if (d.length === 11 && d.charAt(0) === '1') return '1-' + d.slice(1, 4) + '-' + d.slice(4, 7) + '-' + d.slice(7);
+  if (d.length === 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+  return String(p).trim();
+}
+
 // Natural list join for the service line, e.g. "A, B, and C" (or "A, and B").
 function joinServices(s) {
   var a = String(s || '').split(', ').map(function(x) { return x.trim(); }).filter(Boolean);
@@ -541,8 +551,12 @@ function navActive(p) {
 
 // Collapsible section (accordion) for the lead profile. Open/closed state is
 // remembered per key in localStorage (see toggleCollapse in the page script).
-function collapseOpen(key, title, open) {
-  return '<div class="collapse' + (open ? '' : ' collapsed') + '" data-ckey="' + esc(key) + '">'
+function collapseOpen(key, title, open, extraClass, extraStyle) {
+  // Sections always start collapsed; the owner opens the ones they want and that
+  // choice is remembered per section in localStorage (see the page init script).
+  // The `open` argument is kept for signature compatibility but intentionally
+  // ignored so every section defaults to closed.
+  return '<div class="collapse collapsed' + (extraClass || '') + '" data-ckey="' + esc(key) + '"' + (extraStyle ? ' style="' + extraStyle + '"' : '') + '>'
     + '<button type="button" class="collapse-head" onclick="toggleCollapse(this)">'
     + '<span class="collapse-title">' + title + '</span>'
     + '<svg class="collapse-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>'
@@ -1821,8 +1835,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
 
     + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf">'
 
-    + '<div class="card">'
-    + '<div class="section-title">Service &amp; Vehicle</div>'
+    + collapseOpen('rc_service', 'Service &amp; Vehicle', true)
     + '<div class="form-group"><label>Service performed <span style="color:#bbb;font-weight:400;">(select all that apply, change if the job grew on arrival)</span></label>'
     + rServiceCheckboxes
     + '<button type="button" class="svc-clear-btn" onclick="rClearServices()">&#10005; Clear selection</button>'
@@ -1845,10 +1858,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<input type="text" name="paymentOther" id="rpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
     + '<input type="text" id="receiptAddr" name="serviceAddress" autocomplete="off" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
-    + '<div class="card">'
-    + '<div class="section-title">Amount Paid</div>'
+    + collapseOpen('rc_amount', 'Amount Paid', true)
     + '<div class="price-section" style="margin-bottom:0;">'
     + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span>'
     + '<input class="price-input" type="number" name="partsLabor" id="rpl" min="0" step="0.01" value="' + fmt(partsLabor) + '" oninput="rcalc()"></div>'
@@ -1859,17 +1871,16 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<div class="price-row total-row divider-row"><span>Total Paid</span><span id="rtotal" style="font-size:1.15rem;">$' + money(total) + '</span></div>'
     + '</div>'
     + '<input type="hidden" name="total" id="rtotalH" value="' + fmt(total) + '">'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
-    + '<div class="card">'
-    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span></div>'
+    + collapseOpen('rc_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true)
     + advisoryRows
-    + '</div>'
+    + COLLAPSE_CLOSE
 
-    + '<div class="card">'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Notes to Office <span style="color:#bbb;font-weight:400;">(internal only, never sent)</span></label>'
+    + collapseOpen('rc_office', 'Notes to Office <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(internal only, never sent)</span>', true)
+    + '<div class="form-group" style="margin-bottom:0;">'
     + '<textarea name="officeNotes" placeholder="Torque specs, parts used, condition observations, anything for the record…"></textarea></div>'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
     + (lead.email ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The receipt will be saved but not emailed.</div>')
     + '<button type="button" class="btn btn-outline" onclick="toggleReceiptPreview()" id="rPrevBtn" style="margin-bottom:10px;">Preview Receipt Email</button>'
@@ -2426,8 +2437,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</div>'
 
     // Customer (optional for calculator-only; required to save/send)
-    + '<div class="card">'
-    + '<div class="section-title">Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(needed to save or send, not for calculator-only)</span></div>'
+    + collapseOpen('qq_customer', 'Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(needed to save or send)</span>', true)
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>First name</label><input type="text" name="firstName" id="qfn"></div>'
     + '<div class="form-group"><label>Last name</label><input type="text" name="lastName" id="qln"></div>'
@@ -2438,11 +2448,10 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model, optional)</span></label>'
     + '<input type="text" name="vehicle" id="qveh" placeholder="e.g. 2018 Honda Accord"></div>'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
     // Services + tier
-    + '<div class="card">'
-    + '<div class="section-title">Service <span style="font-size:0.8rem;color:#bbb;font-weight:400;">(select all that apply)</span></div>'
+    + collapseOpen('qq_service', 'Service <span style="font-size:0.8rem;color:#bbb;font-weight:400;">(select all that apply)</span>', true)
     + '<div class="form-group" style="margin:0 0 14px;"><label>Tier</label>'
     + '<div class="tier-toggle">'
     + '<button type="button" class="tier-btn active" id="qBtnStd" onclick="qSetTier(\'standard\')">Standard</button>'
@@ -2458,11 +2467,10 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="text" id="qCustomSvc" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" oninput="qOnCustomSvc()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
     + '<div id="qCustomSvcHint" style="display:none;font-size:0.82rem;color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;margin-top:6px;">Custom service added to the quote. Enter its parts and labor costs in the price fields below.</div>'
     + '</div>'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
     // Receipt-only date / payment / address
-    + '<div class="card qReceiptOnly" style="display:none;">'
-    + '<div class="section-title">Job Details</div>'
+    + collapseOpen('qq_jobdetails', 'Job Details', true, ' qReceiptOnly', 'display:none;')
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>Date of service</label><input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
     + '<div class="form-group"><label>Payment method</label>'
@@ -2472,10 +2480,10 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="text" name="paymentOther" id="qpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
     + '<input type="text" name="serviceAddress" placeholder="Where the work was performed"></div>'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
     // Price breakdown (internal) — shared by both modes
-    + '<div class="card">'
+    + collapseOpen('qq_pricing', 'Pricing', true)
     + '<div class="price-section">'
     + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
     + '<div class="price-row"><span class="price-label">Parts</span>'
@@ -2507,17 +2515,16 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</div>'
     + '<input type="hidden" name="taxAmt"   id="qtaxH"   value="0.00">'
     + '<input type="hidden" name="totalAmt" id="qtotalH" value="0.00">'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
     // Receipt-only advisories + office notes
-    + '<div class="card qReceiptOnly" style="display:none;">'
-    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span></div>'
+    + collapseOpen('qq_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true, ' qReceiptOnly', 'display:none;')
     + advisoryRows
-    + '</div>'
-    + '<div class="card qReceiptOnly" style="display:none;">'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Notes to Office <span style="color:#bbb;font-weight:400;">(internal only, never sent)</span></label>'
+    + COLLAPSE_CLOSE
+    + collapseOpen('qq_office', 'Notes to Office <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(internal only, never sent)</span>', true, ' qReceiptOnly', 'display:none;')
+    + '<div class="form-group" style="margin-bottom:0;">'
     + '<textarea name="officeNotes" placeholder="Torque specs, parts used, condition observations, anything for the record…"></textarea></div>'
-    + '</div>'
+    + COLLAPSE_CLOSE
 
     // Action buttons
     + '<div class="card">'
@@ -3103,10 +3110,10 @@ router.get('/customers', requireAuth, function(req, res) {
         return '<div class="card" onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
           + '<div class="row-sb">'
           + '<div class="lead-name">' + esc(name) + '</div>'
-          + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.jobCount + ' job' + (s.jobCount === 1 ? '' : 's') + '</span>'
+          + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.completedCount + ' job' + (s.completedCount === 1 ? '' : 's') + '</span>'
           + '</div>'
           + '<div class="lead-meta" style="margin-top:4px;">'
-          + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;text-decoration:none;" onclick="event.stopPropagation();">' + esc(c.phone) + '</a>' : '<span style="color:#bbb;">No phone</span>')
+          + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;text-decoration:none;" onclick="event.stopPropagation();">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">No phone</span>')
           + (c.email ? ' &middot; ' + esc(c.email) : '')
           + '</div>'
           + customerTagBadges(c.tags)
@@ -3159,10 +3166,9 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   var header = '<div class="card">'
     + '<div class="row-sb" style="margin-bottom:8px;">'
     + '<div class="lead-name" style="font-size:1.15rem;">' + esc(name) + '</div>'
-    + '<span style="font-size:0.78rem;color:#aaa;white-space:nowrap;">Customer #' + c.id + '</span>'
     + '</div>'
     + '<div class="info-grid">'
-    + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(c.phone) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
+    + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
     + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
     + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
     + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
@@ -3296,15 +3302,15 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   // Lifetime stats
   var statsCard = collapseOpen('cust_stats', 'Lifetime Stats', false)
     + '<div class="stat-grid">'
-    + statBlock('Total jobs', s.jobCount)
+    + statBlock('Total leads', s.leadCount)
+    + statBlock('Quotes sent', s.quotesSent)
+    + statBlock('Jobs completed', s.completedCount)
+    + statBlock('Conversion rate', s.conversionRate + '%')
     + statBlock('Total revenue', '$' + money(s.revenue))
     + statBlock('Avg job value', '$' + money(s.avgJobValue))
-    + statBlock('Conversion rate', s.conversionRate + '%')
-    + statBlock('Completed jobs', s.completedCount)
-    + statBlock('Quoted leads', s.quotedCount)
     + '</div>'
     + '<div style="font-size:0.78rem;color:#aaa;margin-top:10px;line-height:1.5;">First lead ' + shortDate(s.firstLeadDate)
-    + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. Conversion rate is paid jobs out of leads that received a quote.</div>'
+    + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. A &ldquo;job&rdquo; is a completed service (receipt sent). Conversion rate is jobs completed out of quotes sent.</div>'
     + COLLAPSE_CLOSE;
 
   var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
