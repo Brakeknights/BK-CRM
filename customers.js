@@ -99,36 +99,37 @@ function attachSquareId(customerId, squareCustomerId) {
 }
 
 // Lifetime stats for one customer, computed from their leads + receipts.
-//   jobCount       — number of leads (inquiries/jobs) tied to this customer
-//   completedCount — leads that have a sent receipt (paid/finished jobs)
-//   quotedCount    — leads that ever received a quote
+//   leadCount      — total leads (all inquiries) tied to this customer
+//   quotesSent     — leads that have had a quote actually sent to the customer
+//   completedCount — leads with a sent receipt (finished/paid jobs) = "jobs"
 //   revenue        — sum of sent-receipt totals
 //   avgJobValue    — revenue / completedCount
-//   conversionRate — completedCount / quotedCount, as a 0-100 percent
+//   conversionRate — completedCount / quotesSent, as a 0-100 percent
 //   firstLeadDate  — earliest lead created_at
 //   firstPaidDate  — earliest sent receipt
 //   lastLeadDate   — most recent lead created_at
 //   lastJobDate    — most recent sent-receipt service_date
 function statsFor(customerId) {
   var lead = db.prepare(
-    "SELECT COUNT(*) AS jobs, MIN(created_at) AS firstLead, MAX(created_at) AS lastLead FROM leads WHERE customer_id = ?"
+    "SELECT COUNT(*) AS leads, MIN(created_at) AS firstLead, MAX(created_at) AS lastLead FROM leads WHERE customer_id = ?"
   ).get(customerId);
   var rev = db.prepare(
     "SELECT COALESCE(SUM(r.total),0) AS revenue, COUNT(*) AS paidJobs, MIN(r.sent_at) AS firstPaid, MAX(r.service_date) AS lastJob "
     + "FROM receipts r JOIN leads l ON l.id = r.lead_id WHERE l.customer_id = ? AND r.sent_at IS NOT NULL"
   ).get(customerId);
-  var quoted = db.prepare(
-    "SELECT COUNT(DISTINCT l.id) AS n FROM leads l JOIN quotes q ON q.lead_id = l.id WHERE l.customer_id = ?"
+  // Quotes that were actually sent (sent_at set), counted once per lead.
+  var quotesSent = db.prepare(
+    "SELECT COUNT(DISTINCT l.id) AS n FROM leads l JOIN quotes q ON q.lead_id = l.id WHERE l.customer_id = ? AND q.sent_at IS NOT NULL"
   ).get(customerId).n;
   var revenue = rev.revenue || 0;
   var paidJobs = rev.paidJobs || 0;
   return {
-    jobCount:       lead.jobs || 0,
+    leadCount:      lead.leads || 0,
+    quotesSent:     quotesSent,
     completedCount: paidJobs,
-    quotedCount:    quoted,
     revenue:        revenue,
     avgJobValue:    paidJobs ? revenue / paidJobs : 0,
-    conversionRate: quoted ? Math.round((paidJobs / quoted) * 100) : 0,
+    conversionRate: quotesSent ? Math.round((paidJobs / quotesSent) * 100) : 0,
     firstLeadDate:  lead.firstLead || null,
     firstPaidDate:  rev.firstPaid || null,
     lastLeadDate:   lead.lastLead || null,
