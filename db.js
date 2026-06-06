@@ -90,6 +90,42 @@ db.exec(`
     form_data  TEXT NOT NULL
   );
 
+  -- Phase 7B: customer records. One row per real person; leads link to a customer
+  -- via leads.customer_id. tags is a comma-separated list of simple labels
+  -- (Repeat Customer, Fleet, Referred, VIP).
+  CREATE TABLE IF NOT EXISTS customers (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+    first_name         TEXT    NOT NULL DEFAULT '',
+    last_name          TEXT    NOT NULL DEFAULT '',
+    email              TEXT,
+    phone              TEXT,
+    square_customer_id TEXT,
+    notes              TEXT,
+    tags               TEXT
+  );
+
+  -- Phase 7B: structured vehicles, child records of a customer.
+  CREATE TABLE IF NOT EXISTS customer_vehicles (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    year        TEXT,
+    make        TEXT,
+    model       TEXT,
+    trim        TEXT,
+    vin         TEXT
+  );
+
+  -- Phase 7B: saved service addresses, child records of a customer.
+  CREATE TABLE IF NOT EXISTS customer_addresses (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    label       TEXT,
+    address     TEXT    NOT NULL
+  );
+
   -- Phase 6 foundation: timed follow-up reminders created from receipt advisories.
   -- recipient is 'owner', 'customer', or 'both'. The daily cron in server.js fires
   -- the email(s) on/after due_date and flips sent = 1.
@@ -142,8 +178,18 @@ addLeadCol('archived',           'INTEGER DEFAULT 0');
 addLeadCol('archived_at',        'TEXT');
 addLeadCol('vin',                'TEXT');
 addLeadCol('internal_notes',     'TEXT');
+addLeadCol('customer_id',        'INTEGER REFERENCES customers(id)');
 
 module.exports = db;
+
+// Phase 7B: group any leads that aren't yet attached to a customer into customer
+// records (by email, then phone). Runs after module.exports is set so customers.js
+// can require this db instance without a circular-require gap. Idempotent.
+try {
+  require('./customers').runBackfill();
+} catch (err) {
+  console.error('[customers] backfill error:', err.message);
+}
 
 // Flush WAL to the main DB file every 5 minutes so recent data is never stranded
 // in the side-file if the process is stopped abruptly for a deployment.
