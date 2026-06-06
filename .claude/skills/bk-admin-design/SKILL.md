@@ -1,117 +1,142 @@
 ---
 name: bk-admin-design
-description: Design system for the Brake Knights admin (/admin) interface. Use at the start of any session that adds or changes admin UI — leads, customers, quotes, receipts, follow-ups, Quick Quote, or any new admin page. Defines the layout shell, colors, components, and conventions so every admin screen looks like one app. Load this BEFORE writing admin HTML.
+description: Design system and UI component guide for the Brake Knights admin/CRM platform. Use this skill whenever building, modifying, or styling any page inside the Brake Knights /admin interface — including the CRM dashboard, customer profiles, lead cards, quote tool, receipt builder, follow-up manager, sidebar nav, header, forms, tables, stats blocks, or any other admin UI element. Also use when adding new admin pages, refactoring existing layouts, or making any visual/design decisions inside the admin. This skill is MANDATORY before writing any admin HTML, CSS, or layout code — always read it first.
 ---
 
-# Brake Knights Admin Design System
+# Brake Knights Admin — Design System
 
-The admin is **server-rendered HTML strings** in `routes/admin.js` (JS template
-literals, no framework, no build step). Every page is wrapped by the
-`page(title, body, req)` helper, which injects the shared `CSS` constant, the
-navy topbar, and the nav. **Reuse the existing CSS classes and helpers — do not
-invent a parallel style.** When something genuinely new is needed, add a class to
-the `CSS` constant rather than scattering one-off inline styles.
+This skill defines the visual language, component patterns, and layout rules for the Brake Knights admin/CRM interface. Read this before writing any admin UI code.
 
-## Golden rules
-1. **Mobile-first, single column.** Content lives in `.wrap` (max-width 600px,
-   centered). Design for a phone; it scales up fine.
-2. **Topbar nav, not a sidebar.** All sections are links in the navy topbar built
-   inside `page()`. New top-level pages get a `.topbar-link` there with an
-   `activeSection` check.
-3. **Cards for everything.** Each logical block is a `.card`. A page is a stack of
-   cards.
-4. **Escape all DB/user values** with `esc()` before putting them in HTML.
-5. **`money()` for display, `fmt()`/`toFixed(2)` for hidden input values** (display
-   uses thousands separators; form values must stay comma-free for `parseFloat`).
-6. **No em dashes** in any copy. Use a colon, a comma, or rewrite.
-7. **Synchronous SQLite.** No `await` on DB calls.
-8. **Idempotent migrations** in `db.js` (`ALTER TABLE ADD COLUMN` guarded by a
-   `PRAGMA table_info` check). Never drop or rename columns.
+---
 
-## Layout shell
-- `page(title, body, req)` renders `<head>` + topbar + `<div class="wrap">body</div>`
-  + the shared delete-confirm modal + small JS helpers (`copyEmail`, delete modal).
-- Page title pattern: an `<h1>` at 1.2rem/700/`#0a1f3d`, often in a flex row with a
-  muted count on the right:
-  ```
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-    <h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Title</h1>
-    <span style="color:#aaa;font-size:0.83rem;">N total</span>
-  </div>
-  ```
-- Detail/sub pages start with a back link: `<a class="back-link">&#8592; All X</a>`.
+## Core Design Principles
 
-## Color palette
-| Role | Hex |
-|------|-----|
-| Page background | `#f0f4f8` |
-| Body text | `#1a2a3a` |
-| Brand navy (headings, navy buttons, topbar) | `#0a1f3d` |
-| Accent blue (primary action, links-on-card) | `#4169e1` |
-| Link blue (phone/email/service text) | `#1a6fc4` |
-| Topbar brand text | `#6b8ff5` |
-| Muted / secondary text | `#888` / `#aaa` |
-| Card border / input border | `#dde3ea` / `#e3e9f1` |
-| Success green (text / bg) | `#1a7a3a` / `#e6f9ee` |
-| Error red (text / bg) | `#c0392b` / `#fff0f0` |
-| Warning amber (text / bg) | `#e07000` / `#fff8e1` |
+- **Mobile-first.** The owner uses this on a phone at job sites. Every layout must be fully functional at 390px wide. Desktop is a bonus, not the primary target.
+- **Clean and professional.** No clutter, no gradients, no decorative elements. Every element earns its place.
+- **Fast to use.** The owner is often in the field. Tap targets minimum 44px. Key actions reachable in 1–2 taps.
+- **Consistent.** Every page feels like the same product. Use the component patterns defined here — don't invent new ones.
 
-## Components (use these classes from the `CSS` constant)
-- **Card:** `.card` — white, radius 12px, padding 16px, soft shadow.
-- **Section title:** `.section-title` — 0.95rem/700/navy. Add a muted
-  `(parenthetical)` in 0.8rem/`#aaa` for hints.
-- **Buttons:** `.btn` (full-width) with a color modifier:
-  - `.btn-navy` primary dark, `.btn-blue` accent action, `.btn-outline` secondary.
-  - `.btn-sm` for inline/auto-width buttons (`style="width:auto;"`).
-- **Filter tabs:** `.filter-tabs` row of `.filter-tab` pills; active = `.active`.
-- **Forms:** wrap each field in `.form-group` (label 0.83rem/600/`#555` + input).
-  Two-up grids: `style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"`.
-- **Info grid** (read-only key/value): `.info-grid` with `.info-key` / `.info-val`.
-- **Alerts:** `.alert` + `.alert-success` / `.alert-error`. Drive them off a
-  `?msg=` query param after a POST-redirect.
-- **Empty states:** `.empty` (centered, muted) with a big emoji/icon above the text.
-- **Search bar:** a `GET` form with a full-width text input + a Clear link shown
-  only when a query is active (see the leads + customers lists).
+---
 
-### Status badge (pipeline stage)
-Use `statusBadge(status)` — a rounded pill, color-coded per stage
-(new/quoted/follow_up/quote_accepted/booked/completed/receipt). Match these colors
-for any new status-like pill.
+## Color Palette
 
-### Customer tags
-`customerTagBadge` / `customerTagBadges(commaString)` render the simple labels
-(Repeat Customer = green, Fleet = blue, Referred = purple, VIP = amber). Shown on
-the customer profile and on lead cards.
+**NEVER use gold or any yellow/amber tone as a brand color.** The CSS variable `--gold` exists in the codebase but is mapped to blue — treat it as blue only.
 
-### Stat blocks
-`statBlock(label, value)` — a `#f4f7fb` tile (big 1.2rem/800 navy value over a
-0.72rem uppercase muted label). Lay them out in a
-`grid-template-columns:1fr 1fr;gap:10px` for the Lifetime Stats card.
+--navy:        #0d1b2a    /* primary background, sidebar, header */
+--navy-mid:    #1b2c3e    /* secondary surfaces, cards on dark bg */
+--blue:        #1a4a7a    /* links, secondary actions */
+--blue-light:  #2563a8    /* hover states */
+--cta:         #4169e1    /* primary CTA buttons — this is blue, not gold */
+--cta-hover:   #6b8ff5    /* CTA hover */
+--white:       #ffffff
+--gray-50:     #f8fafc
+--gray-100:    #f1f5f9
+--gray-200:    #e2e8f0
+--gray-400:    #94a3b8
+--gray-600:    #475569
+--gray-900:    #0f172a
+--status-new:         #3b82f6
+--status-quoted:      #8b5cf6
+--status-confirmed:   #06b6d4
+--status-completed:   #22c55e
+--status-followup:    #f97316
+--status-archived:    #94a3b8
+--danger:      #ef4444
+--success:     #22c55e
 
-### List cards that open a detail page
-Make the whole card clickable but let inner controls work:
-```
-<div class="card" onclick="if(!event.target.closest('a,button,select,form')){window.location='/admin/...';}" style="cursor:pointer;">
-```
-Add `onclick="event.stopPropagation();"` to inner links (like a `tel:`) that sit
-inside a clickable card.
+---
 
-## Helpers already in `routes/admin.js` (reuse, don't re-create)
-`esc`, `fmt`, `money`, `joinServices`, `timeAgo`, `shortDate`, `fmtPrefDate`,
-`easternToday`, `statusBadge`, `customerTagBadges`, `statBlock`, `followupCard`,
-`stageTracker`, `nextStageHint`, `schedulingPanel`, `logHistory`, `requireAuth`.
+## Typography
 
-## Pattern for a new admin page (checklist)
-1. `router.get('/thing', requireAuth, ...)` builds a `body` string of `.card`s.
-2. `res.send(page('Thing', body, req))`.
-3. Add a `.topbar-link` in `page()` and extend the `activeSection` check.
-4. POST handlers use `express.urlencoded({ extended: false })`, mutate via sync
-   SQLite, then **redirect with a `?msg=` flag** (Post/Redirect/Get) so refresh is
-   safe and the success/error alert shows.
-5. Escape every interpolated value. Keep copy em-dash-free.
-6. Screenshot at phone width, show the owner, wait for approval before `dev`.
+Font: Inter (already loaded)
+--text-xs:   0.75rem
+--text-sm:   0.875rem
+--text-base: 1rem
+--text-lg:   1.125rem
+--text-xl:   1.25rem
+--text-2xl:  1.5rem
+--text-3xl:  1.875rem
+Weights: 400 body / 500 labels / 600 subheadings / 700 headings + stat numbers
 
-## This is a living document
-When a design decision changes or a new shared component appears, update this file
-in the same change so future sessions inherit it. Treat it as the source of truth
-for how the admin looks and behaves.
+---
+
+## Layout
+
+Sidebar: 240px fixed desktop, off-canvas overlay mobile (hamburger top-left)
+Header: sticky, 56px, white, subtle shadow. Left: hamburger. Center-left: page title (600 weight). Right: follow-ups badge + logout.
+Content: max-width 960px, padding 24px 16px mobile / 24px 32px desktop
+Page background: --gray-50
+
+Sidebar sections:
+MAIN: Dashboard, Leads, Customers, Quick Quote
+TOOLS: Follow-Ups, Receipts
+REPORTS: Revenue, Conversions, Services
+SETTINGS: Pricing, Templates
+
+Sidebar style: --navy background, nav items 48px tall, 16px padding, Inter 500, active = 3px --cta left border + --navy-mid bg, hover = --navy-mid bg, section labels in --gray-400 text-xs uppercase
+
+---
+
+## Components
+
+Cards: white, 1px --gray-200 border, 12px radius, 0 1px 3px rgba(0,0,0,0.06) shadow, 16px padding
+
+Lead/Customer cards: left 3px border = status color, name 600 weight + status badge right, vehicle text-sm --gray-600, service text-sm --gray-600, bottom: timestamp + Call/Text/Email buttons 44px min tap target
+
+Status badges: pill, 2px 10px padding, 999px radius, text-xs, 600 weight, uppercase, 15% opacity background of status color, full color text
+
+Buttons:
+Primary: --cta bg, white text, 8px radius, 12px 20px padding, 600 weight, 44px min-height
+Secondary: --gray-100 bg, --gray-900 text, 1px --gray-200 border, same sizing
+Danger: --danger bg, white text, same sizing
+Small: 6px 12px padding, text-sm, 36px min-height
+
+Form fields: 12px 14px padding, 1px --gray-200 border, 8px radius, text-base, 44px min-height. Focus: --cta border + 3px rgba(65,105,225,0.15) shadow. Labels: text-sm 500 weight --gray-600.
+
+Tables: full width, collapse borders. TH: text-xs 600 uppercase --gray-400, 8px 12px padding, bottom border. TD: 12px padding, text-sm --gray-900, bottom border. Row hover: --gray-50. Mobile: collapse to stacked cards — NO horizontal scroll.
+
+Stats blocks: white card, 12px radius, 20px padding, centered. Number: text-3xl 700 --gray-900. Label: text-sm --gray-400 margin-top 4px. Grid: 2col mobile, 4col desktop.
+
+Section titles: text-xs 600 uppercase letter-spacing 0.08em --gray-400, margin 24px 0 12px
+
+Empty states: centered, 48px 24px padding, --gray-400, text-sm, SVG icon above message
+
+---
+
+## Page Patterns
+
+List pages: [search bar] [filter tabs: All|Active|Archived] [card list 12px gap] [load more]
+Detail pages: [← back] [title] [primary action top-right] [stats row] [sections]
+Form pages: [title] [stacked fields] [live calc] [sticky bottom action bar mobile]
+
+---
+
+## Mobile Rules
+
+- Sidebar = off-canvas drawer, hamburger top-left
+- Action bars sticky to bottom on mobile
+- NO horizontal scroll — ever
+- Min tap target 44×44px
+- Min font size 14px
+- Forms stack vertically, no side-by-side fields
+- Tables → stacked cards under 640px
+
+---
+
+## Icons
+
+Heroicons, stroke-based, 1.5px stroke, 20px inline / 24px nav. No emoji in admin UI ever.
+
+---
+
+## NEVER
+
+- No gold, yellow, or amber — ever
+- No gradients
+- No horizontal scroll
+- No font below 14px
+- No emoji in admin
+- No inline styles
+- No new fonts or icon libraries
+- No decorative elements without function
+- Don't invent new component patterns

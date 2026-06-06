@@ -319,8 +319,49 @@ async function notifyStageChange(req, lead, newStatus) {
 }
 
 const CSS = `
+:root{
+--navy:#0d1b2a;--navy-mid:#1b2c3e;--blue:#1a4a7a;--blue-light:#2563a8;
+--cta:#4169e1;--cta-hover:#6b8ff5;--white:#fff;
+--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-600:#475569;--gray-900:#0f172a;
+--danger:#ef4444;--success:#22c55e;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f4f8;min-height:100vh;color:#1a2a3a}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray-50);min-height:100vh;color:#1a2a3a}
+/* ── Sidebar nav ── */
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;background:var(--navy);display:flex;flex-direction:column;z-index:200;transform:translateX(-100%);transition:transform .22s ease;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sidebar.open{transform:translateX(0)}
+.sidebar-logo{display:flex;align-items:center;gap:10px;padding:18px 16px;color:#fff;font-weight:700;font-size:1rem;letter-spacing:.3px;text-decoration:none;border-bottom:1px solid rgba(255,255,255,.07)}
+.sidebar-logo img{width:26px;height:26px;border-radius:6px}
+.nav-section{padding:12px 0 4px}
+.nav-label{font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400);padding:6px 16px}
+.nav-item{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 16px;color:#cbd5e1;text-decoration:none;font-weight:500;font-size:0.92rem;border-left:3px solid transparent;transition:background .12s,color .12s}
+.nav-item svg{width:22px;height:22px;flex-shrink:0}
+.nav-item:hover{background:var(--navy-mid);color:#fff}
+.nav-item.active{background:var(--navy-mid);color:#fff;border-left-color:var(--cta)}
+.nav-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;opacity:0;visibility:hidden;transition:opacity .2s}
+.nav-overlay.show{opacity:1;visibility:visible}
+/* ── App shell + header ── */
+.app{min-height:100vh;display:flex;flex-direction:column}
+.appbar{position:sticky;top:0;z-index:100;height:56px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;align-items:center;gap:10px;padding:0 12px}
+.hamburger{background:none;border:none;color:var(--navy);cursor:pointer;display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px}
+.hamburger:hover{background:var(--gray-100)}
+.hamburger svg{width:24px;height:24px}
+.appbar-title{font-weight:600;font-size:1.02rem;color:var(--gray-900);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appbar-right{display:flex;align-items:center;gap:4px}
+.appbar-bell{position:relative;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;color:var(--gray-600);text-decoration:none}
+.appbar-bell:hover{background:var(--gray-100)}
+.appbar-bell svg{width:22px;height:22px}
+.appbar-bell .cnt{position:absolute;top:5px;right:4px;background:var(--cta);color:#fff;font-size:0.64rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px}
+.appbar-logout{color:var(--gray-600);font-size:0.84rem;text-decoration:none;padding:8px 10px;border-radius:8px}
+.appbar-logout:hover{background:var(--gray-100);color:var(--gray-900)}
+.content{max-width:960px;width:100%;margin:0 auto;padding:24px 16px}
+@media(min-width:769px){
+.sidebar{transform:translateX(0)}
+.hamburger{display:none}
+.nav-overlay{display:none}
+.app{margin-left:240px}
+.content{padding:24px 32px}
+}
 .topbar{background:#0a1f3d;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .topbar-brand{color:#6b8ff5;font-weight:700;font-size:0.95rem;letter-spacing:.5px;display:flex;align-items:center;gap:8px;text-decoration:none}
 .topbar-brand img{width:22px;height:22px;border-radius:4px}
@@ -407,45 +448,115 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #deleteModalConfirm{border:none;background:#c0392b;color:#fff;}
 `;
 
+// Heroicons (outline, 1.5px stroke). Inline so the admin stays dependency-free
+// and emoji-free per the design skill. 24px in the nav.
+function icon(name) {
+  var P = {
+    home:        '<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/>',
+    clipboard:   '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/>',
+    users:       '<path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>',
+    bolt:        '<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>',
+    bell:        '<path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/>',
+    receipt:     '<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>',
+    currency:    '<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+    chart:       '<path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>',
+    wrench:      '<path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26"/>',
+    tag:         '<path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z"/>',
+    document:    '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75"/>',
+    bars:        '<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/>'
+  };
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' + (P[name] || '') + '</svg>';
+}
+
+// Sidebar nav: [section label, [[id, label, href, icon], ...]].
+var NAV = [
+  ['MAIN', [
+    ['dashboard', 'Dashboard',   '/admin/dashboard',  'home'],
+    ['leads',     'Leads',       '/admin',            'clipboard'],
+    ['customers', 'Customers',   '/admin/customers',  'users'],
+    ['quick',     'Quick Quote', '/admin/quick',      'bolt']
+  ]],
+  ['TOOLS', [
+    ['followups', 'Follow-Ups',  '/admin/followups',  'bell'],
+    ['receipts',  'Receipts',    '/admin/receipts',   'receipt']
+  ]],
+  ['REPORTS', [
+    ['revenue',     'Revenue',     '/admin/reports/revenue',     'currency'],
+    ['conversions', 'Conversions', '/admin/reports/conversions', 'chart'],
+    ['services',    'Services',    '/admin/reports/services',    'wrench']
+  ]],
+  ['SETTINGS', [
+    ['pricing',   'Pricing',   '/admin/settings/pricing',   'tag'],
+    ['templates', 'Templates', '/admin/settings/templates', 'document']
+  ]]
+];
+
+// Maps the current request path to the active nav item id.
+function navActive(p) {
+  if (p === '/dashboard') return 'dashboard';
+  if (p === '/customers' || p.indexOf('/customer/') === 0) return 'customers';
+  if (p === '/quick') return 'quick';
+  if (p.indexOf('/followup') === 0) return 'followups';
+  if (p === '/receipts') return 'receipts';
+  if (p.indexOf('/reports/revenue') === 0) return 'revenue';
+  if (p.indexOf('/reports/conversions') === 0) return 'conversions';
+  if (p.indexOf('/reports/services') === 0) return 'services';
+  if (p.indexOf('/settings/pricing') === 0) return 'pricing';
+  if (p.indexOf('/settings/templates') === 0) return 'templates';
+  return 'leads';
+}
+
 function page(title, body, req) {
   var authed = req.session && req.session.adminAuthed;
-  var nav = '';
-  if (authed) {
-    // Count of follow-ups that are due now (overdue or due today) so the owner sees
-    // at a glance when something needs attention.
-    var dueCount = 0;
-    try {
-      dueCount = db.prepare("SELECT COUNT(*) AS n FROM followups WHERE sent = 0 AND date(due_date) <= date('now')").get().n;
-    } catch (_) {}
-    var badge = dueCount > 0
-      ? ' <span class="nav-badge">' + dueCount + '</span>'
-      : '';
-    var p = req.path || '/';
-    var activeSection = p === '/quick' ? 'quick'
-      : p.startsWith('/followups') ? 'followups'
-      : (p === '/customers' || p.startsWith('/customer/')) ? 'customers'
-      : 'leads';
-    nav = '<div class="topbar-nav">'
-      + '<a href="/admin" class="topbar-link' + (activeSection === 'leads'     ? ' active' : '') + '">Leads</a>'
-      + '<a href="/admin/customers" class="topbar-link' + (activeSection === 'customers' ? ' active' : '') + '">Customers</a>'
-      + '<a href="/admin/quick" class="topbar-link' + (activeSection === 'quick'     ? ' active' : '') + '">Quick Quote</a>'
-      + '<a href="/admin/followups" class="topbar-link' + (activeSection === 'followups' ? ' active' : '') + '">Follow-ups' + badge + '</a>'
-      + '<a href="/admin/logout" class="topbar-logout">Log out</a>'
-      + '</div>';
-  }
-  return '<!DOCTYPE html><html lang="en"><head>'
+  var head = '<!DOCTYPE html><html lang="en"><head>'
     + '<meta charset="UTF-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
     + '<meta name="robots" content="noindex,nofollow">'
     + '<link rel="icon" type="image/png" href="/images/favicon.png">'
+    + '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    + '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">'
     + '<title>BK Admin' + (title && title !== 'Leads' ? ' — ' + esc(title) : '') + '</title>'
     + '<style>' + CSS + '</style>'
-    + '</head><body>'
-    + '<div class="topbar">'
-    + '<a href="/admin" class="topbar-brand"><img src="/images/favicon.png" alt=""> BK Admin</a>'
-    + nav
-    + '</div>'
-    + '<div class="wrap">' + body + '</div>'
+    + '</head>';
+
+  // Login (and any unauthed) page: no sidebar/header chrome, just centered content.
+  if (!authed) {
+    return head + '<body><div class="content" style="max-width:420px;">' + body + '</div></body></html>';
+  }
+
+  // Count of follow-ups due now (overdue or due today) for the header bell badge.
+  var dueCount = 0;
+  try {
+    dueCount = db.prepare("SELECT COUNT(*) AS n FROM followups WHERE sent = 0 AND date(due_date) <= date('now')").get().n;
+  } catch (_) {}
+
+  var active = navActive(req.path || '/');
+  var sidebar = '<aside class="sidebar" id="sidebar">'
+    + '<a href="/admin" class="sidebar-logo"><img src="/images/favicon.png" alt=""> Brake Knights</a>'
+    + NAV.map(function(sec) {
+        return '<div class="nav-section"><div class="nav-label">' + sec[0] + '</div>'
+          + sec[1].map(function(it) {
+              return '<a href="' + it[2] + '" class="nav-item' + (active === it[0] ? ' active' : '') + '">'
+                + icon(it[3]) + '<span>' + it[1] + '</span></a>';
+            }).join('')
+          + '</div>';
+      }).join('')
+    + '</aside>';
+
+  var bell = '<a href="/admin/followups" class="appbar-bell" aria-label="Follow-ups">'
+    + icon('bell') + (dueCount > 0 ? '<span class="cnt">' + dueCount + '</span>' : '') + '</a>';
+
+  var appbar = '<header class="appbar">'
+    + '<button class="hamburger" onclick="openNav()" aria-label="Open menu">' + icon('bars') + '</button>'
+    + '<div class="appbar-title">' + esc(title) + '</div>'
+    + '<div class="appbar-right">' + bell + '<a href="/admin/logout" class="appbar-logout">Log out</a></div>'
+    + '</header>';
+
+  return head
+    + '<body>'
+    + '<div id="navOverlay" class="nav-overlay" onclick="closeNav()"></div>'
+    + sidebar
+    + '<div class="app">' + appbar + '<main class="content">' + body + '</main></div>'
     + '<div id="deleteModal"><div id="deleteModalBox">'
     + '<div id="deleteModalTitle">&#128465; Permanently Delete Lead?</div>'
     + '<div id="deleteModalName"></div>'
@@ -455,6 +566,8 @@ function page(title, body, req) {
     + '<button id="deleteModalConfirm" onclick="submitDeleteForm()">Yes, Delete</button>'
     + '</div></div></div>'
     + '<script>'
+    + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
+    + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
     + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
     + 'var _delForm=null;'
     + 'function showDeleteConfirm(btn){_delForm=btn.closest("form");var n=btn.getAttribute("data-name");document.getElementById("deleteModalName").textContent="You are about to delete: "+n;document.getElementById("deleteModal").classList.add("active");}'
@@ -2880,7 +2993,7 @@ function customerTagBadge(tag) {
     'Repeat Customer': 'background:#e6f9ee;color:#0a6b2e;',
     'Fleet':           'background:#e3f0ff;color:#1a6fc4;',
     'Referred':        'background:#fce8ff;color:#8b2fc9;',
-    'VIP':             'background:#fff1de;color:#a85b00;'
+    'VIP':             'background:#e0e7ff;color:#3730a3;'
   };
   return '<span style="' + (colors[tag] || 'background:#eef2f8;color:#4a5b73;')
     + 'padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700;white-space:nowrap;">' + esc(tag) + '</span>';
@@ -3216,5 +3329,25 @@ router.post('/customer/:id/address/:aid/delete', requireAuth, express.urlencoded
   db.prepare('DELETE FROM customer_addresses WHERE id = ? AND customer_id = ?').run(req.params.aid, req.params.id);
   res.redirect('/admin/customer/' + req.params.id + '?msg=addr_removed');
 });
+
+// ─── Placeholder pages for sidebar items not yet built ───────────────────────
+// Dashboard + Receipts + Reports (Phase 7C) + Settings. They render the shared
+// shell with an empty-state card so the nav never dead-ends on a 404.
+function placeholderPage(req, res, title, phase) {
+  var body = '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:14px;">' + esc(title) + '</h1>'
+    + '<div class="card" style="text-align:center;padding:48px 24px;">'
+    + '<div style="color:#94a3b8;width:48px;height:48px;margin:0 auto 14px;">' + icon('chart') + '</div>'
+    + '<div style="color:#475569;font-weight:600;margin-bottom:6px;">' + esc(title) + ' is coming soon</div>'
+    + '<div style="color:#94a3b8;font-size:0.875rem;">Planned for ' + esc(phase) + '.</div>'
+    + '</div>';
+  res.send(page(title, body, req));
+}
+router.get('/dashboard',            requireAuth, function(req, res) { placeholderPage(req, res, 'Dashboard', 'an upcoming phase'); });
+router.get('/receipts',             requireAuth, function(req, res) { placeholderPage(req, res, 'Receipts', 'an upcoming phase'); });
+router.get('/reports/revenue',      requireAuth, function(req, res) { placeholderPage(req, res, 'Revenue', 'Phase 7C'); });
+router.get('/reports/conversions',  requireAuth, function(req, res) { placeholderPage(req, res, 'Conversions', 'Phase 7C'); });
+router.get('/reports/services',     requireAuth, function(req, res) { placeholderPage(req, res, 'Services', 'Phase 7C'); });
+router.get('/settings/pricing',     requireAuth, function(req, res) { placeholderPage(req, res, 'Pricing', 'an upcoming phase'); });
+router.get('/settings/templates',   requireAuth, function(req, res) { placeholderPage(req, res, 'Templates', 'an upcoming phase'); });
 
 module.exports = router;
