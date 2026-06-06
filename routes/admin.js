@@ -152,20 +152,28 @@ function timeAgo(dateStr) {
   return new Date(dateStr + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// Pipeline status color (full-color text; the pill uses a 15% tint of it as the
+// background, per the design skill). Amber stays for Completed (receipt owed).
+var STATUS_COLOR = {
+  new:            '#3b82f6',
+  quoted:         '#8b5cf6',
+  follow_up:      '#f97316',
+  quote_accepted: '#06b6d4',
+  booked:         '#0d9488',
+  completed:      '#d97706',
+  receipt:        '#16a34a'
+};
+// Hex -> rgba string at the given alpha, for the 15% badge tint.
+function hexA(hex, a) {
+  var h = hex.replace('#', '');
+  var r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
 function statusBadge(status) {
-  const styles = {
-    new:            'background:#e3f0ff;color:#1a6fc4;',
-    quoted:         'background:#dde7fb;color:#3a4fb8;',
-    follow_up:      'background:#fce8ff;color:#8b2fc9;',
-    quote_accepted: 'background:#e0f4f8;color:#0e7490;',
-    booked:         'background:#e6f9ee;color:#1a7a3a;',
-    completed:      'background:#fff1de;color:#a85b00;',
-    receipt:        'background:#e6f9ee;color:#0a6b2e;',
-  };
   const labels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
-  const style = styles[status] || styles.new;
+  const color = STATUS_COLOR[status] || STATUS_COLOR.new;
   const label = labels[status] || status;
-  return '<span style="' + style + 'padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:700;letter-spacing:0.3px;white-space:nowrap;">' + label + '</span>';
+  return '<span style="background:' + hexA(color, 0.15) + ';color:' + color + ';padding:3px 10px;border-radius:999px;font-size:0.72rem;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;white-space:nowrap;">' + label + '</span>';
 }
 
 function requireAuth(req, res, next) {
@@ -372,6 +380,10 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .collapse-body{padding:2px 16px 16px}
 .collapse.collapsed .collapse-body{display:none}
 .collapse-body>.card{box-shadow:none;border-color:var(--gray-200)}
+.ic{width:16px;height:16px;flex-shrink:0;vertical-align:-3px;margin-right:5px}
+.empty svg{width:44px;height:44px;color:#cbd5e1}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(min-width:769px){.stat-grid{grid-template-columns:repeat(4,1fr)}}
 .topbar{background:#0a1f3d;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3)}
 .topbar-brand{color:#6b8ff5;font-weight:700;font-size:0.95rem;letter-spacing:.5px;display:flex;align-items:center;gap:8px;text-decoration:none}
 .topbar-brand img{width:22px;height:22px;border-radius:4px}
@@ -460,22 +472,33 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 
 // Heroicons (outline, 1.5px stroke). Inline so the admin stays dependency-free
 // and emoji-free per the design skill. 24px in the nav.
+var ICON_PATHS = {
+  home:        '<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/>',
+  clipboard:   '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/>',
+  users:       '<path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>',
+  bolt:        '<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>',
+  bell:        '<path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/>',
+  receipt:     '<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>',
+  currency:    '<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+  chart:       '<path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>',
+  wrench:      '<path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26"/>',
+  tag:         '<path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z"/>',
+  document:    '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75"/>',
+  bars:        '<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/>',
+  phone:       '<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z"/>',
+  chat:        '<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.087.16 2.185.283 3.293.369V21l4.184-4.183a1.14 1.14 0 01.778-.332 48.294 48.294 0 005.83-.498c1.585-.233 2.708-1.626 2.708-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z"/>',
+  envelope:    '<path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/>',
+  trash:       '<path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>',
+  archive:     '<path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>',
+  user:        '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>',
+  calendar:    '<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>'
+};
 function icon(name) {
-  var P = {
-    home:        '<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/>',
-    clipboard:   '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z"/>',
-    users:       '<path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"/>',
-    bolt:        '<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>',
-    bell:        '<path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/>',
-    receipt:     '<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>',
-    currency:    '<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
-    chart:       '<path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>',
-    wrench:      '<path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26"/>',
-    tag:         '<path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z"/>',
-    document:    '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75"/>',
-    bars:        '<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/>'
-  };
-  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' + (P[name] || '') + '</svg>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' + (ICON_PATHS[name] || '') + '</svg>';
+}
+// Small inline icon for buttons/links (16px, sits on the text baseline).
+function ic(name) {
+  return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">' + (ICON_PATHS[name] || '') + '</svg>';
 }
 
 // Sidebar nav: [section label, [[id, label, href, icon], ...]].
@@ -585,7 +608,7 @@ function page(title, body, req) {
     + sidebar
     + '<div class="app">' + appbar + '<main class="content">' + body + '</main></div>'
     + '<div id="deleteModal"><div id="deleteModalBox">'
-    + '<div id="deleteModalTitle">&#128465; Permanently Delete Lead?</div>'
+    + '<div id="deleteModalTitle">' + ic('trash') + 'Permanently Delete Lead?</div>'
     + '<div id="deleteModalName"></div>'
     + '<div id="deleteModalWarn">All quotes, receipts, and follow-ups will be permanently erased. This cannot be undone.</div>'
     + '<div id="deleteModalBtns">'
@@ -594,6 +617,7 @@ function page(title, body, req) {
     + '</div></div></div>'
     + '<script>'
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
+    + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
     + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="1")els[i].classList.remove("collapsed");else if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
     + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
@@ -851,8 +875,8 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(quote.pref_location || '—') + '</td></tr>'
         + '</table></div>'
         + '<div style="text-align:center;margin:0 0 24px;">'
-        + (gcalUrl ? '<a href="' + gcalUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">&#128197; Add to Google Calendar</a>' : '')
-        + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">&#127822; Apple / Outlook (.ics)</a>'
+        + (gcalUrl ? '<a href="' + gcalUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">' + ic('calendar') + 'Add to Google Calendar</a>' : '')
+        + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">' + ic('calendar') + 'Apple / Outlook (.ics)</a>'
         + '<p style="color:#888;font-size:0.8rem;margin:6px 0 0;">Google Calendar opens in your browser. The .ics works with Apple Calendar and Outlook.</p>'
         + '</div>'
         + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
@@ -1020,14 +1044,14 @@ router.get('/', requireAuth, function(req, res) {
     : 'No leads' + (status !== 'all' ? ' in this category' : ' yet') + '.';
 
   var cardsHtml = leads.length === 0
-    ? '<div class="empty"><div style="font-size:2rem;margin-bottom:10px;">&#128203;</div>' + emptyMsg + '</div>'
+    ? '<div class="empty"><div style="margin-bottom:10px;">' + icon('clipboard') + '</div>' + emptyMsg + '</div>'
     : leads.map(function(l) {
         var sched = (l.status === 'quote_accepted' || l.status === 'booked')
           ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
           : null;
         var backVal = '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '');
         var cust = l.customer_id ? db.prepare('SELECT tags FROM customers WHERE id = ?').get(l.customer_id) : null;
-        return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;' + (l.archived ? 'opacity:.72;' : '') + '">'
+        return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;border-left:3px solid ' + (STATUS_COLOR[l.status] || STATUS_COLOR.new) + ';' + (l.archived ? 'opacity:.72;' : '') + '">'
           + '<div class="row-sb">'
           + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
           + statusBadge(l.status)
@@ -1039,9 +1063,9 @@ router.get('/', requireAuth, function(req, res) {
           + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
           + '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>'
           + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">'
-          + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128222; Call</a>'
-          + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#128172; Text</a>'
-          + (l.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(l.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">&#9993; Email</button>' : '')
+          + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('phone') + 'Call</a>'
+          + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('chat') + 'Text</a>'
+          + (l.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(l.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('envelope') + 'Email</button>' : '')
           + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;min-width:120px;">Open Quote</a>'
           + '</div>'
           + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">&#10003; Complete Job &amp; Send Receipt</a>')
@@ -1064,11 +1088,11 @@ router.get('/', requireAuth, function(req, res) {
                 + '<div style="display:flex;gap:0;margin-top:8px;">'
                 + '<form method="POST" action="/admin/lead/' + l.id + '/archive" style="flex:1;" onsubmit="return confirm(\'Archive this lead? It stays saved and can be restored from the Archived tab.\');">'
                 + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128451; Archive</button>'
+                + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('archive') + 'Archive</button>'
                 + '</form>'
                 + '<form method="POST" action="/admin/lead/' + l.id + '/delete" style="flex:1;">'
                 + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="button" data-name="' + esc(l.first_name + ' ' + l.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete</button>'
+                + '<button type="button" data-name="' + esc(l.first_name + ' ' + l.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('trash') + 'Delete</button>'
                 + '</form></div>')
           + '</div>';
       }).join('');
@@ -1135,7 +1159,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'quick_err')     quoteAlert = '<div class="alert alert-error">Lead and quote saved, but the email failed to send. Try resending from this page.</div>';
 
   var custLink = lead.customer_id
-    ? '<a href="/admin/customer/' + lead.customer_id + '" style="display:inline-flex;align-items:center;gap:6px;color:#1a6fc4;text-decoration:none;font-weight:600;font-size:0.85rem;margin-bottom:14px;">&#128100; View Customer Profile &rarr;</a>'
+    ? '<a href="/admin/customer/' + lead.customer_id + '" style="display:inline-flex;align-items:center;gap:6px;color:#1a6fc4;text-decoration:none;font-weight:600;font-size:0.85rem;margin-bottom:14px;">' + ic('user') + 'View Customer Profile &rarr;</a>'
     : '';
 
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
@@ -1164,9 +1188,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : '')
     + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
-    + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128222; Call</a>'
-    + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128172; Text</a>'
-    + (lead.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(lead.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</button>' : '')
+    + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>'
+    + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>'
+    + (lead.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(lead.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
     + '</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
@@ -1181,11 +1205,11 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div style="display:flex;gap:0;margin-top:6px;">'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/archive" style="flex:1;" onsubmit="return confirm(\'Archive this lead? It stays saved and can be restored from the Archived tab.\');">'
     + '<input type="hidden" name="back" value="/admin">'
-    + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128451; Archive lead</button>'
+    + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('archive') + 'Archive lead</button>'
     + '</form>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/delete" style="flex:1;">'
     + '<input type="hidden" name="back" value="/admin">'
-    + '<button type="button" data-name="' + esc(lead.first_name + ' ' + lead.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">&#128465; Delete lead permanently</button>'
+    + '<button type="button" data-name="' + esc(lead.first_name + ' ' + lead.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('trash') + 'Delete lead permanently</button>'
     + '</form>'
     + '</div>'
     + COLLAPSE_CLOSE
@@ -2507,7 +2531,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</div>'
     + '<button type="button" id="qPreviewBtn" class="btn btn-outline" style="margin-top:8px;" onclick="qPreview()">Preview Email</button>'
     + '<div id="qPreviewBox" style="display:none;margin-top:8px;"></div>'
-    + '<button type="button" class="btn btn-outline" style="margin-top:8px;border-color:#aaa;color:#555;" onclick="qSaveDraft()">&#128190; Save Draft</button>'
+    + '<button type="button" class="btn btn-outline" style="margin-top:8px;border-color:#aaa;color:#555;" onclick="qSaveDraft()">' + ic('document') + 'Save Draft</button>'
     + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="if(confirm(\'Clear the form and start over? Nothing will be saved.\'))qClearAll()">&#10005; Clear &amp; Start Over</button>'
     + '</div>'
     + '</form>'
@@ -3032,9 +3056,9 @@ function customerTagBadges(str) {
 }
 
 function statBlock(label, val) {
-  return '<div style="background:#f4f7fb;border:1px solid #e3e9f1;border-radius:10px;padding:12px 14px;">'
-    + '<div style="font-size:1.2rem;font-weight:800;color:#0a1f3d;line-height:1.2;">' + val + '</div>'
-    + '<div style="font-size:0.72rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;">' + esc(label) + '</div></div>';
+  return '<div style="background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:20px 14px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06);">'
+    + '<div style="font-size:1.875rem;font-weight:700;color:var(--gray-900);line-height:1.1;">' + val + '</div>'
+    + '<div style="font-size:0.875rem;color:var(--gray-400);margin-top:4px;">' + esc(label) + '</div></div>';
 }
 
 // Customer list — searchable, with per-customer lifetime stats.
@@ -3072,11 +3096,11 @@ router.get('/customers', requireAuth, function(req, res) {
     : 'No customers yet. They are created automatically as leads come in.';
 
   var cards = list.length === 0
-    ? '<div class="empty"><div style="font-size:2rem;margin-bottom:10px;">&#128100;</div>' + emptyMsg + '</div>'
+    ? '<div class="empty"><div style="margin-bottom:10px;">' + icon('users') + '</div>' + emptyMsg + '</div>'
     : list.map(function(item) {
         var c = item.c, s = item.s;
         var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
-        return '<div class="card" onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;">'
+        return '<div class="card" onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
           + '<div class="row-sb">'
           + '<div class="lead-name">' + esc(name) + '</div>'
           + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.jobCount + ' job' + (s.jobCount === 1 ? '' : 's') + '</span>'
@@ -3146,20 +3170,19 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '</div>'
     + customerTagBadges(c.tags)
     + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
-    + (c.phone ? '<a href="tel:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128222; Call</a>' : '')
-    + (c.phone ? '<a href="sms:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128172; Text</a>' : '')
-    + (c.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(c.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</button>' : '')
+    + (c.phone ? '<a href="tel:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>' : '')
+    + (c.phone ? '<a href="sms:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>' : '')
+    + (c.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(c.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
     + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
     + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
-    + '<a href="#vehicles" class="btn btn-outline btn-sm" style="width:auto;">+ Add Vehicle</a>'
-    + (recentLeadId ? '<a href="#addfu" class="btn btn-outline btn-sm" style="width:auto;">+ Add Follow-Up</a>' : '')
+    + '<button type="button" onclick="openSection(\'cust_vehicles\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Vehicle</button>'
+    + (recentLeadId ? '<button type="button" onclick="openSection(\'cust_followups\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Follow-Up</button>' : '')
     + '</div>'
     + '</div>';
 
-  // Tags card
-  var tagsCard = '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Tags</div>'
+  // Tags card (collapsible)
+  var tagsCard = collapseOpen('cust_tags', 'Tags', false)
     + '<form method="POST" action="/admin/customer/' + c.id + '/tags">'
     + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'
     + CUSTOMER_TAGS.map(function(t) {
@@ -3169,15 +3192,15 @@ router.get('/customer/:id', requireAuth, function(req, res) {
       }).join('')
     + '</div>'
     + '<button type="submit" class="btn btn-outline" style="width:auto;">Save Tags</button>'
-    + '</form></div>';
+    + '</form>' + COLLAPSE_CLOSE;
 
-  // Internal notes
-  var notesCard = '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Internal Notes <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(visible to the tech before arrival, never sent)</span></div>'
+  // Internal notes (collapsible, open by default)
+  var notesCard = collapseOpen('cust_notes', 'Internal Notes', true)
+    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Visible to the tech before arrival, never sent.</div>'
     + '<form method="POST" action="/admin/customer/' + c.id + '/notes">'
     + '<div class="form-group" style="margin-bottom:10px;"><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times, anything the tech should know...">' + esc(c.notes || '') + '</textarea></div>'
     + '<button type="submit" class="btn btn-outline" style="width:auto;">Save Notes</button>'
-    + '</form></div>';
+    + '</form>' + COLLAPSE_CLOSE;
 
   // Vehicles
   var vehList = vehicles.length
@@ -3191,8 +3214,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
           + '</form></div>';
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No vehicles saved yet.</div>';
-  var vehCard = '<div class="card" id="vehicles">'
-    + '<div class="section-title" style="margin-bottom:10px;">Vehicles</div>'
+  var vehCard = collapseOpen('cust_vehicles', 'Vehicles', true)
     + vehList
     + '<form method="POST" action="/admin/customer/' + c.id + '/vehicle/add" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
     + '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;">'
@@ -3205,7 +3227,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<div class="form-group" style="margin-bottom:10px;"><label>VIN</label><input type="text" name="vin" maxlength="17" placeholder="optional"></div>'
     + '</div>'
     + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Vehicle</button>'
-    + '</form></div>';
+    + '</form>' + COLLAPSE_CLOSE;
 
   // Saved addresses
   var addrList = addresses.length
@@ -3218,14 +3240,13 @@ router.get('/customer/:id', requireAuth, function(req, res) {
           + '</form></div>';
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No saved addresses yet.</div>';
-  var addrCard = '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Saved Service Addresses</div>'
+  var addrCard = collapseOpen('cust_addresses', 'Saved Service Addresses', false)
     + addrList
     + '<form method="POST" action="/admin/customer/' + c.id + '/address/add" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
     + '<div class="form-group" style="margin-bottom:8px;"><label>Label <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="label" placeholder="Home, Office..."></div>'
     + '<div class="form-group" style="margin-bottom:10px;"><label>Address</label><input type="text" name="address" placeholder="123 Main St, Sterling, VA"></div>'
     + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Address</button>'
-    + '</form></div>';
+    + '</form>' + COLLAPSE_CLOSE;
 
   // Job history
   var jobsHtml = jobs.length
@@ -3247,7 +3268,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
           + '</a>';
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;">No jobs yet.</div>';
-  var jobsCard = '<div class="card"><div class="section-title" style="margin-bottom:10px;">Job History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + jobs.length + ')</span></div>' + jobsHtml + '</div>';
+  var jobsCard = collapsible('cust_jobs', 'Job History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + jobs.length + ')</span>', jobsHtml, true);
 
   // Follow-ups (across all this customer's jobs) + ad-hoc add form
   var fupPending = fups.filter(function(f) { return !f.sent; });
@@ -3270,12 +3291,11 @@ router.get('/customer/:id', requireAuth, function(req, res) {
       + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Follow-Up</button>'
       + '</form>'
     : '';
-  var fupCard = '<div class="card"><div class="section-title" style="margin-bottom:10px;">Follow-ups</div>' + fupHtml + addFuForm + '</div>';
+  var fupCard = collapseOpen('cust_followups', 'Follow-ups', false) + fupHtml + addFuForm + COLLAPSE_CLOSE;
 
   // Lifetime stats
-  var statsCard = '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:12px;">Lifetime Stats</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+  var statsCard = collapseOpen('cust_stats', 'Lifetime Stats', false)
+    + '<div class="stat-grid">'
     + statBlock('Total jobs', s.jobCount)
     + statBlock('Total revenue', '$' + money(s.revenue))
     + statBlock('Avg job value', '$' + money(s.avgJobValue))
@@ -3285,7 +3305,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '</div>'
     + '<div style="font-size:0.78rem;color:#aaa;margin-top:10px;line-height:1.5;">First lead ' + shortDate(s.firstLeadDate)
     + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. Conversion rate is paid jobs out of leads that received a quote.</div>'
-    + '</div>';
+    + COLLAPSE_CLOSE;
 
   var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
     + alert
