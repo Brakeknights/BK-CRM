@@ -1427,6 +1427,18 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
   var acceptToken = crypto.randomBytes(24).toString('hex');
 
+  // Has a quote already gone out to this email address before? If so, this send is a
+  // revision, so the email subject should say the quote was updated. Checked before
+  // the INSERT below so the new quote doesn't count itself. Spans all leads sharing
+  // the email (Quick Quote can create more than one lead for the same customer).
+  var isRevisedQuote = false;
+  if (lead.email) {
+    isRevisedQuote = db.prepare(
+      'SELECT COUNT(*) AS n FROM quotes q JOIN leads l ON l.id = q.lead_id '
+      + 'WHERE l.email = ? AND q.sent_at IS NOT NULL'
+    ).get(lead.email).n > 0;
+  }
+
   var info = db.prepare(
     'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, accept_token, sent_at, status) '
     + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
@@ -1459,8 +1471,10 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       from:    '"Brake Knights" <greetings@brakeknights.com>',
       to:      lead.email,
       replyTo: 'greetings@brakeknights.com',
-      subject: 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined')
+      subject: isRevisedQuote
+        ? 'Your Updated Brake Service Quote — Brake Knights'
+        : 'Your Brake Service Quote — Brake Knights',
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined', isRevisedQuote)
     });
 
     res.redirect('/admin/quote/' + lead.id + '?msg=quote_sent');
@@ -1489,9 +1503,18 @@ function buildWarrantyClause(service) {
   return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
 }
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems, isRevised) {
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
+  var revisedBanner = isRevised
+    ? '<div style="background:#eaf2ff;border:1px solid #b9d2ff;border-left:4px solid #4169e1;border-radius:8px;padding:12px 16px;margin:0 0 20px;">'
+      + '<p style="margin:0;color:#1a3a7a;font-size:0.9rem;font-weight:700;">This is an updated quote</p>'
+      + '<p style="margin:4px 0 0;color:#3a5280;font-size:0.85rem;line-height:1.5;">It replaces any quote we sent you previously. Please use the details and link below.</p>'
+      + '</div>'
+    : '';
+  var introLine = isRevised
+    ? 'Here is your updated quote' + vehicleBit + ':'
+    : 'Here is your quote' + vehicleBit + ':';
   return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;">'
     + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
     + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;">'
@@ -1501,7 +1524,8 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + '</div>'
     + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
     + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Greetings ' + esc(lead.first_name) + ',</h2>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Here is your quote' + vehicleBit + ':</p>'
+    + revisedBanner
+    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">' + introLine + '</p>'
     + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
     + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 8px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Requested</p>'
     + '<p style="margin:0 0 6px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">' + esc(joinServices(service)) + '</p>'
@@ -2706,14 +2730,22 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       console.error('SMTP_PASS not set — Quick Quote saved but not emailed');
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_err');
     }
+    // If this email already has a sent quote on file, mark this one as updated. The
+    // new quote above still has sent_at = null, so it won't count itself here.
+    var qqRevised = db.prepare(
+      'SELECT COUNT(*) AS n FROM quotes q JOIN leads l ON l.id = q.lead_id '
+      + 'WHERE l.email = ? AND q.sent_at IS NOT NULL'
+    ).get(email).n > 0;
     try {
       var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
       await tx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      email,
         replyTo: 'greetings@brakeknights.com',
-        subject: 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined')
+        subject: qqRevised
+          ? 'Your Updated Brake Service Quote — Brake Knights'
+          : 'Your Brake Service Quote — Brake Knights',
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined', qqRevised)
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
