@@ -13,16 +13,20 @@ A repository ruleset named "Protect master" targets the `master` branch on GitHu
 **Layer 2: local pre-push hook (catches accidental admin pushes).**
 `.githooks/pre-push` blocks all pushes to master by default and is activated each session by `git config core.hooksPath .githooks` (run by the session-start hook). This is the safety net for the one gap Layer 1 leaves open: the owner accidentally pushing to master.
 
-## Master Push Override
-The pre-push hook blocks all pushes to master by default.
-To override: user says **"go master"** in chat. Claude then runs the push with `MASTER_OVERRIDE="go master"` set as an env var. (This satisfies Layer 2; Layer 1 is satisfied separately by the owner's admin bypass.)
+## Master Push Workflow (Permanent — Do Not Change)
+All changes to master go through a GitHub Pull Request. Claude never pushes directly to master.
 
-**If the git push fails (e.g. 403 from GitHub's branch protection): STOP. Do NOT create a PR, do NOT use the GitHub MCP to merge, do NOT find any other workaround. Report the failure and wait for the user to complete the merge themselves. The user is the only one who completes merges to master — Claude only initiates the push attempt.**
+**The workflow is always:**
+1. Merge feature branch to `dev` (on user approval)
+2. Verify on dev.brakeknights.com
+3. Create a PR from `dev` → `master` using the GitHub MCP
+4. User clicks Merge on GitHub to approve and deploy to the live site
 
-## Skill/Tooling Push Override
-For changes that are dev tooling only (skills, hooks, scripts — nothing that affects the live site):
-User says **"go skill"** in chat. Claude merges the feature branch to BOTH `dev` and `master` in one operation, using `MASTER_OVERRIDE="go skill"`.
-No dev preview needed for tooling-only changes.
+Claude creates the PR; the user merges it. No exceptions, no shortcuts.
+
+The "go master" and "go skill" override keywords are retired. The pre-push hook and GitHub ruleset remain in place as protection, but the PR workflow is the only path to master going forward.
+
+**If the user asks Claude to push to master directly:** decline and create a PR instead.
 
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
@@ -36,8 +40,8 @@ Built with Node.js/Express, deployed on Hostinger.
 ## Branch & Deployment Workflow
 - `dev` branch → **auto-deploys to dev.brakeknights.com** via Hostinger git integration (Branch: dev, Node 22) — just push to `dev` and it deploys automatically
 - `master` branch → deploys to **brakeknights.com** (live site)
-- All changes go on feature branch first. Only merge to `dev` when user approves. Only merge to `master` when user approves.
-- Never push directly to `master` without explicit user approval.
+- All changes go on feature branch first. Only merge to `dev` when user approves. Master is always updated via PR — Claude creates the PR, user clicks Merge on GitHub.
+- Never push directly to `master` under any circumstances.
 - **Deployment note:** Both `dev` and `master` branches are configured for Hostinger git auto-deploy. Pushing triggers automatic deployment. SMTP_PASS env var is set in Hostinger for both dev.brakeknights.com and brakeknights.com.
 
 ## Hostinger MCP
