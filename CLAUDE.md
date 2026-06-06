@@ -24,9 +24,9 @@ All changes to master go through a GitHub Pull Request. Claude never pushes dire
 
 Claude creates the PR; the user merges it. No exceptions, no shortcuts.
 
-The "go master" and "go skill" override keywords are retired. The pre-push hook and GitHub ruleset remain in place as protection, but the PR workflow is the only path to master going forward.
+**"go master"** is the trigger to create a PR from dev → master. When the user says "go master", always create the PR immediately — never push directly.
 
-**If the user asks Claude to push to master directly:** decline and create a PR instead.
+The pre-push hook and GitHub ruleset remain in place as protection, but the PR workflow is the only path to master going forward.
 
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
@@ -137,7 +137,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/eager-ride-SnMeU` — DB wipe fix, quote error feedback, delete modal, updated quote subject/banner (merged to dev and master via PRs #10 and #11 ✅)
+- Last working branch: `claude/eager-ride-SnMeU` — DB wipe fix, quote fixes, Quick Quote improvements (merged to master via PRs #10–#13 ✅)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B all complete and live on master. Includes: receipt builder, follow-up reminders + dashboard, Quick Quote / Receipt Generator at `/admin/quick`, delete lead, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store, blog fix, modern calendar widget on accept page, dynamic admin URL in emails, admin favicon.
@@ -219,6 +219,7 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Updated quote email: when a second quote is sent to the same email address, subject says "Your Updated Brake Service Quote" and a blue banner appears in the email body noting it replaces the prior quote. Applies to both regular quote flow and Quick Quote tool.
 - [x] Master deploy workflow changed permanently: Claude always creates a PR (dev → master), user clicks Merge on GitHub. No more direct pushes to master.
 - [x] All bare "Lead not found" pages fixed (12 routes): stale admin links now redirect to /admin dashboard instead of a blank error page (PR #12).
+- [x] Quick Quote builder: tier toggle moved above service checkboxes; Combined/Separate line items toggle added to Customer Quote section (hides in Receipt mode). PR #13.
 - [x] Phase 7B fixes (merged to dev and master via PR #8): blog page fix (infinite redirect loop on live site); modern inline calendar widget on customer accept page (replaces native selects — month nav, day grid, Sundays blocked, Sat 3pm cutoff, submit blocked until both date+time picked); dynamic admin URL in alt-times emails (no longer hardcoded to brakeknights.com); admin favicon now live on master.
 - [x] Phase 7B (previous batch, merged to dev): remove "(not taxed)" label from labor line in quote builder; alt-times form date/time replaced with select dropdowns (no Sundays, business-hour slots); per-service warranty language in quote emails (rotors/drums = full warranty, pads-only = labor warranty, inspection/fluid = none); removed em dashes from scheduling flow; scheduling panel hides Approve/Deny after alt times sent (shows amber waiting state instead); alt time options in customer email are clickable token-based buttons.
 - [x] Quick Quote additions (merged to dev): custom service open-text field (combinable with brake services for non-standard jobs); save draft to DB to resume later without rebuilding.
