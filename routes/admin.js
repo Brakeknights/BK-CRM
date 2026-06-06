@@ -879,7 +879,7 @@ router.get('/', requireAuth, function(req, res) {
           ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
           : null;
         var backVal = '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '');
-        return '<div class="card"' + (l.archived ? ' style="opacity:.72;"' : '') + '>'
+        return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;' + (l.archived ? 'opacity:.72;' : '') + '">'
           + '<div class="row-sb">'
           + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
           + statusBadge(l.status)
