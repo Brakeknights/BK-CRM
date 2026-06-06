@@ -552,7 +552,11 @@ function navActive(p) {
 // Collapsible section (accordion) for the lead profile. Open/closed state is
 // remembered per key in localStorage (see toggleCollapse in the page script).
 function collapseOpen(key, title, open, extraClass, extraStyle) {
-  return '<div class="collapse' + (open ? '' : ' collapsed') + (extraClass || '') + '" data-ckey="' + esc(key) + '"' + (extraStyle ? ' style="' + extraStyle + '"' : '') + '>'
+  // Sections always start collapsed; the owner opens the ones they want and that
+  // choice is remembered per section in localStorage (see the page init script).
+  // The `open` argument is kept for signature compatibility but intentionally
+  // ignored so every section defaults to closed.
+  return '<div class="collapse collapsed' + (extraClass || '') + '" data-ckey="' + esc(key) + '"' + (extraStyle ? ' style="' + extraStyle + '"' : '') + '>'
     + '<button type="button" class="collapse-head" onclick="toggleCollapse(this)">'
     + '<span class="collapse-title">' + title + '</span>'
     + '<svg class="collapse-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>'
