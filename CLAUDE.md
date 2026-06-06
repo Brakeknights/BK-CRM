@@ -24,9 +24,9 @@ All changes to master go through a GitHub Pull Request. Claude never pushes dire
 
 Claude creates the PR; the user merges it. No exceptions, no shortcuts.
 
-The "go master" and "go skill" override keywords are retired. The pre-push hook and GitHub ruleset remain in place as protection, but the PR workflow is the only path to master going forward.
+**"go master"** is the trigger to create a PR from dev → master. When the user says "go master", always create the PR immediately — never push directly.
 
-**If the user asks Claude to push to master directly:** decline and create a PR instead.
+The pre-push hook and GitHub ruleset remain in place as protection, but the PR workflow is the only path to master going forward.
 
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
