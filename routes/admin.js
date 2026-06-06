@@ -3382,9 +3382,7 @@ router.post('/customer/:id/address/:aid/delete', requireAuth, express.urlencoded
   res.redirect('/admin/customer/' + req.params.id + '?msg=addr_removed');
 });
 
-// ─── Placeholder pages for sidebar items not yet built ───────────────────────
-// Dashboard + Receipts + Reports (Phase 7C) + Settings. They render the shared
-// shell with an empty-state card so the nav never dead-ends on a 404.
+// ─── Placeholder for not-yet-built sidebar items ──────────────────────────────
 function placeholderPage(req, res, title, phase) {
   var body = '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:14px;">' + esc(title) + '</h1>'
     + '<div class="card" style="text-align:center;padding:48px 24px;">'
@@ -3394,12 +3392,333 @@ function placeholderPage(req, res, title, phase) {
     + '</div>';
   res.send(page(title, body, req));
 }
-router.get('/dashboard',            requireAuth, function(req, res) { placeholderPage(req, res, 'Dashboard', 'an upcoming phase'); });
-router.get('/receipts',             requireAuth, function(req, res) { placeholderPage(req, res, 'Receipts', 'an upcoming phase'); });
-router.get('/reports/revenue',      requireAuth, function(req, res) { placeholderPage(req, res, 'Revenue', 'Phase 7C'); });
-router.get('/reports/conversions',  requireAuth, function(req, res) { placeholderPage(req, res, 'Conversions', 'Phase 7C'); });
-router.get('/reports/services',     requireAuth, function(req, res) { placeholderPage(req, res, 'Services', 'Phase 7C'); });
-router.get('/settings/pricing',     requireAuth, function(req, res) { placeholderPage(req, res, 'Pricing', 'an upcoming phase'); });
-router.get('/settings/templates',   requireAuth, function(req, res) { placeholderPage(req, res, 'Templates', 'an upcoming phase'); });
+
+// Small stat block card used on dashboard + report pages.
+function statBox(value, label) {
+  return '<div class="card" style="text-align:center;padding:20px;">'
+    + '<div style="font-size:1.875rem;font-weight:700;color:#0f172a;">' + value + '</div>'
+    + '<div style="font-size:0.875rem;color:#94a3b8;margin-top:4px;">' + label + '</div>'
+    + '</div>';
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+router.get('/dashboard', requireAuth, function(req, res) {
+  var now = new Date();
+  var monthStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
+
+  var leadsThisMonth   = db.prepare("SELECT COUNT(*) AS n FROM leads WHERE date(created_at) >= ?").get(monthStr).n;
+  var revenueThisMonth = db.prepare("SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL AND date(sent_at) >= ?").get(monthStr).n;
+  var openQuotes       = db.prepare("SELECT COUNT(*) AS n FROM leads WHERE status IN ('quoted','quote_accepted') AND archived = 0").get().n;
+  var activeFollowups  = db.prepare("SELECT COUNT(*) AS n FROM followups WHERE sent = 0 AND date(due_date) >= date('now')").get().n;
+
+  var pipeline = db.prepare(
+    "SELECT status, COUNT(*) AS n FROM leads WHERE archived = 0 GROUP BY status"
+  ).all().reduce(function(acc, r) { acc[r.status] = r.n; return acc; }, {});
+
+  var recent = db.prepare("SELECT * FROM leads ORDER BY id DESC LIMIT 10").all();
+
+  var PIPELINE_STAGES = [
+    ['new',            'New',            STATUS_COLOR.new],
+    ['quoted',         'Quoted',         STATUS_COLOR.quoted],
+    ['follow_up',      'Follow Up',      STATUS_COLOR.follow_up],
+    ['quote_accepted', 'Quote Accepted', STATUS_COLOR.quote_accepted],
+    ['booked',         'Booked',         STATUS_COLOR.booked],
+    ['completed',      'Completed',      STATUS_COLOR.completed],
+    ['receipt',        'Receipt Sent',   STATUS_COLOR.receipt],
+  ];
+
+  var pipelineHtml = '<div class="card" style="margin-bottom:12px;">'
+    + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:12px;">Pipeline</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+    + PIPELINE_STAGES.map(function(s) {
+        var count = pipeline[s[0]] || 0;
+        return '<a href="/admin?status=' + s[0] + '" style="display:flex;align-items:center;gap:8px;background:' + hexA(s[2], 0.1) + ';border:1px solid ' + hexA(s[2], 0.25) + ';border-radius:10px;padding:10px 14px;text-decoration:none;flex:1;min-width:130px;">'
+          + '<span style="font-size:1.4rem;font-weight:700;color:' + s[2] + ';line-height:1;">' + count + '</span>'
+          + '<span style="font-size:0.78rem;color:#444;font-weight:600;line-height:1.3;">' + esc(s[1]) + '</span>'
+          + '</a>';
+      }).join('')
+    + '</div></div>';
+
+  var activityHtml = '<div class="card">'
+    + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:12px;">Recent Activity</div>'
+    + (recent.length === 0
+        ? '<div style="text-align:center;padding:24px 0;color:#94a3b8;font-size:0.875rem;">No leads yet.</div>'
+        : recent.map(function(l, i) {
+            return '<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;'
+              + (i < recent.length - 1 ? 'border-bottom:1px solid var(--gray-100);' : '')
+              + 'gap:10px;">'
+              + '<div style="flex:1;min-width:0;">'
+              + '<a href="/admin/quote/' + l.id + '" style="font-weight:600;color:#0a1f3d;text-decoration:none;font-size:0.9rem;">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</a>'
+              + '<div style="font-size:0.78rem;color:#888;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(l.service || 'No service specified') + '</div>'
+              + '</div>'
+              + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">'
+              + statusBadge(l.status)
+              + '<span style="font-size:0.74rem;color:#aaa;">' + timeAgo(l.created_at) + '</span>'
+              + '</div>'
+              + '</div>';
+          }).join(''))
+    + '</div>';
+
+  res.send(page('Dashboard',
+    '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:16px;">Dashboard</h1>'
+    + '<div class="stat-grid" style="margin-bottom:12px;">'
+    + statBox('$' + money(revenueThisMonth), 'Revenue This Month')
+    + statBox(leadsThisMonth, 'Leads This Month')
+    + statBox(openQuotes, 'Open Quotes')
+    + statBox(activeFollowups, 'Active Follow-Ups')
+    + '</div>'
+    + pipelineHtml
+    + activityHtml,
+    req
+  ));
+});
+
+// ─── Revenue Report ────────────────────────────────────────────────────────────
+router.get('/reports/revenue', requireAuth, function(req, res) {
+  var totalRevenue = db.prepare("SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
+  var totalJobs    = db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
+  var avgJobValue  = totalJobs > 0 ? totalRevenue / totalJobs : 0;
+
+  var now2 = new Date();
+  var monthStr2 = now2.getFullYear() + '-' + String(now2.getMonth() + 1).padStart(2, '0') + '-01';
+  var revenueThisMonth2 = db.prepare(
+    "SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL AND date(sent_at) >= ?"
+  ).get(monthStr2).n;
+
+  // Build last-12-months list
+  var revMonths = [];
+  for (var ri = 11; ri >= 0; ri--) {
+    var rd = new Date();
+    rd.setDate(1);
+    rd.setMonth(rd.getMonth() - ri);
+    revMonths.push({
+      key:     rd.getFullYear() + '-' + String(rd.getMonth() + 1).padStart(2, '0'),
+      label:   rd.toLocaleDateString('en-US', { month: 'short' }) + ' \'' + String(rd.getFullYear()).slice(2),
+      revenue: 0,
+      jobs:    0
+    });
+  }
+
+  var monthData = db.prepare(
+    "SELECT strftime('%Y-%m', sent_at) AS month, COALESCE(SUM(total),0) AS revenue, COUNT(*) AS jobs "
+    + "FROM receipts WHERE sent_at IS NOT NULL GROUP BY month"
+  ).all().reduce(function(acc, r) { acc[r.month] = r; return acc; }, {});
+
+  revMonths.forEach(function(m) {
+    var r = monthData[m.key];
+    if (r) { m.revenue = r.revenue || 0; m.jobs = r.jobs || 0; }
+  });
+
+  var maxRev = Math.max.apply(null, revMonths.map(function(m) { return m.revenue; })) || 1;
+  var chartH  = 140;
+
+  var barChart = '<div style="display:flex;align-items:flex-end;gap:3px;height:' + chartH + 'px;padding:0 2px;">'
+    + revMonths.map(function(m) {
+        var h = m.revenue > 0 ? Math.max(3, Math.round((m.revenue / maxRev) * chartH)) : 0;
+        var tip = '$' + money(m.revenue) + (m.jobs > 0 ? ' (' + m.jobs + ' job' + (m.jobs === 1 ? '' : 's') + ')' : '');
+        return '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;min-width:0;" title="' + esc(m.label) + ': ' + esc(tip) + '">'
+          + '<div style="width:100%;height:' + h + 'px;background:' + (h > 0 ? 'var(--cta)' : 'var(--gray-200)') + ';border-radius:3px 3px 0 0;"></div>'
+          + '</div>';
+      }).join('')
+    + '</div>'
+    + '<div style="display:flex;gap:3px;padding:4px 2px 0;border-top:2px solid var(--gray-200);">'
+    + revMonths.map(function(m) {
+        return '<div style="flex:1;text-align:center;font-size:0.6rem;color:#94a3b8;overflow:hidden;min-width:0;">' + esc(m.label) + '</div>';
+      }).join('')
+    + '</div>';
+
+  // Service revenue breakdown (split comma-separated service strings)
+  var allReceipts = db.prepare("SELECT service, total FROM receipts WHERE sent_at IS NOT NULL").all();
+  var svcMap = {};
+  allReceipts.forEach(function(r) {
+    var svcs = (r.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    if (svcs.length === 0) svcs = ['Unspecified'];
+    var share = r.total / svcs.length;
+    svcs.forEach(function(name) {
+      if (!svcMap[name]) svcMap[name] = { jobs: 0, revenue: 0 };
+      svcMap[name].jobs++;
+      svcMap[name].revenue += share;
+    });
+  });
+  var svcList = Object.keys(svcMap).map(function(name) {
+    return { name: name, jobs: svcMap[name].jobs, revenue: svcMap[name].revenue };
+  }).sort(function(a, b) { return b.revenue - a.revenue; });
+
+  var tableHtml = '<div class="card">'
+    + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:12px;">Revenue by Service</div>'
+    + (svcList.length === 0
+        ? '<div style="text-align:center;padding:24px 0;color:#94a3b8;font-size:0.875rem;">No receipts yet.</div>'
+        : '<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">'
+          + '<thead><tr>'
+          + '<th style="text-align:left;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Service</th>'
+          + '<th style="text-align:right;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Jobs</th>'
+          + '<th style="text-align:right;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Revenue</th>'
+          + '</tr></thead><tbody>'
+          + svcList.map(function(s, i) {
+              return '<tr' + (i % 2 ? ' style="background:#f8fafc;"' : '') + '>'
+                + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);">' + esc(s.name) + '</td>'
+                + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);text-align:right;">' + s.jobs + '</td>'
+                + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);text-align:right;font-weight:600;">$' + money(s.revenue) + '</td>'
+                + '</tr>';
+            }).join('')
+          + '</tbody></table>')
+    + '</div>';
+
+  res.send(page('Revenue',
+    '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:16px;">Revenue</h1>'
+    + '<div class="stat-grid" style="margin-bottom:12px;">'
+    + statBox('$' + money(totalRevenue), 'All-Time Revenue')
+    + statBox('$' + money(revenueThisMonth2), 'This Month')
+    + statBox(totalJobs, 'Jobs Completed')
+    + statBox('$' + money(avgJobValue), 'Avg Job Value')
+    + '</div>'
+    + '<div class="card" style="margin-bottom:12px;">'
+    + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:14px;">Monthly Revenue — Last 12 Months</div>'
+    + barChart
+    + '</div>'
+    + tableHtml,
+    req
+  ));
+});
+
+// ─── Conversions Report ────────────────────────────────────────────────────────
+router.get('/reports/conversions', requireAuth, function(req, res) {
+  var totalQuotesSent = db.prepare("SELECT COUNT(DISTINCT lead_id) AS n FROM quotes WHERE sent_at IS NOT NULL").get().n;
+  var totalJobsDone   = db.prepare("SELECT COUNT(DISTINCT lead_id) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
+  var overallRate     = totalQuotesSent > 0 ? Math.round((totalJobsDone / totalQuotesSent) * 100) : 0;
+  var stillOpen       = Math.max(0, totalQuotesSent - totalJobsDone);
+
+  // Last 12 months
+  var convMonths = [];
+  for (var ci = 11; ci >= 0; ci--) {
+    var cd = new Date();
+    cd.setDate(1);
+    cd.setMonth(cd.getMonth() - ci);
+    convMonths.push({
+      key:    cd.getFullYear() + '-' + String(cd.getMonth() + 1).padStart(2, '0'),
+      label:  cd.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      quotes: 0,
+      jobs:   0
+    });
+  }
+
+  var qByMonth = db.prepare(
+    "SELECT strftime('%Y-%m', sent_at) AS month, COUNT(DISTINCT lead_id) AS n FROM quotes WHERE sent_at IS NOT NULL GROUP BY month"
+  ).all().reduce(function(acc, r) { acc[r.month] = r.n; return acc; }, {});
+
+  var rByMonth = db.prepare(
+    "SELECT strftime('%Y-%m', sent_at) AS month, COUNT(DISTINCT lead_id) AS n FROM receipts WHERE sent_at IS NOT NULL GROUP BY month"
+  ).all().reduce(function(acc, r) { acc[r.month] = r.n; return acc; }, {});
+
+  convMonths.forEach(function(m) {
+    m.quotes = qByMonth[m.key] || 0;
+    m.jobs   = rByMonth[m.key] || 0;
+  });
+
+  var tableRows = convMonths.slice().reverse().map(function(m) {
+    var rate = m.quotes > 0 ? Math.round((m.jobs / m.quotes) * 100) + '%' : '<span style="color:#94a3b8;">—</span>';
+    return '<tr>'
+      + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);">' + esc(m.label) + '</td>'
+      + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);text-align:center;">' + m.quotes + '</td>'
+      + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);text-align:center;">' + m.jobs + '</td>'
+      + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);text-align:center;font-weight:600;">' + rate + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var convTable = '<div class="card">'
+    + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:12px;">Quote to Job — Last 12 Months</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">'
+    + '<thead><tr>'
+    + '<th style="text-align:left;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Month</th>'
+    + '<th style="text-align:center;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Quotes Sent</th>'
+    + '<th style="text-align:center;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Jobs Done</th>'
+    + '<th style="text-align:center;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Rate</th>'
+    + '</tr></thead><tbody>' + tableRows + '</tbody></table></div>';
+
+  res.send(page('Conversions',
+    '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:16px;">Conversions</h1>'
+    + '<div class="stat-grid" style="margin-bottom:12px;">'
+    + statBox(overallRate + '%', 'Quote-to-Job Rate')
+    + statBox(totalQuotesSent, 'Quotes Sent')
+    + statBox(totalJobsDone, 'Jobs Completed')
+    + statBox(stillOpen, 'Quotes Still Open')
+    + '</div>'
+    + convTable,
+    req
+  ));
+});
+
+// ─── Services Report ───────────────────────────────────────────────────────────
+router.get('/reports/services', requireAuth, function(req, res) {
+  // Inquiries by service (leads.service, all leads)
+  var allLeads = db.prepare("SELECT service FROM leads").all();
+  var inquiryMap = {};
+  allLeads.forEach(function(l) {
+    var svcs = (l.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    svcs.forEach(function(name) { inquiryMap[name] = (inquiryMap[name] || 0) + 1; });
+  });
+
+  // Jobs + revenue by service (receipts.service, sent receipts only)
+  var svcReceipts = db.prepare("SELECT service, total FROM receipts WHERE sent_at IS NOT NULL").all();
+  var jobMap = {};
+  svcReceipts.forEach(function(r) {
+    var svcs = (r.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    if (svcs.length === 0) return;
+    var share = r.total / svcs.length;
+    svcs.forEach(function(name) {
+      if (!jobMap[name]) jobMap[name] = { jobs: 0, revenue: 0 };
+      jobMap[name].jobs++;
+      jobMap[name].revenue += share;
+    });
+  });
+
+  var allNames = {};
+  Object.keys(inquiryMap).forEach(function(n) { allNames[n] = true; });
+  Object.keys(jobMap).forEach(function(n) { allNames[n] = true; });
+
+  var svcRows = Object.keys(allNames).map(function(name) {
+    return {
+      name:      name,
+      inquiries: inquiryMap[name] || 0,
+      jobs:      jobMap[name] ? jobMap[name].jobs : 0,
+      revenue:   jobMap[name] ? jobMap[name].revenue : 0
+    };
+  }).sort(function(a, b) { return (b.inquiries + b.jobs) - (a.inquiries + a.jobs); });
+
+  var svcTable = '<div class="card">'
+    + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:12px;">Services Breakdown</div>'
+    + (svcRows.length === 0
+        ? '<div style="text-align:center;padding:24px 0;color:#94a3b8;font-size:0.875rem;">No service data yet.</div>'
+        : '<table style="width:100%;border-collapse:collapse;font-size:0.875rem;">'
+          + '<thead><tr>'
+          + '<th style="text-align:left;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Service</th>'
+          + '<th style="text-align:right;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Inquiries</th>'
+          + '<th style="text-align:right;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Jobs</th>'
+          + '<th style="text-align:right;padding:8px 12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;color:#94a3b8;border-bottom:1px solid var(--gray-200);">Revenue</th>'
+          + '</tr></thead><tbody>'
+          + svcRows.map(function(s, i) {
+              return '<tr' + (i % 2 ? ' style="background:#f8fafc;"' : '') + '>'
+                + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);">' + esc(s.name) + '</td>'
+                + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);text-align:right;">' + s.inquiries + '</td>'
+                + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);text-align:right;">' + s.jobs + '</td>'
+                + '<td style="padding:10px 12px;border-bottom:1px solid var(--gray-100);text-align:right;font-weight:600;">'
+                + (s.revenue > 0 ? '$' + money(s.revenue) : '<span style="color:#94a3b8;">—</span>')
+                + '</td>'
+                + '</tr>';
+            }).join('')
+          + '</tbody></table>')
+    + '</div>';
+
+  res.send(page('Services',
+    '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:16px;">Services</h1>'
+    + svcTable,
+    req
+  ));
+});
+
+// ─── Placeholder pages for not-yet-built sidebar items ────────────────────────
+router.get('/receipts',           requireAuth, function(req, res) { placeholderPage(req, res, 'Receipts', 'an upcoming phase'); });
+router.get('/settings/pricing',   requireAuth, function(req, res) { placeholderPage(req, res, 'Pricing', 'an upcoming phase'); });
+router.get('/settings/templates', requireAuth, function(req, res) { placeholderPage(req, res, 'Templates', 'an upcoming phase'); });
 
 module.exports = router;
