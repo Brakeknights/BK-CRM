@@ -13,16 +13,20 @@ A repository ruleset named "Protect master" targets the `master` branch on GitHu
 **Layer 2: local pre-push hook (catches accidental admin pushes).**
 `.githooks/pre-push` blocks all pushes to master by default and is activated each session by `git config core.hooksPath .githooks` (run by the session-start hook). This is the safety net for the one gap Layer 1 leaves open: the owner accidentally pushing to master.
 
-## Master Push Override
-The pre-push hook blocks all pushes to master by default.
-To override: user says **"go master"** in chat. Claude then runs the push with `MASTER_OVERRIDE="go master"` set as an env var. (This satisfies Layer 2; Layer 1 is satisfied separately by the owner's admin bypass.)
+## Master Push Workflow (Permanent — Do Not Change)
+All changes to master go through a GitHub Pull Request. Claude never pushes directly to master.
 
-**If the git push fails (e.g. 403 from GitHub's branch protection): STOP. Do NOT create a PR, do NOT use the GitHub MCP to merge, do NOT find any other workaround. Report the failure and wait for the user to complete the merge themselves. The user is the only one who completes merges to master — Claude only initiates the push attempt.**
+**The workflow is always:**
+1. Merge feature branch to `dev` (on user approval)
+2. Verify on dev.brakeknights.com
+3. Create a PR from `dev` → `master` using the GitHub MCP
+4. User clicks Merge on GitHub to approve and deploy to the live site
 
-## Skill/Tooling Push Override
-For changes that are dev tooling only (skills, hooks, scripts — nothing that affects the live site):
-User says **"go skill"** in chat. Claude merges the feature branch to BOTH `dev` and `master` in one operation, using `MASTER_OVERRIDE="go skill"`.
-No dev preview needed for tooling-only changes.
+Claude creates the PR; the user merges it. No exceptions, no shortcuts.
+
+The "go master" and "go skill" override keywords are retired. The pre-push hook and GitHub ruleset remain in place as protection, but the PR workflow is the only path to master going forward.
+
+**If the user asks Claude to push to master directly:** decline and create a PR instead.
 
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
@@ -36,8 +40,8 @@ Built with Node.js/Express, deployed on Hostinger.
 ## Branch & Deployment Workflow
 - `dev` branch → **auto-deploys to dev.brakeknights.com** via Hostinger git integration (Branch: dev, Node 22) — just push to `dev` and it deploys automatically
 - `master` branch → deploys to **brakeknights.com** (live site)
-- All changes go on feature branch first. Only merge to `dev` when user approves. Only merge to `master` when user approves.
-- Never push directly to `master` without explicit user approval.
+- All changes go on feature branch first. Only merge to `dev` when user approves. Master is always updated via PR — Claude creates the PR, user clicks Merge on GitHub.
+- Never push directly to `master` under any circumstances.
 - **Deployment note:** Both `dev` and `master` branches are configured for Hostinger git auto-deploy. Pushing triggers automatic deployment. SMTP_PASS env var is set in Hostinger for both dev.brakeknights.com and brakeknights.com.
 
 ## Hostinger MCP
@@ -133,18 +137,19 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/funny-ritchie-atzTm` — Phase 7B fixes (merged to dev and master via PR #8 ✅)
+- Last working branch: `claude/eager-ride-SnMeU` — DB wipe fix, quote error feedback, delete modal, updated quote subject/banner (merged to dev and master via PRs #10 and #11 ✅)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B all complete and live on master. Includes: receipt builder, follow-up reminders + dashboard, Quick Quote / Receipt Generator at `/admin/quick`, delete lead, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store, blog fix, modern calendar widget on accept page, dynamic admin URL in emails, admin favicon.
 - dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
-- Pre-push hook in place — direct pushes to `master` blocked; override with "go master" keyword ✅
-- "go skill" keyword added — pushes tooling-only changes to both dev and master in one shot ✅
+- **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
+- Pre-push hook in place — blocks direct pushes to master ✅
 - Session startup hook shows pending dev-vs-master commits at session start ✅
 - Screenshot skill in place — `node scripts/screenshot.js [path] [selector]` ✅
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
+- **DB path fix:** `NODE_ENV=production` set in Hostinger hPanel for both dev and master — database now stored outside the git directory and survives all deploys ✅
 - Next steps:
   1. Phase 7: full CRM dashboard (customer profiles, vehicle history, job history)
   2. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
@@ -208,6 +213,11 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] DB wipe fix: `NODE_ENV=production` in Hostinger hPanel moves SQLite database outside git directory — survives all future deploys (verified: test lead persisted through a redeploy on dev).
+- [x] Quote send error feedback: lead detail page now shows green banner on success and red banner if email fails (was silently swallowing errors).
+- [x] Delete lead: "Lead not found" bare page replaced with redirect back to admin list; delete button now shows explicit in-page confirmation modal instead of browser native confirm().
+- [x] Updated quote email: when a second quote is sent to the same email address, subject says "Your Updated Brake Service Quote" and a blue banner appears in the email body noting it replaces the prior quote. Applies to both regular quote flow and Quick Quote tool.
+- [x] Master deploy workflow changed permanently: Claude always creates a PR (dev → master), user clicks Merge on GitHub. No more direct pushes to master.
 - [x] Phase 7B fixes (merged to dev and master via PR #8): blog page fix (infinite redirect loop on live site); modern inline calendar widget on customer accept page (replaces native selects — month nav, day grid, Sundays blocked, Sat 3pm cutoff, submit blocked until both date+time picked); dynamic admin URL in alt-times emails (no longer hardcoded to brakeknights.com); admin favicon now live on master.
 - [x] Phase 7B (previous batch, merged to dev): remove "(not taxed)" label from labor line in quote builder; alt-times form date/time replaced with select dropdowns (no Sundays, business-hour slots); per-service warranty language in quote emails (rotors/drums = full warranty, pads-only = labor warranty, inspection/fluid = none); removed em dashes from scheduling flow; scheduling panel hides Approve/Deny after alt times sent (shows amber waiting state instead); alt time options in customer email are clickable token-based buttons.
 - [x] Quick Quote additions (merged to dev): custom service open-text field (combinable with brake services for non-standard jobs); save draft to DB to resume later without rebuilding.
