@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 const { toEasternRfc3339 } = require('./datetime');
 const db = require('./db');
+const customers = require('./customers');
 const SqliteStore = require('./sqlite-session-store');
 const adminRouter = require('./routes/admin');
 const quoteRouter = require('./routes/quote');
@@ -113,6 +114,12 @@ app.post('/api/contact', async (req, res) => {
   db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Lead created', ?)").run(
     lead.lastInsertRowid, [service, vehicle, source].filter(Boolean).join(' — ') || null
   );
+
+  // Phase 7B: attach this lead to an existing customer (matched by email then
+  // phone) or create a new customer record. Never blocks the form response.
+  let customerId = null;
+  try { customerId = customers.linkLead(lead.lastInsertRowid); }
+  catch (err) { console.error('Customer auto-link error:', err.message); }
 
   if (!process.env.SMTP_PASS) {
     console.error('SMTP_PASS environment variable is not set');
@@ -241,6 +248,7 @@ app.post('/api/contact', async (req, res) => {
       .then(r => {
         console.log(`Square customer ${r.action}: ${r.customerId}`);
         db.prepare('UPDATE leads SET square_customer_id = ? WHERE id = ?').run(r.customerId, lead.lastInsertRowid);
+        try { customers.attachSquareId(customerId, r.customerId); } catch (_) {}
       })
       .catch(err => console.error('Square customer sync error:', err.message));
   } catch (err) {

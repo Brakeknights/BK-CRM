@@ -3,6 +3,7 @@ const router = express.Router();
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const db = require('../db');
+const customers = require('../customers');
 const PRICING = require('../pricing');
 const { client: squareClient } = require('../square');
 const { toEasternRfc3339 } = require('../datetime');
@@ -420,9 +421,13 @@ function page(title, body, req) {
       ? ' <span class="nav-badge">' + dueCount + '</span>'
       : '';
     var p = req.path || '/';
-    var activeSection = p === '/quick' ? 'quick' : p.startsWith('/followups') ? 'followups' : 'leads';
+    var activeSection = p === '/quick' ? 'quick'
+      : p.startsWith('/followups') ? 'followups'
+      : (p === '/customers' || p.startsWith('/customer/')) ? 'customers'
+      : 'leads';
     nav = '<div class="topbar-nav">'
       + '<a href="/admin" class="topbar-link' + (activeSection === 'leads'     ? ' active' : '') + '">Leads</a>'
+      + '<a href="/admin/customers" class="topbar-link' + (activeSection === 'customers' ? ' active' : '') + '">Customers</a>'
       + '<a href="/admin/quick" class="topbar-link' + (activeSection === 'quick'     ? ' active' : '') + '">Quick Quote</a>'
       + '<a href="/admin/followups" class="topbar-link' + (activeSection === 'followups' ? ' active' : '') + '">Follow-ups' + badge + '</a>'
       + '<a href="/admin/logout" class="topbar-logout">Log out</a>'
@@ -879,11 +884,13 @@ router.get('/', requireAuth, function(req, res) {
           ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
           : null;
         var backVal = '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '');
+        var cust = l.customer_id ? db.prepare('SELECT tags FROM customers WHERE id = ?').get(l.customer_id) : null;
         return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;' + (l.archived ? 'opacity:.72;' : '') + '">'
           + '<div class="row-sb">'
           + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
           + statusBadge(l.status)
           + '</div>'
+          + (cust && cust.tags ? customerTagBadges(cust.tags) : '')
           + '<div class="lead-service">' + esc(l.service || 'Service not specified') + '</div>'
           + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
           + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
@@ -982,8 +989,13 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'quick_saved')   quoteAlert = '<div class="alert alert-success">Lead created from Quick Quote and the quote was saved (not emailed).</div>';
   if (req.query.msg === 'quick_err')     quoteAlert = '<div class="alert alert-error">Lead and quote saved, but the email failed to send. Try resending from this page.</div>';
 
+  var custLink = lead.customer_id
+    ? '<a href="/admin/customer/' + lead.customer_id + '" style="display:inline-flex;align-items:center;gap:6px;color:#1a6fc4;text-decoration:none;font-weight:600;font-size:0.85rem;margin-bottom:14px;">&#128100; View Customer Profile &rarr;</a>'
+    : '';
+
   var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
     + quoteAlert
+    + custLink
     + stageTracker(lead.status)
     + nextStageHint(lead)
 
@@ -2725,6 +2737,8 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status) VALUES (?,?,?,?,?,?,?,?)'
   ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', mode === 'receipt' ? 'completed' : 'quoted');
   var leadId = leadInfo.lastInsertRowid;
+  // Phase 7B: attach to an existing customer (email then phone) or create one.
+  try { customers.linkLead(leadId); } catch (err) { console.error('Customer auto-link error:', err.message); }
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId);
   logHistory(leadId, 'Lead created from Quick Quote', (mode === 'receipt' ? 'Receipt' : 'Quote') + (service ? ' — ' + service : ''));
 
@@ -2837,6 +2851,370 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
 router.post('/quick/draft/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   db.prepare('DELETE FROM quick_drafts WHERE id = ?').run(req.params.id);
   res.redirect('/admin/quick');
+});
+
+// ─── Phase 7B: Customer profiles ─────────────────────────────────────────────
+// A customer groups one or more leads (the same person across multiple
+// inquiries/jobs). Auto-linked on lead creation by email then phone. See
+// customers.js for the matching + stats logic.
+
+var CUSTOMER_TAGS = customers.TAGS;
+
+// Formats a stored datetime ('YYYY-MM-DD HH:MM:SS') or date ('YYYY-MM-DD') as a
+// short "Jun 5, 2026". Returns an em-free dash placeholder when empty.
+function shortDate(str) {
+  if (!str) return '—';
+  var d;
+  if (str.length > 10) {
+    d = new Date(str.replace(' ', 'T') + 'Z');
+  } else {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+    d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(str);
+  }
+  if (isNaN(d.getTime())) return esc(str);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function customerTagBadge(tag) {
+  var colors = {
+    'Repeat Customer': 'background:#e6f9ee;color:#0a6b2e;',
+    'Fleet':           'background:#e3f0ff;color:#1a6fc4;',
+    'Referred':        'background:#fce8ff;color:#8b2fc9;',
+    'VIP':             'background:#fff1de;color:#a85b00;'
+  };
+  return '<span style="' + (colors[tag] || 'background:#eef2f8;color:#4a5b73;')
+    + 'padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:700;white-space:nowrap;">' + esc(tag) + '</span>';
+}
+
+function customerTagBadges(str) {
+  var t = (str || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  if (!t.length) return '';
+  return '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;">' + t.map(customerTagBadge).join('') + '</div>';
+}
+
+function statBlock(label, val) {
+  return '<div style="background:#f4f7fb;border:1px solid #e3e9f1;border-radius:10px;padding:12px 14px;">'
+    + '<div style="font-size:1.2rem;font-weight:800;color:#0a1f3d;line-height:1.2;">' + val + '</div>'
+    + '<div style="font-size:0.72rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;">' + esc(label) + '</div></div>';
+}
+
+// Customer list — searchable, with per-customer lifetime stats.
+router.get('/customers', requireAuth, function(req, res) {
+  var search = (req.query.q || '').trim();
+  var rows;
+  if (search) {
+    var sp = '%' + search + '%';
+    rows = db.prepare(
+      'SELECT DISTINCT c.* FROM customers c '
+      + 'LEFT JOIN customer_vehicles v ON v.customer_id = c.id '
+      + 'LEFT JOIN leads l ON l.customer_id = c.id '
+      + 'WHERE (c.first_name || " " || c.last_name) LIKE ? OR c.email LIKE ? OR c.phone LIKE ? '
+      + 'OR v.make LIKE ? OR v.model LIKE ? OR v.year LIKE ? OR v.vin LIKE ? OR l.vehicle LIKE ? '
+      + 'ORDER BY c.id DESC'
+    ).all(sp, sp, sp, sp, sp, sp, sp, sp);
+  } else {
+    rows = db.prepare('SELECT * FROM customers ORDER BY id DESC').all();
+  }
+
+  // Attach stats and surface the most recently active customers first.
+  var list = rows.map(function(c) { return { c: c, s: customers.statsFor(c.id) }; });
+  list.sort(function(a, b) { return (b.s.lastLeadDate || '').localeCompare(a.s.lastLeadDate || ''); });
+
+  var total = db.prepare('SELECT COUNT(*) AS n FROM customers').get().n;
+
+  var searchBar = '<form method="GET" action="/admin/customers" style="margin-bottom:14px;display:flex;gap:8px;">'
+    + '<input type="text" name="q" value="' + esc(search) + '" placeholder="Search by name, phone, email, vehicle..." '
+    + 'style="flex:1;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;">'
+    + (search ? '<a href="/admin/customers" style="padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;background:#fff;color:#666;text-decoration:none;font-size:0.9rem;white-space:nowrap;">&#10005; Clear</a>' : '')
+    + '</form>';
+
+  var emptyMsg = search
+    ? 'No customers match &ldquo;' + esc(search) + '&rdquo;.'
+    : 'No customers yet. They are created automatically as leads come in.';
+
+  var cards = list.length === 0
+    ? '<div class="empty"><div style="font-size:2rem;margin-bottom:10px;">&#128100;</div>' + emptyMsg + '</div>'
+    : list.map(function(item) {
+        var c = item.c, s = item.s;
+        var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
+        return '<div class="card" onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;">'
+          + '<div class="row-sb">'
+          + '<div class="lead-name">' + esc(name) + '</div>'
+          + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.jobCount + ' job' + (s.jobCount === 1 ? '' : 's') + '</span>'
+          + '</div>'
+          + '<div class="lead-meta" style="margin-top:4px;">'
+          + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;text-decoration:none;" onclick="event.stopPropagation();">' + esc(c.phone) + '</a>' : '<span style="color:#bbb;">No phone</span>')
+          + (c.email ? ' &middot; ' + esc(c.email) : '')
+          + '</div>'
+          + customerTagBadges(c.tags)
+          + '<div style="display:flex;gap:18px;margin-top:11px;font-size:0.82rem;color:#444;flex-wrap:wrap;">'
+          + '<span><strong style="color:#0a1f3d;">$' + money(s.revenue) + '</strong> lifetime</span>'
+          + '<span>Last activity ' + shortDate(s.lastLeadDate) + '</span>'
+          + (s.lastJobDate ? '<span>Last job ' + shortDate(s.lastJobDate) + '</span>' : '')
+          + '</div>'
+          + '</div>';
+      }).join('');
+
+  res.send(page('Customers',
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Customers</h1>'
+    + '<span style="color:#aaa;font-size:0.83rem;">' + total + ' total</span>'
+    + '</div>'
+    + searchBar
+    + cards,
+    req
+  ));
+});
+
+// Customer profile.
+router.get('/customer/:id', requireAuth, function(req, res) {
+  var c = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var s = customers.statsFor(c.id);
+  var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
+  var back = '/admin/customer/' + c.id;
+
+  var vehicles  = db.prepare('SELECT * FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC').all(c.id);
+  var addresses = db.prepare('SELECT * FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC').all(c.id);
+  var jobs      = db.prepare('SELECT * FROM leads WHERE customer_id = ? ORDER BY id DESC').all(c.id);
+  var fups      = db.prepare(
+    'SELECT f.*, l.first_name, l.last_name, l.vehicle FROM followups f '
+    + 'JOIN leads l ON l.id = f.lead_id WHERE l.customer_id = ? '
+    + 'ORDER BY f.sent ASC, f.due_date ASC, f.id ASC'
+  ).all(c.id);
+  var recentLeadId = jobs.length ? jobs[0].id : null;
+
+  var alert = '';
+  if (req.query.msg === 'saved')        alert = '<div class="alert alert-success">Saved.</div>';
+  if (req.query.msg === 'veh_added')    alert = '<div class="alert alert-success">Vehicle added.</div>';
+  if (req.query.msg === 'veh_removed')  alert = '<div class="alert alert-success">Vehicle removed.</div>';
+  if (req.query.msg === 'addr_added')   alert = '<div class="alert alert-success">Address saved.</div>';
+  if (req.query.msg === 'addr_removed') alert = '<div class="alert alert-success">Address removed.</div>';
+  if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
+
+  // Header card
+  var header = '<div class="card">'
+    + '<div class="row-sb" style="margin-bottom:8px;">'
+    + '<div class="lead-name" style="font-size:1.15rem;">' + esc(name) + '</div>'
+    + '<span style="font-size:0.78rem;color:#aaa;white-space:nowrap;">Customer #' + c.id + '</span>'
+    + '</div>'
+    + '<div class="info-grid">'
+    + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(c.phone) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
+    + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
+    + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
+    + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
+    + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
+    + '</div>'
+    + customerTagBadges(c.tags)
+    + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
+    + (c.phone ? '<a href="tel:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128222; Call</a>' : '')
+    + (c.phone ? '<a href="sms:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">&#128172; Text</a>' : '')
+    + (c.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(c.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">&#9993; Email</button>' : '')
+    + '</div>'
+    + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
+    + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
+    + '<a href="#vehicles" class="btn btn-outline btn-sm" style="width:auto;">+ Add Vehicle</a>'
+    + (recentLeadId ? '<a href="#addfu" class="btn btn-outline btn-sm" style="width:auto;">+ Add Follow-Up</a>' : '')
+    + '</div>'
+    + '</div>';
+
+  // Tags card
+  var tagsCard = '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Tags</div>'
+    + '<form method="POST" action="/admin/customer/' + c.id + '/tags">'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'
+    + CUSTOMER_TAGS.map(function(t) {
+        var on = (c.tags || '').split(',').map(function(x) { return x.trim(); }).indexOf(t) !== -1;
+        return '<label style="display:inline-flex;align-items:center;gap:6px;font-size:0.85rem;color:#1a2a3a;cursor:pointer;border:1.5px solid ' + (on ? '#4169e1' : '#dde3ea') + ';background:' + (on ? '#eef3ff' : '#fff') + ';padding:6px 11px;border-radius:8px;font-weight:600;">'
+          + '<input type="checkbox" name="tags" value="' + esc(t) + '"' + (on ? ' checked' : '') + '>' + esc(t) + '</label>';
+      }).join('')
+    + '</div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save Tags</button>'
+    + '</form></div>';
+
+  // Internal notes
+  var notesCard = '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Internal Notes <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(visible to the tech before arrival, never sent)</span></div>'
+    + '<form method="POST" action="/admin/customer/' + c.id + '/notes">'
+    + '<div class="form-group" style="margin-bottom:10px;"><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times, anything the tech should know...">' + esc(c.notes || '') + '</textarea></div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save Notes</button>'
+    + '</form></div>';
+
+  // Vehicles
+  var vehList = vehicles.length
+    ? vehicles.map(function(v) {
+        var title = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || 'Vehicle';
+        return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
+          + '<div><div style="font-weight:600;color:#0a1f3d;font-size:0.9rem;">' + esc(title) + '</div>'
+          + (v.vin ? '<div style="font-size:0.78rem;color:#888;margin-top:2px;">VIN ' + esc(v.vin) + '</div>' : '') + '</div>'
+          + '<form method="POST" action="/admin/customer/' + c.id + '/vehicle/' + v.id + '/delete" style="margin:0;" onsubmit="return confirm(\'Remove this vehicle?\');">'
+          + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;">Remove</button>'
+          + '</form></div>';
+      }).join('')
+    : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No vehicles saved yet.</div>';
+  var vehCard = '<div class="card" id="vehicles">'
+    + '<div class="section-title" style="margin-bottom:10px;">Vehicles</div>'
+    + vehList
+    + '<form method="POST" action="/admin/customer/' + c.id + '/vehicle/add" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
+    + '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;">'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label><input type="text" name="year" maxlength="4" placeholder="2018"></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label><input type="text" name="make" placeholder="Honda"></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label><input type="text" name="model" placeholder="Accord"></div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+    + '<div class="form-group" style="margin-bottom:10px;"><label>Trim</label><input type="text" name="trim" placeholder="EX-L (optional)"></div>'
+    + '<div class="form-group" style="margin-bottom:10px;"><label>VIN</label><input type="text" name="vin" maxlength="17" placeholder="optional"></div>'
+    + '</div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Vehicle</button>'
+    + '</form></div>';
+
+  // Saved addresses
+  var addrList = addresses.length
+    ? addresses.map(function(a) {
+        return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
+          + '<div>' + (a.label ? '<div style="font-weight:600;color:#0a1f3d;font-size:0.88rem;">' + esc(a.label) + '</div>' : '')
+          + '<div style="font-size:0.85rem;color:#444;">' + esc(a.address) + '</div></div>'
+          + '<form method="POST" action="/admin/customer/' + c.id + '/address/' + a.id + '/delete" style="margin:0;" onsubmit="return confirm(\'Remove this address?\');">'
+          + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;">Remove</button>'
+          + '</form></div>';
+      }).join('')
+    : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No saved addresses yet.</div>';
+  var addrCard = '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Saved Service Addresses</div>'
+    + addrList
+    + '<form method="POST" action="/admin/customer/' + c.id + '/address/add" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Label <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="label" placeholder="Home, Office..."></div>'
+    + '<div class="form-group" style="margin-bottom:10px;"><label>Address</label><input type="text" name="address" placeholder="123 Main St, Sterling, VA"></div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Address</button>'
+    + '</form></div>';
+
+  // Job history
+  var jobsHtml = jobs.length
+    ? jobs.map(function(l) {
+        var rc = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
+        var qt = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
+        var totalVal = rc ? rc.total : (qt ? qt.total : null);
+        var receiptSent = rc && rc.sent_at;
+        return '<a href="/admin/quote/' + l.id + '" style="text-decoration:none;color:inherit;display:block;border:1px solid #e3e9f1;border-radius:8px;padding:11px 13px;margin-bottom:8px;">'
+          + '<div class="row-sb" style="margin-bottom:4px;">'
+          + '<div style="font-weight:600;color:#1a6fc4;font-size:0.88rem;">' + esc(l.service || 'Service not specified') + '</div>'
+          + statusBadge(l.status)
+          + '</div>'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">'
+          + '<span style="font-size:0.8rem;color:#888;">' + shortDate(l.created_at) + (l.source ? ' &middot; ' + esc(l.source) : '') + '</span>'
+          + '<span style="font-size:0.85rem;color:#0a1f3d;font-weight:700;">' + (totalVal != null ? '$' + money(totalVal) : '') + '</span>'
+          + '</div>'
+          + (receiptSent ? '<div style="font-size:0.74rem;color:#1a7a3a;font-weight:700;margin-top:4px;">&#10003; Receipt sent ' + shortDate(rc.sent_at) + '</div>' : '')
+          + '</a>';
+      }).join('')
+    : '<div style="color:#aaa;font-size:0.85rem;">No jobs yet.</div>';
+  var jobsCard = '<div class="card"><div class="section-title" style="margin-bottom:10px;">Job History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + jobs.length + ')</span></div>' + jobsHtml + '</div>';
+
+  // Follow-ups (across all this customer's jobs) + ad-hoc add form
+  var fupPending = fups.filter(function(f) { return !f.sent; });
+  var fupSent = fups.filter(function(f) { return f.sent; }).slice(0, 8);
+  var fupHtml = '';
+  if (fupPending.length) fupHtml += fupPending.map(function(f) { return followupCard(f, back); }).join('');
+  else fupHtml += '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No upcoming follow-ups.</div>';
+  if (fupSent.length) fupHtml += '<div class="section-title" style="margin:14px 0 10px;font-size:0.85rem;color:#888;">Recently sent</div>'
+    + fupSent.map(function(f) { return followupCard(f, back); }).join('');
+  var addFuForm = recentLeadId
+    ? '<form method="POST" action="/admin/followup/new" id="addfu" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:6px;">'
+      + '<input type="hidden" name="lead_id" value="' + recentLeadId + '">'
+      + '<input type="hidden" name="back" value="' + back + '">'
+      + '<div class="section-title" style="margin-bottom:10px;font-size:0.85rem;">Add a follow-up reminder</div>'
+      + '<div class="form-group" style="margin-bottom:8px;"><label>What to follow up on</label><input type="text" name="description" placeholder="Check rear pads, recommend rotor service..."></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+      + '<div class="form-group" style="margin-bottom:10px;"><label>Due date</label><input type="date" name="due_date" value="' + esc(easternToday()) + '"></div>'
+      + '<div class="form-group" style="margin-bottom:10px;"><label>Remind</label><select name="recipient"><option value="owner">Owner only</option><option value="customer">Customer only</option><option value="both">Owner + Customer</option></select></div>'
+      + '</div>'
+      + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Follow-Up</button>'
+      + '</form>'
+    : '';
+  var fupCard = '<div class="card"><div class="section-title" style="margin-bottom:10px;">Follow-ups</div>' + fupHtml + addFuForm + '</div>';
+
+  // Lifetime stats
+  var statsCard = '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:12px;">Lifetime Stats</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+    + statBlock('Total jobs', s.jobCount)
+    + statBlock('Total revenue', '$' + money(s.revenue))
+    + statBlock('Avg job value', '$' + money(s.avgJobValue))
+    + statBlock('Conversion rate', s.conversionRate + '%')
+    + statBlock('Completed jobs', s.completedCount)
+    + statBlock('Quoted leads', s.quotedCount)
+    + '</div>'
+    + '<div style="font-size:0.78rem;color:#aaa;margin-top:10px;line-height:1.5;">First lead ' + shortDate(s.firstLeadDate)
+    + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. Conversion rate is paid jobs out of leads that received a quote.</div>'
+    + '</div>';
+
+  var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
+    + alert
+    + header
+    + tagsCard
+    + notesCard
+    + vehCard
+    + addrCard
+    + jobsCard
+    + fupCard
+    + statsCard;
+
+  res.send(page(name, body, req));
+});
+
+router.post('/customer/:id/notes', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  db.prepare('UPDATE customers SET notes = ? WHERE id = ?').run((req.body.notes || '').trim() || null, c.id);
+  res.redirect('/admin/customer/' + c.id + '?msg=saved');
+});
+
+router.post('/customer/:id/tags', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var picked = req.body.tags;
+  if (!picked) picked = [];
+  else if (!Array.isArray(picked)) picked = [picked];
+  // Keep only known tags, in canonical order.
+  var clean = CUSTOMER_TAGS.filter(function(t) { return picked.indexOf(t) !== -1; });
+  db.prepare('UPDATE customers SET tags = ? WHERE id = ?').run(clean.join(', ') || null, c.id);
+  res.redirect('/admin/customer/' + c.id + '?msg=saved');
+});
+
+router.post('/customer/:id/vehicle/add', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var year  = (req.body.year || '').trim() || null;
+  var make  = (req.body.make || '').trim() || null;
+  var model = (req.body.model || '').trim() || null;
+  var trim  = (req.body.trim || '').trim() || null;
+  var vin   = (req.body.vin || '').trim() || null;
+  if (year || make || model || trim || vin) {
+    db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, trim, vin) VALUES (?,?,?,?,?,?)')
+      .run(c.id, year, make, model, trim, vin);
+  }
+  res.redirect('/admin/customer/' + c.id + '?msg=veh_added#vehicles');
+});
+
+router.post('/customer/:id/vehicle/:vid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  db.prepare('DELETE FROM customer_vehicles WHERE id = ? AND customer_id = ?').run(req.params.vid, req.params.id);
+  res.redirect('/admin/customer/' + req.params.id + '?msg=veh_removed#vehicles');
+});
+
+router.post('/customer/:id/address/add', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var address = (req.body.address || '').trim();
+  var label   = (req.body.label || '').trim() || null;
+  if (address) {
+    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(c.id, label, address);
+  }
+  res.redirect('/admin/customer/' + c.id + '?msg=addr_added');
+});
+
+router.post('/customer/:id/address/:aid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  db.prepare('DELETE FROM customer_addresses WHERE id = ? AND customer_id = ?').run(req.params.aid, req.params.id);
+  res.redirect('/admin/customer/' + req.params.id + '?msg=addr_removed');
 });
 
 module.exports = router;
