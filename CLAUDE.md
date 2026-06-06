@@ -78,7 +78,7 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/eager-ride-SnMeU`
+- Current feature branch: `claude/eloquent-dijkstra-eL19U`
 
 ## Square Integration — Platform Build Plan
 
@@ -115,24 +115,26 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 
 **Phase 6C (deferred — Square auto-trigger):** Instead of the owner manually clicking "Complete Job & Send Receipt," Square events (appointment marked done, or payment taken in the Square POS) automatically fire our receipt + follow-up flow via the Square API/webhooks. Bigger build; spec together when we get there.
 
-**Phase 7 (planned — next build):** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, all owned by Brake Knights. Detailed plan below.
+**Phase 7A (complete — Quick Quote / Receipt Generator):** A standalone generator on the dashboard at `/admin/quick`, not bound to any lead, for fast phone/text inquiries. Reuses the existing pricing engine, service multi-select + tier toggle, live auto-calc, and branded quote/receipt templates. Built entirely in `routes/admin.js` (`GET`/`POST /admin/quick`), reusing `buildQuoteEmail` / `buildReceiptEmail`. Live on master.
+- Quote/Receipt mode switch; service multi-select + tier toggle with live auto-fill; any field overridable, total recalcs live. Quote outcomes: (1) calculator only (Clear, nothing saved); (2) Send (create "Quick Quote" lead in Quoted stage, save quote, email branded quote with accept link); (3) Copyable link (create lead + quote + token, return result page with the customer quote URL + one-tap Copy button); Save as New Lead (no email). Receipt mode: vehicle/date/payment(+Other)/address, 4 advisories with timed follow-up reminders, office notes; Send Receipt or Save as New Lead.
+- Custom service open-text field; save draft to DB; preview email; auto-save localStorage; "Clear & Start Over".
+- **SMS note:** in-app text sending needs an SMS provider (Twilio etc.) — not wired yet. For text inquiries, use email or the copyable link for now.
 
-**Phase 7A (complete — Quick Quote / Receipt Generator):** A standalone generator on the dashboard at `/admin/quick`, not bound to any lead, for fast phone/text inquiries. Reuses the existing pricing engine, service multi-select + tier toggle, live auto-calc, and branded quote/receipt templates. "Quick Quote" link added to the admin topbar nav. Built entirely in `routes/admin.js` (`GET`/`POST /admin/quick`), reusing `buildQuoteEmail` / `buildReceiptEmail`. On dev, not yet on master.
-- **Implemented:** Quote/Receipt mode switch on one screen; service multi-select + tier toggle with live auto-fill from the pricing table; any field overridable, total recalcs live. Quote outcomes: (1) calculator only (Clear, nothing saved); (2) Send (create "Quick Quote" lead in Quoted stage, save quote, email branded quote with accept link); (3) Copyable link (create lead + quote + token, return result page with the customer quote URL + one-tap Copy button); plus Save as New Lead (no email). Receipt mode mirrors the receipt builder: vehicle/date/payment(+Other)/address, 4 advisories with timed follow-up reminders, office notes; Send Receipt (emails, advances lead to Receipt Sent + writes followups) or Save as New Lead.
-- Original spec (for reference):
-- **Quote/Receipt mode switch** on one screen; usable on the front end (brand-new) or back end (within an existing lead). Pick services + tier, override any number, total recalcs live (for reading off on the phone).
-- **Three outcomes:** (1) calculator only — nothing saved, can be erased; (2) send to customer — enter first/last name + email → creates a lead (source "Quick Quote") in the Quoted stage, saves the quote, emails the branded quote with the accept link; (3) copyable shareable link — creates the lead + quote + token and returns the customer-facing branded quote URL the owner copy-pastes into their own texting app.
-- Also: option to save as a new lead without sending.
-- **SMS note:** in-app text sending needs an SMS provider (Twilio etc.) — not wired yet. For text inquiries, use email or the copyable link for now. Real in-app SMS is its own later phase.
+**Phase 7B (complete — CRM customer profiles + admin sidebar restyle):**
+- `customers` table + `customer_vehicles` + `customer_addresses` child tables in SQLite. `customer_id` FK added to `leads`.
+- `customers.js` module: `findCustomer`, `findOrCreateForLead`, `linkLead`, `attachSquareId`, `statsFor`, `runBackfill`.
+- Auto-link on every new lead (contact form + Quick Quote) by email then phone (both normalized). Idempotent backfill on boot for existing leads.
+- `/admin/customers`: searchable list sorted by last activity, shows name/phone/email/jobs/revenue/last service. Links to profile.
+- `/admin/customer/:id`: collapsible sections — header stats (lifetime spend, jobs, quotes sent, conversion rate), Notes (auto-save), Tags (Repeat Customer/Fleet/Referred/VIP), Vehicles (add/delete year/make/model/trim/VIN), Addresses (add/delete), Activity/Job History timeline, Upcoming Follow-ups. "View Customer Profile" link on lead detail page.
+- Admin fully migrated to 240px sidebar nav (desktop fixed / mobile off-canvas hamburger drawer) per `bk-admin-design` skill. Design tokens applied across all admin pages. Heroicons replacing emoji. Pill status badges with 15% tint. Stat blocks (white card, text-3xl/700). Status-color left borders on lead/customer cards.
+- Collapsible sections on every admin page (lead detail, customer profile, Quick Quote, Receipt builder) — all default closed, state saved to localStorage per `bkc_` prefix.
+- `bk-admin-design` skill installed at `.claude/skills/bk-admin-design/SKILL.md`. Load this at the start of any admin UI session.
+- Live on dev (commit `67a34f3`). **Not yet on master** (9 commits ahead on dev).
 
-**Phase 7 Build Plan:**
-- **Key decision (deferred to build session):** Option A — virtual de-duplication (query leads by email/phone, group on the fly, no schema change) vs Option B — real `customers` table with migration (adds a `customer_id` FK to `leads`). Option A is faster to ship; Option B is the correct long-term foundation. Decide at build session start.
-- **New `customers` table (Option B):** `id`, `created_at`, `first_name`, `last_name`, `phone`, `email`, `square_customer_id`, `notes`, `vehicles` (JSON array of {year, make, model, vin}).
-- **`/admin/customers`:** Searchable list — customer name, phone, email, job count, last service date, lifetime spend. Sortable. Links to customer profile.
-- **`/admin/customer/:id`:** Customer profile header (name, phone, email, Square link); Notes card (free-text, auto-save); Vehicles card (add/edit year/make/model/VIN); Job History timeline (all leads + quotes + receipts, newest first); Upcoming Follow-ups; Lifetime stats (total jobs, total spend, last service).
-- **Auto-link logic:** When a new lead comes in (form or Quick Quote), match email or phone to existing customer and attach `customer_id`. If no match, create a new customer record automatically.
-- **Build order:** 1) customers table + migration, 2) auto-link on lead create, 3) customer list page, 4) customer profile page, 5) admin dashboard home (recent activity, pipeline summary).
-- **Not in Phase 7:** SMS, Square Appointments auto-booking, pricing matrix, white-label.
+**Phase 7C (next — Dashboard + Reports):**
+- Dashboard home: recent activity feed, pipeline summary (lead counts by status), revenue this month.
+- Reports: Revenue (by month/service), Conversions (quote → job rate), Services (most-requested).
+- Dashboard is a placeholder page now; reports are placeholder stubs.
 
 **Phase 8:** Automated quotes — instant quote emails based on vehicle type and service selected (requires pricing table to be finalized first).
 
@@ -146,12 +148,11 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/eager-ride-SnMeU` — DB wipe fix, quote fixes, clickable cards, Quick Quote improvements (merged to master via PRs #10–#14 ✅)
-- `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
-- `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Phases 2, 3, 4, 5, 6, 7A, 7B all complete and live on master. Includes: receipt builder, follow-up reminders + dashboard, Quick Quote / Receipt Generator at `/admin/quick`, delete lead with confirmation modal, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store, blog fix, modern calendar widget on accept page, dynamic admin URL in emails, admin favicon, clickable lead cards, updated quote email banner, DB path outside git directory.
-- dev and master are in sync.
+- Last working branch: `claude/eloquent-dijkstra-eL19U` — Phase 7B CRM: customers table, customer list/profile pages, sidebar nav restyle, design tokens, collapsible sections everywhere
+- `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅ — **Phase 7B is live on dev** (commit `67a34f3`)
+- `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **master is 9 commits behind dev** (Phase 7B not yet on master)
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
+- `bk-admin-design` skill installed at `.claude/skills/bk-admin-design/SKILL.md` — load before any admin UI work ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
 - Pre-push hook in place — blocks direct pushes to master ✅
 - Session startup hook shows pending dev-vs-master commits at session start ✅
@@ -160,8 +161,9 @@ Update this section at the end of each session to stay caught up next time.
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - **DB path fix:** `NODE_ENV=production` set in Hostinger hPanel for both dev and master — database now stored outside the git directory and survives all deploys ✅
 - Next steps:
-  1. Phase 7: full CRM dashboard (customer profiles, vehicle history, job history) — plan documented above, ready to build
-  2. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
+  1. Verify Phase 7B on dev.brakeknights.com, then "go master" to create PR
+  2. Phase 7C: Dashboard home (recent activity, pipeline summary) + Reports (Revenue, Conversions, Services)
+  3. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
 
 ## Pre-Launch Checklist (Before Merging to Master)
@@ -204,7 +206,8 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Phase 7: full CRM dashboard (customer profiles, vehicle history, job history) — plan documented in Platform Build Phases above, ready to start
+- [ ] Phase 7B → master: verify on dev.brakeknights.com, then "go master" to create PR (dev is 9 commits ahead)
+- [ ] Phase 7C: Dashboard home (recent activity feed, pipeline summary by status, revenue this month) + Reports (Revenue by month/service, Conversions, Services breakdown)
 - [ ] Phase 6C: Square auto-trigger (Square events fire receipt + follow-up flow) — deferred, spec later
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
@@ -219,19 +222,18 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
-- [x] DB wipe fix: `NODE_ENV=production` in Hostinger hPanel moves SQLite database outside git directory — survives all future deploys (verified: test lead persisted through a redeploy on dev). PR #10.
-- [x] Quote send error feedback: lead detail page now shows green banner on success and red banner if email fails. PR #11.
-- [x] Delete lead: "Lead not found" bare page replaced with redirect back to admin list; delete button now shows explicit in-page confirmation modal instead of browser native confirm(). PR #11.
-- [x] All bare "Lead not found" pages fixed (12 routes): stale admin links now redirect to /admin dashboard instead of a blank error page. PR #12.
-- [x] Updated quote email: when a second quote is sent to the same email address, subject says "Your Updated Brake Service Quote" and a blue banner appears in the email body noting it replaces the prior quote. Applies to both regular quote flow and Quick Quote tool. PR #12.
-- [x] Master deploy workflow changed permanently: Claude always creates a PR (dev → master), user clicks Merge on GitHub. No more direct pushes to master. Documented in CLAUDE.md.
-- [x] Quick Quote builder: tier toggle moved above service checkboxes; Combined/Separate line items toggle added to Customer Quote section (hides in Receipt mode). PR #13.
-- [x] Lead cards: entire card is now clickable to open the lead (click anywhere except action buttons/links). PR #14.
-- [x] Phase 7B fixes (merged to dev and master via PR #8): blog page fix (infinite redirect loop on live site); modern inline calendar widget on customer accept page (replaces native selects — month nav, day grid, Sundays blocked, Sat 3pm cutoff, submit blocked until both date+time picked); dynamic admin URL in alt-times emails (no longer hardcoded to brakeknights.com); admin favicon now live on master.
-- [x] Phase 7B (previous batch, merged to dev): remove "(not taxed)" label from labor line in quote builder; alt-times form date/time replaced with select dropdowns (no Sundays, business-hour slots); per-service warranty language in quote emails (rotors/drums = full warranty, pads-only = labor warranty, inspection/fluid = none); removed em dashes from scheduling flow; scheduling panel hides Approve/Deny after alt times sent (shows amber waiting state instead); alt time options in customer email are clickable token-based buttons.
-- [x] Quick Quote additions (merged to dev): custom service open-text field (combinable with brake services for non-standard jobs); save draft to DB to resume later without rebuilding.
-- [x] Phase 7A: Quick Quote / Receipt Generator at `/admin/quick` (standalone, not bound to a lead) — quote/receipt mode switch, service multi-select + tier toggle with live auto-fill, live recalc; quote outcomes (calculator-only/erase, Send + create lead, copyable quote link with Copy button), Save as New Lead; receipt mode (vehicle/date/payment/address, advisories + timed follow-ups, office notes) Send or Save; "Quick Quote" topbar nav link. Merged to dev.
-- [x] Phase 7A refinements (round 2): delete lead button (cascade-delete all records permanently); receipt address Google Maps autocomplete; advisory reminder: replaced time-period dropdown with direct date picker, no pre-fill; quick quote receipt mode: removed "Save as New Lead" button; email button on lead list/detail now copies address to clipboard on click (fixes desktop where no email client); receipt builder: 1 advisory shown + 3 hidden + Add Advisory button; quick quote: same advisory 1+Add pattern; quick quote POST handler updated to use direct date for followups; Preview Email button on quick quote page (both quote and receipt modes); auto-save localStorage (navigate away and back restores form); "Clear & Start Over" replaces old Clear button.
+- [x] Phase 7B: `customers` table + `customer_vehicles` + `customer_addresses` tables in SQLite. `customer_id` FK on leads. Idempotent backfill on boot.
+- [x] `customers.js` module: normEmail/normPhone, findCustomer (email first, then phone digits-only), findOrCreateForLead, linkLead, attachSquareId, statsFor, runBackfill.
+- [x] Auto-link new leads to customer records on every lead creation (contact form + Quick Quote).
+- [x] `/admin/customers`: searchable list, sorted by last activity, shows jobs/revenue/last service. Links to profile.
+- [x] `/admin/customer/:id`: collapsible sections (all default closed) — stats header, Notes auto-save, Tags (Repeat Customer/Fleet/Referred/VIP), Vehicles (add/delete), Addresses (add/delete), Activity timeline, Upcoming Follow-ups.
+- [x] "View Customer Profile" link on lead detail page.
+- [x] Admin sidebar nav: 240px fixed desktop / off-canvas hamburger mobile drawer. Replaces topbar nav. `bk-admin-design` design tokens applied across all admin pages.
+- [x] Design system: Heroicons inline SVG, pill status badges with 15% tint, stat blocks (text-3xl/700), status-color left borders on cards. `--cta:#4169e1` everywhere (no gold/amber).
+- [x] Collapsible sections on every admin page (lead detail 7 sections, customer profile 7 sections, Quick Quote 6 sections, Receipt builder 4 sections) — all default closed, localStorage state via `bkc_` prefix.
+- [x] `bk-admin-design` skill written to `.claude/skills/bk-admin-design/SKILL.md`.
+- [x] Phase 7B stats fixes: jobs count = completedCount (sent receipt) only; phone displayed as dashes format (703-555-0123); removed "Customer #N" from profile header; lifetime stats recategorized.
+- [x] All merged to dev (commit `67a34f3`). Not yet on master.
 
 ### Previously Completed This Session
 - [x] Phase 5: receipt form + branded receipt email + lead auto-completes; receipts + followups tables; Phase 6 follow-up reminder cron in server.js; "Complete Job & Send Receipt" button on lead cards and quote page
