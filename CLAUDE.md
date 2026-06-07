@@ -146,7 +146,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/eager-ride-SnMeU` — DB wipe fix, quote fixes, clickable cards, Quick Quote improvements (merged to master via PRs #10–#14 ✅)
+- Last working branch: `claude/funny-davinci-IFPbC` — Phase 7B + 7C (PR #15 ✅) + customer profile tag/follow-up fixes (on dev, not yet on master)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B all complete and live on master. Includes: receipt builder, follow-up reminders + dashboard, Quick Quote / Receipt Generator at `/admin/quick`, delete lead with confirmation modal, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store, blog fix, modern calendar widget on accept page, dynamic admin URL in emails, admin favicon, clickable lead cards, updated quote email banner, DB path outside git directory.
@@ -219,6 +219,8 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Phase 7B + 7C: CRM customer profiles, sidebar nav, dashboard, and reports — merged to master via PR #15 ✅
+- [x] Customer profile fix: tags now use per-tag add/remove (free-text input + preset quick-picks + X button on each tag); follow-up add form always visible with job picker dropdown when customer has multiple jobs — on dev, not yet on master
 - [x] DB wipe fix: `NODE_ENV=production` in Hostinger hPanel moves SQLite database outside git directory — survives all future deploys (verified: test lead persisted through a redeploy on dev). PR #10.
 - [x] Quote send error feedback: lead detail page now shows green banner on success and red banner if email fails. PR #11.
 - [x] Delete lead: "Lead not found" bare page replaced with redirect back to admin list; delete button now shows explicit in-page confirmation modal instead of browser native confirm(). PR #11.
