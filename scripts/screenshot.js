@@ -35,6 +35,15 @@ async function main() {
   const browser = await chromium.launch();
   const page    = await browser.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });
+
+  // Log in if visiting an admin route
+  if (urlPath.startsWith('/admin')) {
+    await page.goto(`http://localhost:${PORT}/admin/login`);
+    await page.fill('input[name="password"]', process.env.ADMIN_PASSWORD || 'brakeknights');
+    await page.click('button[type="submit"]');
+    await page.waitForNavigation({ waitUntil: 'load' }).catch(() => {});
+  }
+
   await page.goto(`http://localhost:${PORT}${urlPath}`);
 
   if (selector) {
