@@ -355,8 +355,20 @@
           </div>
 
           <div class="form-group">
-            <label for="vehicle">Vehicle Info *</label>
-            <input type="text" id="vehicle" placeholder="2018 Honda Accord" required>
+            <label>Vehicle *</label>
+            <div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;">
+              <select id="vehicle-year" style="width:auto;" onchange="bkLoadMakes()" required>
+                <option value="" disabled selected>Year</option>
+              </select>
+              <select id="vehicle-make" style="width:auto;" onchange="bkLoadModels()" disabled required>
+                <option value="" disabled selected>Make</option>
+              </select>
+              <select id="vehicle-model" style="width:auto;" onchange="bkVehicleSelected()" disabled>
+                <option value="" disabled selected>Model</option>
+              </select>
+            </div>
+            <input type="hidden" id="vehicle" name="vehicle">
+            <div id="tesla-block-msg" style="display:none;color:#ff8080;font-size:0.85rem;margin-top:8px;font-weight:600;line-height:1.4;">We currently don't service Tesla vehicles. Please contact a Tesla-authorized service center for EV brake work.</div>
           </div>
 
           <div class="form-group">
@@ -911,6 +923,77 @@
 </footer>
 
 <script>
+  // ── Cascading vehicle dropdowns (NHTSA API) ──────────────────────────────
+  const BK_MAKES = [
+    'Acura','Alfa Romeo','Audi','BMW','Buick','Cadillac','Chevrolet',
+    'Chrysler','Dodge','Ferrari','Ford','Genesis','GMC','Honda',
+    'Hyundai','Infiniti','Jeep','Kia','Land Rover','Lexus','Lincoln',
+    'Maserati','Mazda','Mercedes-Benz','Mitsubishi','Nissan',
+    'Porsche','Ram','Rolls-Royce','Subaru','Tesla','Toyota',
+    'Volkswagen','Volvo'
+  ];
+  (function populateYears() {
+    const sel = document.getElementById('vehicle-year');
+    const cur = new Date().getFullYear() + 1;
+    for (let y = cur; y >= 1990; y--) {
+      const o = document.createElement('option');
+      o.value = y; o.textContent = y; sel.appendChild(o);
+    }
+  })();
+  function bkLoadMakes() {
+    const makeSel  = document.getElementById('vehicle-make');
+    const modelSel = document.getElementById('vehicle-model');
+    makeSel.innerHTML = '<option value="" disabled selected>Make</option>';
+    BK_MAKES.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; makeSel.appendChild(o); });
+    makeSel.disabled = false;
+    modelSel.innerHTML = '<option value="" disabled selected>Model</option>';
+    modelSel.disabled = true;
+    document.getElementById('vehicle').value = '';
+    document.getElementById('tesla-block-msg').style.display = 'none';
+  }
+  function bkLoadModels() {
+    const year     = document.getElementById('vehicle-year').value;
+    const make     = document.getElementById('vehicle-make').value;
+    const modelSel = document.getElementById('vehicle-model');
+    document.getElementById('vehicle').value = '';
+    document.getElementById('tesla-block-msg').style.display = 'none';
+    if (make === 'Tesla') {
+      modelSel.innerHTML = '<option value="" disabled selected>Model</option>';
+      modelSel.disabled = true;
+      document.getElementById('tesla-block-msg').style.display = 'block';
+      return;
+    }
+    modelSel.innerHTML = '<option value="" disabled selected>Loading...</option>';
+    modelSel.disabled = true;
+    const url = 'https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/' + encodeURIComponent(make) + '/modelyear/' + year + '?format=json';
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        let models = (data.Results || []).map(m => m.Model_Name).filter(Boolean).sort();
+        if (!models.length) {
+          return fetch('https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMake/' + encodeURIComponent(make) + '?format=json')
+            .then(r => r.json()).then(d => (d.Results || []).map(m => m.Model_Name).filter(Boolean).sort());
+        }
+        return models;
+      })
+      .then(models => {
+        modelSel.innerHTML = '<option value="" disabled selected>Model</option>';
+        models.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; modelSel.appendChild(o); });
+        modelSel.disabled = false;
+      })
+      .catch(() => {
+        modelSel.innerHTML = '<option value="" disabled selected>Model</option>';
+        modelSel.disabled = false;
+      });
+  }
+  function bkVehicleSelected() {
+    const y = document.getElementById('vehicle-year').value;
+    const mk = document.getElementById('vehicle-make').value;
+    const mo = document.getElementById('vehicle-model').value;
+    document.getElementById('vehicle').value = [y, mk, mo].filter(Boolean).join(' ');
+  }
+  // ───────────────���────────────────────────────────────────────────────────
+
   function toggleFaq(btn) {
     const answer = btn.nextElementSibling;
     const isOpen = btn.classList.contains('open');
@@ -945,6 +1028,15 @@
   async function handleSubmit(e) {
     e.preventDefault();
     const btn = e.target.querySelector('[type=submit]');
+    if (document.getElementById('vehicle-make')?.value === 'Tesla') {
+      document.getElementById('tesla-block-msg').style.display = 'block';
+      return;
+    }
+    const vehicleVal = document.getElementById('vehicle')?.value;
+    if (!vehicleVal) {
+      alert('Please select your vehicle year, make, and model.');
+      return;
+    }
     btn.textContent = 'Sending…';
     btn.disabled = true;
     const data = {
@@ -952,7 +1044,7 @@
       lastName:         document.getElementById('lname')?.value,
       phone:            document.getElementById('phone')?.value,
       email:            document.getElementById('email')?.value,
-      vehicle:          document.getElementById('vehicle')?.value,
+      vehicle:          vehicleVal,
       service:          document.getElementById('service')?.value,
       preferredContact: document.getElementById('preferred-contact')?.value,
       message:          document.getElementById('message')?.value,
