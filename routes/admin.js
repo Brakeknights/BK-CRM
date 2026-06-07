@@ -219,6 +219,28 @@ function followupDueDate(baseDate, timeframe, customDate) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// Returns effective pricing data: DB overrides take precedence over pricing.js static file.
+// Called at request time so edits on the settings page take effect immediately.
+function getEffectivePricing() {
+  var rows = [];
+  try { rows = db.prepare('SELECT * FROM pricing_overrides').all(); } catch (_) {}
+  if (!rows.length) return PRICING.services;
+  var result = {};
+  rows.forEach(function(row) {
+    var entry = {
+      minutes:     row.minutes,
+      customQuote: !!row.custom_quote,
+      standard:    { parts: row.std_parts, labor: row.std_labor, shopSupplies: row.std_supplies }
+    };
+    if (row.note) entry.note = row.note;
+    if (row.has_premium) {
+      entry.premium = { parts: row.prem_parts, labor: row.prem_labor, shopSupplies: row.prem_supplies };
+    }
+    result[row.service_name] = entry;
+  });
+  return result;
+}
+
 // Formats a stored ISO date (YYYY-MM-DD) as "Friday, June 5, 2026".
 function fmtPrefDate(val) {
   if (!val) return '—';
@@ -529,8 +551,8 @@ var NAV = [
     ['services',    'Services',    '/admin/reports/services',    'wrench']
   ]],
   ['SETTINGS', [
-    ['pricing',   'Pricing',   '/admin/settings/pricing',   'tag'],
-    ['templates', 'Templates', '/admin/settings/templates', 'document']
+    ['pricing',   'Pricing & Tiers', '/admin/settings/pricing',   'tag'],
+    ['templates', 'Templates',       '/admin/settings/templates', 'document']
   ]]
 ];
 
@@ -1144,7 +1166,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var currentTier    = q.tier || 'standard';
   var currentTaxRate = q.tax_rate != null ? +(q.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
 
-  var serviceNames = Object.keys(PRICING.services);
+  var effectivePricing = getEffectivePricing();
+  var serviceNames = Object.keys(effectivePricing);
   var currentServices = currentService ? currentService.split(', ').map(function(s) { return s.trim(); }) : [];
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
@@ -1154,7 +1177,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '</div>'
     + '<input type="hidden" name="service" id="svcHidden" value="' + esc(currentService) + '">';
 
-  var pricingJson = JSON.stringify(PRICING.services);
+  var pricingJson = JSON.stringify(effectivePricing);
   var noEmail = !lead.email;
   // Build Quote opens by default only at the quoting stages; later stages keep it
   // collapsed so the page stays compact. Owner's manual toggle is remembered.
@@ -1801,14 +1824,15 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   // Service picker mirrors the quote tool: a multi-select of every service so the
   // owner can change/add what was actually done if the job grew on arrival.
   var selectedServices = service ? service.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  var rEffectivePricing = getEffectivePricing();
   var rServiceCheckboxes = '<div class="svc-check-list">'
-    + Object.keys(PRICING.services).map(function(s) {
+    + Object.keys(rEffectivePricing).map(function(s) {
         var checked = selectedServices.indexOf(s) >= 0 ? ' checked' : '';
         return '<label class="svc-check-item"><input type="checkbox" class="rsvc-cb" value="' + esc(s) + '"' + checked + ' onchange="rUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
       }).join('')
     + '</div>'
     + '<input type="hidden" name="service" id="rsvcHidden" value="' + esc(service) + '">';
-  var rPricingJson = JSON.stringify(PRICING.services);
+  var rPricingJson = JSON.stringify(rEffectivePricing);
 
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
     return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
@@ -2365,8 +2389,9 @@ router.post('/followup/:id/cancel', requireAuth, express.urlencoded({ extended: 
 // text. Receipt mode mirrors the receipt builder (send or save as a lead).
 
 router.get('/quick', requireAuth, function(req, res) {
-  var serviceNames = Object.keys(PRICING.services);
-  var pricingJson = JSON.stringify(PRICING.services);
+  var qqPricing = getEffectivePricing();
+  var serviceNames = Object.keys(qqPricing);
+  var pricingJson = JSON.stringify(qqPricing);
   var taxPct = +(PRICING.taxRate * 100).toFixed(2);
 
   // Drafts list
@@ -3767,7 +3792,341 @@ router.get('/reports/services', requireAuth, function(req, res) {
 
 // ─── Placeholder pages for not-yet-built sidebar items ────────────────────────
 router.get('/receipts',           requireAuth, function(req, res) { placeholderPage(req, res, 'Receipts', 'an upcoming phase'); });
-router.get('/settings/pricing',   requireAuth, function(req, res) { placeholderPage(req, res, 'Pricing', 'an upcoming phase'); });
+// ─── Phase 8A: Pricing & Tiers settings ────────────────────────────────────────
+
+router.get('/settings/pricing', requireAuth, function(req, res) {
+  var services = db.prepare('SELECT * FROM pricing_overrides ORDER BY id').all();
+  if (!services.length) {
+    services = Object.keys(PRICING.services).map(function(name) {
+      var svc = PRICING.services[name];
+      var std = svc.standard || { parts: 0, labor: 0, shopSupplies: 0 };
+      var prem = svc.premium || std;
+      return { service_name: name, std_parts: std.parts || 0, std_labor: std.labor || 0,
+               std_supplies: std.shopSupplies || 0, prem_parts: prem.parts || 0,
+               prem_labor: prem.labor || 0, prem_supplies: prem.shopSupplies || 0,
+               has_premium: svc.premium ? 1 : 0, minutes: svc.minutes || 60,
+               custom_quote: svc.customQuote ? 1 : 0, note: svc.note || null };
+    });
+  }
+  var mappings = db.prepare('SELECT * FROM vehicle_tier_mappings ORDER BY tier, make, model').all();
+  var unknownRows = [];
+  try {
+    unknownRows = db.prepare(
+      'SELECT uv.*, l.first_name, l.last_name FROM unknown_vehicles uv' +
+      ' LEFT JOIN leads l ON l.id = uv.lead_id' +
+      ' WHERE uv.classified_tier IS NULL ORDER BY uv.created_at DESC'
+    ).all();
+  } catch (_) {}
+
+  // Tier badge HTML (no amber, no gold)
+  function tierBadge(tier) {
+    var cfg = {
+      standard:    { bg: 'rgba(37,99,168,0.12)',   color: '#1a4a7a', label: 'Standard' },
+      premium:     { bg: 'rgba(139,92,246,0.12)',  color: '#6d28d9', label: 'Premium' },
+      not_serviced:{ bg: 'rgba(239,68,68,0.12)',   color: '#b91c1c', label: 'Not Serviced' }
+    };
+    var c = cfg[tier] || cfg.standard;
+    return '<span style="background:' + c.bg + ';color:' + c.color + ';font-size:0.72rem;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em;">' + c.label + '</span>';
+  }
+
+  // ── Service Prices tab ─────────────────────────────────────────────────────
+  var svcCards = services.map(function(svc, idx) {
+    if (svc.custom_quote) {
+      return '<div class="card" style="margin-bottom:10px;">'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;">'
+        + '<div style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</div>'
+        + '<span style="background:rgba(37,99,168,0.12);color:#1a4a7a;font-size:0.72rem;font-weight:700;padding:2px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;">Custom Quote</span>'
+        + '</div>'
+        + '<div style="color:#94a3b8;font-size:0.82rem;margin-top:6px;">No preset pricing. Owner enters price manually on each job.</div>'
+        + '</div>';
+    }
+
+    function priceCol(tierKey, isStd) {
+      var p = isStd ? svc.std_parts  : svc.prem_parts;
+      var l = isStd ? svc.std_labor  : svc.prem_labor;
+      var s = isStd ? svc.std_supplies : svc.prem_supplies;
+      var tax = (p + s) * PRICING.taxRate;
+      var total = +p + +l + +s + tax;
+      var totalId = 'p8-' + (isStd ? 'std' : 'prem') + '-total-' + idx;
+      var label = isStd ? 'Standard' : 'Premium';
+      function numInput(field, val) {
+        return '<div style="margin-bottom:8px;">'
+          + '<div style="font-size:0.75rem;font-weight:500;color:#475569;margin-bottom:3px;">' + field.charAt(0).toUpperCase() + field.slice(1) + '</div>'
+          + '<div style="display:flex;align-items:center;gap:4px;">'
+          + '<span style="color:#94a3b8;font-size:0.85rem;">$</span>'
+          + '<input type="number" step="0.01" min="0" class="p8-price-input" data-idx="' + idx + '" data-tier="' + tierKey + '" data-field="' + field + '" value="' + (+val) + '" style="width:82px;padding:7px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:0.88rem;text-align:right;">'
+          + '</div></div>';
+      }
+      return '<div style="flex:1;min-width:130px;">'
+        + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:8px;">' + label + '</div>'
+        + numInput('parts',    p)
+        + numInput('labor',    l)
+        + numInput('supplies', s)
+        + '<div style="font-size:0.8rem;color:#475569;border-top:1px solid var(--gray-100);padding-top:6px;">Total: <strong id="' + totalId + '">$' + money(total) + '</strong></div>'
+        + '</div>';
+    }
+
+    return '<div class="card" style="margin-bottom:10px;" data-svc-idx="' + idx + '">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+      + '<div style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</div>'
+      + '<div style="display:flex;align-items:center;gap:8px;">'
+      + '<input type="number" min="0" step="5" class="p8-price-input" data-idx="' + idx + '" data-tier="meta" data-field="minutes" value="' + (+svc.minutes || 60) + '" style="width:54px;padding:4px 6px;border:1px solid var(--gray-200);border-radius:5px;font-size:0.82rem;text-align:right;" title="Duration (minutes)">'
+      + '<span style="font-size:0.78rem;color:#94a3b8;">min</span>'
+      + '</div></div>'
+      + '<div style="display:flex;gap:16px;flex-wrap:wrap;">'
+      + priceCol('std', true)
+      + (svc.has_premium
+          ? priceCol('prem', false)
+          : '<div style="flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;"><span style="color:#94a3b8;font-size:0.82rem;font-style:italic;">Single tier only</span></div>')
+      + '</div></div>';
+  }).join('');
+
+  var pricesTab = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
+    + '<div style="font-size:0.875rem;color:#475569;">Tax rate (VA): <strong>6%</strong> — applied to parts + supplies only. Labor is not taxed.</div>'
+    + '<button class="btn btn-blue btn-sm" onclick="saveAllPrices()">Save All Prices</button>'
+    + '</div>'
+    + svcCards
+    + '<div style="margin-top:6px;text-align:right;"><button class="btn btn-blue btn-sm" onclick="saveAllPrices()">Save All Prices</button></div>';
+
+  // ── Vehicle Tiers tab ──────────────────────────────────────────────────────
+  var tierDefs = '<div class="card" style="margin-bottom:14px;">'
+    + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:12px;">Tier Definitions</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;">'
+    + '<div><div style="font-weight:700;color:#1a4a7a;margin-bottom:4px;">Standard</div>'
+    + '<div style="font-size:0.82rem;color:#475569;line-height:1.5;">Economy and family vehicles: domestic cars (Chevrolet, Ford, Dodge, GMC cars), Japanese and Korean brands. Regular parts cost and service time.</div></div>'
+    + '<div><div style="font-weight:700;color:#6d28d9;margin-bottom:4px;">Premium</div>'
+    + '<div style="font-size:0.82rem;color:#475569;line-height:1.5;">Luxury brands (BMW, Mercedes-Benz, Audi, Lexus, Acura, etc.) and all trucks/SUVs regardless of brand. Higher parts cost and service complexity.</div></div>'
+    + '<div><div style="font-weight:700;color:#b91c1c;margin-bottom:4px;">Not Serviced</div>'
+    + '<div style="font-size:0.82rem;color:#475569;line-height:1.5;">Vehicles requiring specialized equipment we do not carry (e.g., Tesla). Customer sees a friendly message and cannot book.</div></div>'
+    + '<div><div style="font-weight:700;color:#94a3b8;margin-bottom:4px;">Unknown Vehicle</div>'
+    + '<div style="font-size:0.82rem;color:#475569;line-height:1.5;">Vehicle not matched by any rule below. Defaults to Premium pricing to avoid underquoting. Appears in Unknown Vehicles for review.</div></div>'
+    + '</div></div>';
+
+  var addMappingForm = '<div class="card" style="margin-bottom:14px;">'
+    + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:12px;">Add Rule</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
+    + '<div style="flex:1;min-width:110px;">'
+    + '<div style="font-size:0.78rem;font-weight:500;color:#475569;margin-bottom:4px;">Make (brand)</div>'
+    + '<input id="p8-new-make" type="text" placeholder="e.g. Honda" style="width:100%;padding:9px 11px;border:1px solid var(--gray-200);border-radius:7px;font-size:0.88rem;">'
+    + '</div>'
+    + '<div style="flex:1;min-width:110px;">'
+    + '<div style="font-size:0.78rem;font-weight:500;color:#475569;margin-bottom:4px;">Model (blank = all models)</div>'
+    + '<input id="p8-new-model" type="text" placeholder="e.g. Pilot" style="width:100%;padding:9px 11px;border:1px solid var(--gray-200);border-radius:7px;font-size:0.88rem;">'
+    + '</div>'
+    + '<div style="flex:0 0 150px;">'
+    + '<div style="font-size:0.78rem;font-weight:500;color:#475569;margin-bottom:4px;">Tier</div>'
+    + '<select id="p8-new-tier" style="width:100%;padding:9px 11px;border:1px solid var(--gray-200);border-radius:7px;font-size:0.88rem;">'
+    + '<option value="standard">Standard</option><option value="premium">Premium</option><option value="not_serviced">Not Serviced</option>'
+    + '</select>'
+    + '</div>'
+    + '<button class="btn btn-blue btn-sm" style="flex:0 0 auto;min-height:44px;" onclick="addMapping()">Add Rule</button>'
+    + '</div></div>';
+
+  var tierFilterHtml = '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;" id="p8-tier-filters">'
+    + ['', 'standard', 'premium', 'not_serviced'].map(function(t, i) {
+        var lbl = ['All', 'Standard', 'Premium', 'Not Serviced'][i];
+        return '<button class="filter-tab' + (i === 0 ? ' active' : '') + '" onclick="filterMappings(\'' + t + '\',this)">' + lbl + '</button>';
+      }).join('')
+    + '</div>';
+
+  var mappingCards = mappings.length === 0
+    ? '<div style="text-align:center;padding:32px 24px;color:#94a3b8;font-size:0.875rem;">No rules yet. Add your first rule above.</div>'
+    : mappings.map(function(m) {
+        return '<div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:11px 16px;margin-bottom:8px;gap:12px;" data-tier="' + esc(m.tier) + '">'
+          + '<div style="flex:1;min-width:0;">'
+          + '<div style="font-weight:600;color:#0a1f3d;font-size:0.9rem;">' + esc(m.make) + '</div>'
+          + '<div style="font-size:0.8rem;color:#94a3b8;">' + (m.model ? esc(m.model) : 'All models') + '</div>'
+          + '</div>'
+          + '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">'
+          + tierBadge(m.tier)
+          + '<button onclick="deleteMapping(' + m.id + ',this)" style="background:none;border:1px solid var(--gray-200);color:#ef4444;font-size:0.78rem;font-weight:600;padding:5px 10px;border-radius:6px;cursor:pointer;min-height:36px;">Delete</button>'
+          + '</div></div>';
+      }).join('');
+
+  var tiersTab = tierDefs + addMappingForm + tierFilterHtml + '<div id="p8-mapping-list">' + mappingCards + '</div>';
+
+  // ── Unknown Vehicles tab ──────────────────────────────────────────────────
+  var unknownTab = unknownRows.length === 0
+    ? '<div class="card" style="text-align:center;padding:48px 24px;">'
+      + '<div style="color:#94a3b8;width:44px;height:44px;margin:0 auto 12px;">' + icon('wrench') + '</div>'
+      + '<div style="color:#475569;font-weight:600;margin-bottom:6px;">No unknown vehicles</div>'
+      + '<div style="color:#94a3b8;font-size:0.875rem;">When a customer submits a vehicle that does not match any rule, it will appear here for you to classify.</div>'
+      + '</div>'
+    : unknownRows.map(function(uv) {
+        var leadName = ((uv.first_name || '') + ' ' + (uv.last_name || '')).trim();
+        var vehicle  = [uv.year, uv.make, uv.model].filter(Boolean).join(' ');
+        return '<div class="card" style="margin-bottom:10px;" id="uv-card-' + uv.id + '">'
+          + '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
+          + '<div style="flex:1;min-width:0;">'
+          + '<div style="font-weight:600;color:#0a1f3d;margin-bottom:2px;">' + esc(vehicle || 'Unknown vehicle') + '</div>'
+          + (leadName ? '<div style="font-size:0.82rem;color:#475569;">Lead: <a href="/admin/quote/' + (uv.lead_id || '') + '" style="color:#1a4a7a;">' + esc(leadName) + '</a></div>' : '')
+          + '<div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Auto-assigned: ' + tierBadge(uv.auto_tier) + '</div>'
+          + '</div>'
+          + '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;flex-wrap:wrap;margin-top:4px;">'
+          + '<select id="uv-tier-' + uv.id + '" style="padding:8px 10px;border:1px solid var(--gray-200);border-radius:7px;font-size:0.85rem;">'
+          + '<option value="standard">Standard</option><option value="premium" selected>Premium</option><option value="not_serviced">Not Serviced</option>'
+          + '</select>'
+          + '<label style="display:flex;align-items:center;gap:5px;font-size:0.82rem;color:#475569;cursor:pointer;white-space:nowrap;">'
+          + '<input type="checkbox" id="uv-save-' + uv.id + '" style="width:16px;height:16px;"> Save to rules'
+          + '</label>'
+          + '<button class="btn btn-blue btn-sm" onclick="classifyUnknown(' + uv.id + ')" style="min-height:40px;">Classify</button>'
+          + '</div></div></div>';
+      }).join('');
+
+  // ── Page assembly ──────────────────────────────────────────────────────────
+  var tabNav = '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;" id="p8-main-tabs">'
+    + '<button class="filter-tab active" data-tab="prices"  onclick="switchP8Tab(\'prices\',this)">Service Prices</button>'
+    + '<button class="filter-tab"        data-tab="tiers"   onclick="switchP8Tab(\'tiers\',this)">Vehicle Tiers</button>'
+    + '<button class="filter-tab"        data-tab="unknown" onclick="switchP8Tab(\'unknown\',this)">Unknown Vehicles'
+    + (unknownRows.length > 0 ? '<span style="background:#ef4444;color:#fff;font-size:0.65rem;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px;">' + unknownRows.length + '</span>' : '')
+    + '</button></div>';
+
+  var script = '<script>'
+    + 'var P8_TAX=' + PRICING.taxRate + ';'
+    + 'var P8_SVCS=' + JSON.stringify(services.map(function(s) { return s.service_name; })) + ';'
+
+    + 'function switchP8Tab(tab,btn){'
+    + '  [\'prices\',\'tiers\',\'unknown\'].forEach(function(t){'
+    + '    document.getElementById(\'p8tab-\'+t).style.display=t===tab?\'\':\'none\';'
+    + '  });'
+    + '  document.querySelectorAll(\'#p8-main-tabs .filter-tab\').forEach(function(b){b.classList.remove(\'active\');});'
+    + '  btn.classList.add(\'active\');'
+    + '}'
+
+    + 'document.addEventListener(\'input\',function(e){'
+    + '  var el=e.target;if(!el.classList.contains(\'p8-price-input\'))return;'
+    + '  var idx=+el.dataset.idx;'
+    + '  function gv(tier,field){var i=document.querySelector(\'.p8-price-input[data-idx="\'+idx+\'"][data-tier="\'+tier+\'"][data-field="\'+field+\'"]\');return i?+i.value:0;}'
+    + '  function recalcTier(tk,elId){'
+    + '    var p=gv(tk,\'parts\'),l=gv(tk,\'labor\'),s=gv(tk,\'supplies\');'
+    + '    var t=p+l+s+(p+s)*P8_TAX;'
+    + '    var e2=document.getElementById(elId);if(e2)e2.textContent=\'$\'+t.toLocaleString(\'en-US\',{minimumFractionDigits:2,maximumFractionDigits:2});'
+    + '  }'
+    + '  recalcTier(\'std\',\'p8-std-total-\'+idx);'
+    + '  recalcTier(\'prem\',\'p8-prem-total-\'+idx);'
+    + '});'
+
+    + 'function saveAllPrices(){'
+    + '  var rows=P8_SVCS.map(function(name,idx){'
+    + '    function iv(tier,field){var i=document.querySelector(\'.p8-price-input[data-idx="\'+idx+\'"][data-tier="\'+tier+\'"][data-field="\'+field+\'"]\');return i?+i.value:0;}'
+    + '    return{name:name,std_parts:iv(\'std\',\'parts\'),std_labor:iv(\'std\',\'labor\'),std_supplies:iv(\'std\',\'supplies\'),'
+    + '           prem_parts:iv(\'prem\',\'parts\'),prem_labor:iv(\'prem\',\'labor\'),prem_supplies:iv(\'prem\',\'supplies\'),'
+    + '           minutes:iv(\'meta\',\'minutes\')};'
+    + '  });'
+    + '  fetch(\'/admin/settings/pricing/save-prices\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({services:rows})}).then(function(r){return r.json();}).then(function(r){'
+    + '    p8Banner(r.ok?\'Prices saved.\':\'Error: \'+(r.error||\'unknown\'),r.ok);'
+    + '  }).catch(function(){p8Banner(\'Network error. Please try again.\',false);});'
+    + '}'
+
+    + 'function addMapping(){'
+    + '  var make=document.getElementById(\'p8-new-make\').value.trim();'
+    + '  var model=document.getElementById(\'p8-new-model\').value.trim();'
+    + '  var tier=document.getElementById(\'p8-new-tier\').value;'
+    + '  if(!make){alert(\'Please enter a make (brand name).\');return;}'
+    + '  fetch(\'/admin/settings/pricing/add-mapping\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({make:make,model:model||null,tier:tier})}).then(function(r){return r.json();}).then(function(r){'
+    + '    if(r.ok){location.reload();}else{p8Banner(\'Error: \'+(r.error||\'unknown\'),false);}'
+    + '  });'
+    + '}'
+
+    + 'function deleteMapping(id,btn){'
+    + '  if(!confirm(\'Remove this vehicle rule?\'))return;'
+    + '  fetch(\'/admin/settings/pricing/delete-mapping\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({id:id})}).then(function(r){return r.json();}).then(function(r){'
+    + '    if(r.ok){var c=btn.closest(\'.card\');if(c)c.remove();}else{p8Banner(\'Error: \'+(r.error||\'unknown\'),false);}'
+    + '  });'
+    + '}'
+
+    + 'function filterMappings(tier,btn){'
+    + '  document.querySelectorAll(\'#p8-mapping-list .card\').forEach(function(c){c.style.display=(!tier||c.dataset.tier===tier)?\'\':\'none\';});'
+    + '  document.querySelectorAll(\'#p8-tier-filters .filter-tab\').forEach(function(b){b.classList.remove(\'active\');});'
+    + '  btn.classList.add(\'active\');'
+    + '}'
+
+    + 'function classifyUnknown(id){'
+    + '  var tier=document.getElementById(\'uv-tier-\'+id).value;'
+    + '  var save=document.getElementById(\'uv-save-\'+id).checked;'
+    + '  fetch(\'/admin/settings/pricing/classify-unknown\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({id:id,tier:tier,save_to_mappings:save})}).then(function(r){return r.json();}).then(function(r){'
+    + '    if(r.ok){var c=document.getElementById(\'uv-card-\'+id);if(c){c.style.opacity=\'.45\';c.insertAdjacentHTML(\'beforeend\',\'<div style="padding:5px 0;font-size:0.82rem;color:#22c55e;font-weight:600;">Classified as \'+tier+\'</div>\');}}'
+    + '    else{p8Banner(\'Error: \'+(r.error||\'unknown\'),false);}'
+    + '  });'
+    + '}'
+
+    + 'function p8Banner(msg,ok){'
+    + '  var b=document.getElementById(\'p8-banner\');'
+    + '  b.textContent=msg;b.style.display=\'\';'
+    + '  b.style.background=ok?\'#e6f9ee\':\'#fff0f0\';'
+    + '  b.style.color=ok?\'#1a7a3a\':\'#c0392b\';'
+    + '  b.style.border=\'1px solid \'+(ok?\'#b2dfcb\':\'#f5c6c6\');'
+    + '  setTimeout(function(){b.style.display=\'none\';},4000);'
+    + '}'
+    + '</script>';
+
+  var body = '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:14px;">Pricing &amp; Tiers</h1>'
+    + '<div id="p8-banner" style="display:none;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:0.875rem;font-weight:500;"></div>'
+    + tabNav
+    + '<div id="p8tab-prices">' + pricesTab + '</div>'
+    + '<div id="p8tab-tiers"  style="display:none;">' + tiersTab  + '</div>'
+    + '<div id="p8tab-unknown" style="display:none;">' + unknownTab + '</div>'
+    + script;
+
+  res.send(page('Pricing & Tiers', body, req));
+});
+
+router.post('/settings/pricing/save-prices', requireAuth, express.json(), function(req, res) {
+  var rows = req.body && req.body.services;
+  if (!Array.isArray(rows)) return res.json({ ok: false, error: 'Invalid data' });
+  var upsert = db.prepare(`INSERT INTO pricing_overrides
+    (service_name, std_parts, std_labor, std_supplies, prem_parts, prem_labor, prem_supplies, minutes, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(service_name) DO UPDATE SET
+      std_parts=excluded.std_parts, std_labor=excluded.std_labor, std_supplies=excluded.std_supplies,
+      prem_parts=excluded.prem_parts, prem_labor=excluded.prem_labor, prem_supplies=excluded.prem_supplies,
+      minutes=excluded.minutes, updated_at=excluded.updated_at`);
+  try {
+    db.transaction(function(rs) {
+      rs.forEach(function(s) {
+        if (!s.name) return;
+        upsert.run(s.name, +s.std_parts || 0, +s.std_labor || 0, +s.std_supplies || 0,
+                   +s.prem_parts || 0, +s.prem_labor || 0, +s.prem_supplies || 0, +s.minutes || 60);
+      });
+    })(rows);
+    res.json({ ok: true });
+  } catch (err) { res.json({ ok: false, error: err.message }); }
+});
+
+router.post('/settings/pricing/add-mapping', requireAuth, express.json(), function(req, res) {
+  var make  = (req.body.make  || '').trim();
+  var model = (req.body.model || '').trim() || null;
+  var tier  = req.body.tier;
+  if (!make) return res.json({ ok: false, error: 'Make is required' });
+  if (!['standard','premium','not_serviced'].includes(tier)) return res.json({ ok: false, error: 'Invalid tier' });
+  try {
+    var r = db.prepare('INSERT OR REPLACE INTO vehicle_tier_mappings (make, model, tier) VALUES (?, ?, ?)').run(make, model, tier);
+    res.json({ ok: true, id: r.lastInsertRowid });
+  } catch (err) { res.json({ ok: false, error: err.message }); }
+});
+
+router.post('/settings/pricing/delete-mapping', requireAuth, express.json(), function(req, res) {
+  var id = +req.body.id;
+  if (!id) return res.json({ ok: false, error: 'Invalid id' });
+  try { db.prepare('DELETE FROM vehicle_tier_mappings WHERE id = ?').run(id); res.json({ ok: true }); }
+  catch (err) { res.json({ ok: false, error: err.message }); }
+});
+
+router.post('/settings/pricing/classify-unknown', requireAuth, express.json(), function(req, res) {
+  var id   = +req.body.id;
+  var tier = req.body.tier;
+  if (!['standard','premium','not_serviced'].includes(tier)) return res.json({ ok: false, error: 'Invalid tier' });
+  try {
+    db.prepare("UPDATE unknown_vehicles SET classified_tier=?, classified_at=datetime('now') WHERE id=?").run(tier, id);
+    if (req.body.save_to_mappings) {
+      var uv = db.prepare('SELECT make, model FROM unknown_vehicles WHERE id = ?').get(id);
+      if (uv && uv.make) {
+        db.prepare('INSERT OR REPLACE INTO vehicle_tier_mappings (make, model, tier) VALUES (?, ?, ?)').run(uv.make, uv.model || null, tier);
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) { res.json({ ok: false, error: err.message }); }
+});
 router.get('/settings/templates', requireAuth, function(req, res) { placeholderPage(req, res, 'Templates', 'an upcoming phase'); });
 
 module.exports = router;

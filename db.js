@@ -180,6 +180,109 @@ addLeadCol('vin',                'TEXT');
 addLeadCol('internal_notes',     'TEXT');
 addLeadCol('customer_id',        'INTEGER REFERENCES customers(id)');
 
+// ─── Phase 8: pricing overrides, vehicle tier mappings, unknown vehicles ──────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pricing_overrides (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_name  TEXT    NOT NULL UNIQUE,
+    std_parts     REAL    NOT NULL DEFAULT 0,
+    std_labor     REAL    NOT NULL DEFAULT 0,
+    std_supplies  REAL    NOT NULL DEFAULT 0,
+    prem_parts    REAL    NOT NULL DEFAULT 0,
+    prem_labor    REAL    NOT NULL DEFAULT 0,
+    prem_supplies REAL    NOT NULL DEFAULT 0,
+    has_premium   INTEGER NOT NULL DEFAULT 1,
+    minutes       INTEGER NOT NULL DEFAULT 60,
+    custom_quote  INTEGER NOT NULL DEFAULT 0,
+    note          TEXT,
+    updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS vehicle_tier_mappings (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    make       TEXT    NOT NULL,
+    model      TEXT,
+    tier       TEXT    NOT NULL DEFAULT 'standard',
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(make, model)
+  );
+
+  CREATE TABLE IF NOT EXISTS unknown_vehicles (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id         INTEGER REFERENCES leads(id),
+    year            TEXT,
+    make            TEXT,
+    model           TEXT,
+    auto_tier       TEXT    NOT NULL DEFAULT 'premium',
+    classified_tier TEXT,
+    classified_at   TEXT,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+// Seed pricing_overrides from pricing.js on first run
+const pCount = db.prepare('SELECT COUNT(*) AS n FROM pricing_overrides').get().n;
+if (pCount === 0) {
+  const PSEED = require('./pricing');
+  const insP = db.prepare(`INSERT OR IGNORE INTO pricing_overrides
+    (service_name, std_parts, std_labor, std_supplies, prem_parts, prem_labor, prem_supplies, has_premium, minutes, custom_quote, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  Object.keys(PSEED.services).forEach(function(name) {
+    const svc = PSEED.services[name];
+    const std  = svc.standard || { parts: 0, labor: 0, shopSupplies: 0 };
+    const prem = svc.premium  || std;
+    insP.run(name, std.parts || 0, std.labor || 0, std.shopSupplies || 0,
+             prem.parts || 0, prem.labor || 0, prem.shopSupplies || 0,
+             svc.premium ? 1 : 0, svc.minutes || 60, svc.customQuote ? 1 : 0, svc.note || null);
+  });
+}
+
+// Seed vehicle_tier_mappings on first run
+const mCount = db.prepare('SELECT COUNT(*) AS n FROM vehicle_tier_mappings').get().n;
+if (mCount === 0) {
+  const insM = db.prepare('INSERT OR IGNORE INTO vehicle_tier_mappings (make, model, tier) VALUES (?, ?, ?)');
+  const SEED = [
+    // Standard base brands
+    ['Honda','standard'],['Toyota','standard'],['Nissan','standard'],['Mazda','standard'],
+    ['Mitsubishi','standard'],['Subaru','standard'],['Hyundai','standard'],['Kia','standard'],
+    ['Chevrolet','standard'],['Ford','standard'],['Dodge','standard'],['Chrysler','standard'],
+    ['Buick','standard'],['GMC','standard'],['Volkswagen','standard'],['Jeep','standard'],
+    // Premium base brands
+    ['BMW','premium'],['Mercedes-Benz','premium'],['Audi','premium'],['Volvo','premium'],
+    ['Lexus','premium'],['Acura','premium'],['Infiniti','premium'],['Cadillac','premium'],
+    ['Lincoln','premium'],['Genesis','premium'],['Land Rover','premium'],['Porsche','premium'],
+    ['Maserati','premium'],['Ferrari','premium'],['Lamborghini','premium'],['Bentley','premium'],
+    ['Rolls-Royce','premium'],['Alfa Romeo','premium'],['Ram','premium'],
+    // Not serviced
+    ['Tesla','not_serviced'],
+  ];
+  SEED.forEach(function(r) { insM.run(r[0], null, r[1]); });
+
+  // Model overrides: Jeep Standard (reinforce base)
+  [['Jeep','Wrangler','standard'],['Jeep','Renegade','standard'],
+   ['Jeep','Compass','standard'],['Jeep','Cherokee','standard'],
+   // Jeep Premium overrides
+   ['Jeep','Grand Cherokee','premium'],['Jeep','Grand Wagoneer','premium'],['Jeep','Gladiator','premium'],
+   // Ford trucks/SUVs
+   ['Ford','F-150','premium'],['Ford','F-250','premium'],['Ford','F-350','premium'],['Ford','F-450','premium'],
+   ['Ford','Expedition','premium'],['Ford','Ranger','premium'],
+   // Chevy trucks/SUVs
+   ['Chevrolet','Silverado','premium'],['Chevrolet','Suburban','premium'],['Chevrolet','Tahoe','premium'],
+   ['Chevrolet','Colorado','premium'],['Chevrolet','Traverse','premium'],
+   // GMC trucks/SUVs
+   ['GMC','Sierra','premium'],['GMC','Yukon','premium'],['GMC','Canyon','premium'],
+   // Toyota trucks/SUVs
+   ['Toyota','Tacoma','premium'],['Toyota','Tundra','premium'],
+   ['Toyota','4Runner','premium'],['Toyota','Sequoia','premium'],['Toyota','Land Cruiser','premium'],
+   // Nissan trucks/SUVs
+   ['Nissan','Titan','premium'],['Nissan','Armada','premium'],['Nissan','Frontier','premium'],
+   // Honda SUVs
+   ['Honda','Pilot','premium'],['Honda','Passport','premium'],['Honda','Ridgeline','premium'],
+   // Dodge trucks/SUVs
+   ['Dodge','Durango','premium'],
+  ].forEach(function(r) { insM.run(r[0], r[1], r[2]); });
+}
+
 module.exports = db;
 
 // Phase 7B: group any leads that aren't yet attached to a customer into customer
