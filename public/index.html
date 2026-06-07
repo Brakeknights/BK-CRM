@@ -351,7 +351,6 @@
           </div>
 
           <div class="form-group">
-            <label>Vehicle *</label>
             <div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;">
               <select id="vehicle-year" style="width:auto;" onchange="bkLoadMakes()" required>
                 <option value="" disabled selected>Year</option>
@@ -368,9 +367,8 @@
           </div>
 
           <div class="form-group">
-            <label for="service">Service Requested *</label>
             <select id="service" required onchange="handleServiceChange(this)">
-              <option value="" disabled selected>Select a service...</option>
+              <option value="" disabled selected>Service Needed</option>
               <option value="Front Pads">Front Pads</option>
               <option value="Rear Pads">Rear Pads</option>
               <option value="Front and Rear Pads">Front and Rear Pads</option>
@@ -391,14 +389,12 @@
           </div>
 
           <div class="form-group" id="message-group" style="display:none;">
-            <label for="message" id="message-label">Notes (optional)</label>
             <textarea id="message" placeholder="Any additional details..."></textarea>
           </div>
 
           <div class="form-group">
-            <label for="preferred-contact">Preferred Contact Method *</label>
             <select id="preferred-contact" required>
-              <option value="" disabled selected>Select one...</option>
+              <option value="" disabled selected>Preferred Contact Method</option>
               <option value="Call">Call</option>
               <option value="Text">Text</option>
               <option value="Email">Email</option>
