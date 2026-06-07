@@ -87,6 +87,10 @@ header {
   background: var(--navy);
   box-shadow: 0 2px 12px rgba(0,0,0,.4);
 }
+header .container {
+  max-width: 100%;
+  padding: 0 32px;
+}
 
 .logo { position: relative; z-index: 1001; }
 
@@ -154,10 +158,10 @@ nav { display: flex; align-items: center; gap: 4px; }
 
 .header-cta { display: flex; align-items: center; gap: 16px; }
 
-.fb-link { color: #90a4b8; font-size: .85rem; transition: color .15s; }
+.fb-link { display: inline-flex; align-items: center; gap: 5px; color: #90a4b8; font-size: .85rem; transition: color .15s; }
 .fb-link:hover { color: #4a90d9; }
 
-.google-review-link { color: #90a4b8; font-size: .85rem; transition: color .15s; }
+.google-review-link { display: inline-flex; align-items: center; gap: 5px; color: #90a4b8; font-size: .85rem; transition: color .15s; }
 .google-review-link:hover { color: var(--white); }
 
 .btn-call {
