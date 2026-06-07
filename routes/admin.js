@@ -3187,18 +3187,38 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '</div>'
     + '</div>';
 
-  // Tags card (collapsible)
+  // Tags card (collapsible) — removable pills + free-text add + preset quick picks
+  var currentTagsList = (c.tags || '').split(',').map(function(t) { return t.trim(); }).filter(Boolean);
   var tagsCard = collapseOpen('cust_tags', 'Tags', false)
-    + '<form method="POST" action="/admin/customer/' + c.id + '/tags">'
-    + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'
-    + CUSTOMER_TAGS.map(function(t) {
-        var on = (c.tags || '').split(',').map(function(x) { return x.trim(); }).indexOf(t) !== -1;
-        return '<label style="display:inline-flex;align-items:center;gap:6px;font-size:0.85rem;color:#1a2a3a;cursor:pointer;border:1.5px solid ' + (on ? '#4169e1' : '#dde3ea') + ';background:' + (on ? '#eef3ff' : '#fff') + ';padding:6px 11px;border-radius:8px;font-weight:600;">'
-          + '<input type="checkbox" name="tags" value="' + esc(t) + '"' + (on ? ' checked' : '') + '>' + esc(t) + '</label>';
-      }).join('')
-    + '</div>'
-    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save Tags</button>'
-    + '</form>' + COLLAPSE_CLOSE;
+    + (currentTagsList.length
+        ? '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">'
+          + currentTagsList.map(function(t) {
+              return '<span style="display:inline-flex;align-items:center;gap:5px;background:#eef3ff;border:1.5px solid #4169e1;border-radius:8px;padding:5px 11px;">'
+                + '<span style="font-size:0.85rem;color:#1a4fc4;font-weight:600;">' + esc(t) + '</span>'
+                + '<form method="POST" action="/admin/customer/' + c.id + '/tag/remove" style="margin:0;line-height:0;">'
+                + '<input type="hidden" name="tag" value="' + esc(t) + '">'
+                + '<button type="submit" title="Remove tag" style="background:none;border:none;color:#7a9cd8;font-size:1rem;cursor:pointer;line-height:1;padding:0 0 0 2px;">&#10005;</button>'
+                + '</form></span>';
+            }).join('')
+          + '</div>'
+        : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:14px;">No tags yet.</div>')
+    + '<form method="POST" action="/admin/customer/' + c.id + '/tag/add" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">'
+    + '<div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;"><label>Add tag</label><input type="text" name="tag" placeholder="Fleet, HOA, Referral..." maxlength="40"></div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add</button>'
+    + '</form>'
+    + (function() {
+        var quick = CUSTOMER_TAGS.filter(function(t) { return currentTagsList.indexOf(t) === -1; });
+        if (!quick.length) return '';
+        return '<div style="font-size:0.78rem;color:#888;">Quick add: '
+          + quick.map(function(t) {
+              return '<form method="POST" action="/admin/customer/' + c.id + '/tag/add" style="display:inline-block;margin:0 4px 4px 0;">'
+                + '<input type="hidden" name="tag" value="' + esc(t) + '">'
+                + '<button type="submit" style="background:#f4f7fb;border:1px solid #dde3ea;border-radius:6px;padding:3px 9px;font-size:0.78rem;color:#555;font-weight:500;cursor:pointer;">' + esc(t) + '</button>'
+                + '</form>';
+            }).join('')
+          + '</div>';
+      })()
+    + COLLAPSE_CLOSE;
 
   // Internal notes (collapsible, open by default)
   var notesCard = collapseOpen('cust_notes', 'Internal Notes', true)
@@ -3284,19 +3304,25 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   else fupHtml += '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No upcoming follow-ups.</div>';
   if (fupSent.length) fupHtml += '<div class="section-title" style="margin:14px 0 10px;font-size:0.85rem;color:#888;">Recently sent</div>'
     + fupSent.map(function(f) { return followupCard(f, back); }).join('');
-  var addFuForm = recentLeadId
+  var addFuForm = jobs.length
     ? '<form method="POST" action="/admin/followup/new" id="addfu" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:6px;">'
-      + '<input type="hidden" name="lead_id" value="' + recentLeadId + '">'
+      + (jobs.length > 1
+          ? '<div class="form-group" style="margin-bottom:8px;"><label>Attach to job</label><select name="lead_id">'
+            + jobs.map(function(l) {
+                return '<option value="' + l.id + '">' + esc(l.service || 'Job #' + l.id) + ' &mdash; ' + shortDate(l.created_at) + '</option>';
+              }).join('')
+            + '</select></div>'
+          : '<input type="hidden" name="lead_id" value="' + recentLeadId + '">')
       + '<input type="hidden" name="back" value="' + back + '">'
       + '<div class="section-title" style="margin-bottom:10px;font-size:0.85rem;">Add a follow-up reminder</div>'
-      + '<div class="form-group" style="margin-bottom:8px;"><label>What to follow up on</label><input type="text" name="description" placeholder="Check rear pads, recommend rotor service..."></div>'
+      + '<div class="form-group" style="margin-bottom:8px;"><label>Description</label><input type="text" name="description" placeholder="Check rear pads, recommend rotor service..."></div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
       + '<div class="form-group" style="margin-bottom:10px;"><label>Due date</label><input type="date" name="due_date" value="' + esc(easternToday()) + '"></div>'
       + '<div class="form-group" style="margin-bottom:10px;"><label>Remind</label><select name="recipient"><option value="owner">Owner only</option><option value="customer">Customer only</option><option value="both">Owner + Customer</option></select></div>'
       + '</div>'
       + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Follow-Up</button>'
       + '</form>'
-    : '';
+    : '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:6px;color:#aaa;font-size:0.85rem;">No jobs on file yet — follow-ups must be attached to a job. Create a lead for this customer first.</div>';
   var fupCard = collapseOpen('cust_followups', 'Follow-ups', false) + fupHtml + addFuForm + COLLAPSE_CLOSE;
 
   // Lifetime stats
@@ -3340,9 +3366,32 @@ router.post('/customer/:id/tags', requireAuth, express.urlencoded({ extended: fa
   var picked = req.body.tags;
   if (!picked) picked = [];
   else if (!Array.isArray(picked)) picked = [picked];
-  // Keep only known tags, in canonical order.
   var clean = CUSTOMER_TAGS.filter(function(t) { return picked.indexOf(t) !== -1; });
   db.prepare('UPDATE customers SET tags = ? WHERE id = ?').run(clean.join(', ') || null, c.id);
+  res.redirect('/admin/customer/' + c.id + '?msg=saved');
+});
+
+router.post('/customer/:id/tag/add', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var newTag = (req.body.tag || '').trim();
+  if (newTag) {
+    var current = (c.tags || '').split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+    if (current.indexOf(newTag) === -1) {
+      current.push(newTag);
+      db.prepare('UPDATE customers SET tags = ? WHERE id = ?').run(current.join(', '), c.id);
+    }
+  }
+  res.redirect('/admin/customer/' + c.id + '?msg=saved');
+});
+
+router.post('/customer/:id/tag/remove', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var removeTag = (req.body.tag || '').trim();
+  var current = (c.tags || '').split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+  var updated = current.filter(function(t) { return t !== removeTag; });
+  db.prepare('UPDATE customers SET tags = ? WHERE id = ?').run(updated.join(', ') || null, c.id);
   res.redirect('/admin/customer/' + c.id + '?msg=saved');
 });
 
