@@ -2507,19 +2507,21 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="text" name="serviceAddress" placeholder="Where the work was performed"></div>'
     + COLLAPSE_CLOSE
 
-    // Price breakdown (internal) — shared by both modes
+    // Price breakdown (internal) — per-service rows, shared by both modes
     + collapseOpen('qq_pricing', 'Pricing', true)
+    + '<style>.q-svc-row{padding:10px 14px;border-bottom:1px solid #f0f0f0;}.q-svc-row:last-child{border-bottom:none}.q-svc-name{font-size:0.85rem;font-weight:600;color:#0a1f3d;margin-bottom:7px;}.q-svc-fields{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;}.q-svc-field label{font-size:0.72rem;font-weight:500;color:#94a3b8;display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em;}.q-svc-dollar{display:flex;align-items:center;gap:3px;}.q-svc-dollar>span{color:#94a3b8;font-size:0.82rem;flex-shrink:0;}.q-svc-inp{width:72px;padding:6px 7px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.85rem;text-align:right;}.q-svc-inp:focus{outline:none;border-color:#2563a8;}.q-svc-sub{font-size:0.82rem;font-weight:700;color:#0a1f3d;padding-bottom:2px;white-space:nowrap;text-align:right;line-height:1;align-self:end;}.q-svc-custom-badge{font-size:0.68rem;background:#e07000;color:#fff;border-radius:4px;padding:1px 5px;margin-left:6px;font-style:normal;font-weight:600;}@media(max-width:540px){.q-svc-fields{grid-template-columns:1fr 1fr;}.q-svc-sub{grid-column:1/-1;text-align:left;}}</style>'
     + '<div class="price-section">'
     + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
-    + '<div class="price-row"><span class="price-label">Parts</span>'
-    + '<input class="price-input" type="number" name="parts" id="qparts" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
-    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
-    + '<input class="price-input" type="number" name="labor" id="qlabor" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
-    + '<input class="price-input" type="number" name="shopSupplies" id="qss" min="0" step="0.01" value="0.00" oninput="qcalc()"></div>'
-    + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="qtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="qcalc()">%) on Parts + Supplies</span>'
+    + '<div id="qSvcLineItems"></div>'
+    + '<div id="qNoSvcsMsg" style="padding:10px 14px;font-size:0.85rem;color:#94a3b8;">Select services above to see the price breakdown.</div>'
+    + '<div class="price-row tax-row" style="border-top:1px solid #f0f0f0;"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="qtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="qcalc()">%) on Parts + Supplies</span>'
     + '<span id="qtaxAmt">$0.00</span></div>'
     + '</div>'
+
+    // Hidden totals for server submission (summed from per-service rows by JS)
+    + '<input type="hidden" name="parts" id="qparts" value="0.00">'
+    + '<input type="hidden" name="labor" id="qlabor" value="0.00">'
+    + '<input type="hidden" name="shopSupplies" id="qss" value="0.00">'
 
     // Customer-facing total
     + '<div class="price-section" style="margin-bottom:0;">'
@@ -2592,12 +2594,36 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'qSaveState();'
     + '}'
 
+    + 'function escH(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}'
+    + 'function qBuildRow(name,parts,labor,ss,isCustom,type){'
+    +   'var pStyle=isCustom&&+parts===0?"style=\'background:#fff8e1;\'":\"\";'
+    +   'var lStyle=isCustom&&+labor===0?"style=\'background:#fff8e1;\'":\"\";'
+    +   'return "<div class=\'q-svc-row\' data-svc=\'"+escH(name)+"\' data-type=\'"+(type||"preset")+"\'>"'
+    +     '+"<div class=\'q-svc-name\'><span class=\'q-svc-name-text\'>"+escH(name)+"</span>"+(isCustom?"<em class=\'q-svc-custom-badge\'>custom</em>":"")+"</div>"'
+    +     '+"<div class=\'q-svc-fields\'>"'
+    +     '+"<div class=\'q-svc-field\'><label>Parts</label><div class=\'q-svc-dollar\'><span>$</span><input type=\'number\' class=\'q-svc-parts q-svc-inp\' step=\'0.01\' min=\'0\' value=\'"+(+parts).toFixed(2)+"\' oninput=\'qcalc()\' "+pStyle+"></div></div>"'
+    +     '+"<div class=\'q-svc-field\'><label>Labor</label><div class=\'q-svc-dollar\'><span>$</span><input type=\'number\' class=\'q-svc-labor q-svc-inp\' step=\'0.01\' min=\'0\' value=\'"+(+labor).toFixed(2)+"\' oninput=\'qcalc()\' "+lStyle+"></div></div>"'
+    +     '+"<div class=\'q-svc-field\'><label>Supplies</label><div class=\'q-svc-dollar\'><span>$</span><input type=\'number\' class=\'q-svc-ss q-svc-inp\' step=\'0.01\' min=\'0\' value=\'"+(+ss).toFixed(2)+"\' oninput=\'qcalc()\'></div></div>"'
+    +     '+"<div class=\'q-svc-sub\'>$<span class=\'q-svc-sub-val\'>"+(+parts+labor+ss).toFixed(2)+"</span></div>"'
+    +     '+"</div></div>";'
+    + '}'
+
     + 'function qSetTier(t){'
     +   'qtier=t;document.getElementById("qtier").value=t;'
     +   'document.getElementById("qBtnStd").classList.toggle("active",t==="standard");'
     +   'document.getElementById("qBtnPrem").classList.toggle("active",t==="premium");'
-    +   'qAutofill();'
-    +   'qSaveState();'
+    +   // Re-fill preset rows with new tier prices
+    +   'var container=document.getElementById("qSvcLineItems");'
+    +   'qCheckedServices().forEach(function(name){'
+    +     'var row=container.querySelector(".q-svc-row[data-type=\'preset\'][data-svc=\'"+name.replace(/\'/g,"\\\'")+"\'"]");'
+    +     'if(!row)return;var sv=QPRICING[name];if(!sv||sv.customQuote)return;'
+    +     'var tier=sv[t]||sv.standard;if(!tier)return;'
+    +     'var pi=row.querySelector(".q-svc-parts");var li=row.querySelector(".q-svc-labor");var si=row.querySelector(".q-svc-ss");'
+    +     'if(pi)pi.value=(tier.parts||0).toFixed(2);'
+    +     'if(li)li.value=(tier.labor||0).toFixed(2);'
+    +     'if(si)si.value=(tier.shopSupplies||0).toFixed(2);'
+    +   '});'
+    +   'qcalc();qSaveState();'
     + '}'
 
     + 'function qRenderTags(){'
@@ -2621,7 +2647,14 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'function qOnCustomSvc(){'
     +   'var cv=qCustomSvcVal();'
     +   'document.getElementById("qCustomSvcHint").style.display=cv?"block":"none";'
-    +   'qUpdateFullService();qSaveState();'
+    +   'var container=document.getElementById("qSvcLineItems");'
+    +   'var existCust=container.querySelector(".q-svc-row[data-type=\'custom\']");'
+    +   'if(cv&&!existCust){container.insertAdjacentHTML("beforeend",qBuildRow(cv,0,0,10,true,"custom"));}'
+    +   'else if(cv&&existCust){var nt=existCust.querySelector(".q-svc-name-text");if(nt)nt.textContent=cv;existCust.setAttribute("data-svc",cv);}'
+    +   'else if(!cv&&existCust){existCust.remove();}'
+    +   'var noMsg=document.getElementById("qNoSvcsMsg");'
+    +   'if(noMsg)noMsg.style.display=container.children.length===0?"":"none";'
+    +   'qUpdateFullService();qcalc();qSaveState();'
     + '}'
     + 'function qUpdateFullService(){'
     +   'var all=qCheckedServices().slice();var cv=qCustomSvcVal();if(cv)all.push(cv);'
@@ -2632,19 +2665,31 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;});qUpdateServices();'
     + '}'
 
-    // Auto-fill the price fields from the pricing table for the checked services + tier.
+    // Sync per-service rows when checkboxes change. Adds rows for new selections,
+    // removes rows for deselected services. Preserves manually edited prices.
     + 'function qAutofill(){'
     +   'var names=qCheckedServices();'
     +   'qUpdateFullService();'
-    +   'if(names.length===0&&!qCustomSvcVal()){'
-    +     'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";qcalc();return;'
-    +   '}'
-    +   'if(names.length===0){qcalc();return;}'
-    +   'var parts=0,labor=0,ss=0;'
-    +   'names.forEach(function(s){var sv=QPRICING[s];if(!sv)return;var p=sv[qtier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
-    +   'document.getElementById("qparts").value=parts.toFixed(2);'
-    +   'document.getElementById("qlabor").value=labor.toFixed(2);'
-    +   'document.getElementById("qss").value=ss.toFixed(2);'
+    +   'var container=document.getElementById("qSvcLineItems");'
+    +   // Remove rows for unchecked preset services
+    +   'Array.from(container.querySelectorAll(".q-svc-row[data-type=\'preset\']")).forEach(function(row){'
+    +     'if(names.indexOf(row.getAttribute("data-svc"))===-1)row.remove();'
+    +   '});'
+    +   // Add rows for newly checked services
+    +   'names.forEach(function(name){'
+    +     'if(container.querySelector(".q-svc-row[data-svc=\'"+name.replace(/\'/g,"\\\'")+"\'"]"))return;'
+    +     'var sv=QPRICING[name];var p=0,l=0,s=0;'
+    +     'if(sv&&!sv.customQuote){var t=sv[qtier]||sv.standard;if(t){p=t.parts||0;l=t.labor||0;s=t.shopSupplies||0;}}'
+    +     'container.insertAdjacentHTML("beforeend",qBuildRow(name,p,l,s,!!(sv&&sv.customQuote),"preset"));'
+    +   '});'
+    +   // Sync custom service row
+    +   'var cv=qCustomSvcVal();'
+    +   'var existCust=container.querySelector(".q-svc-row[data-type=\'custom\']");'
+    +   'if(cv&&!existCust){container.insertAdjacentHTML("beforeend",qBuildRow(cv,0,0,10,true,"custom"));}'
+    +   'else if(cv&&existCust){var nt=existCust.querySelector(".q-svc-name-text");if(nt)nt.textContent=cv;existCust.setAttribute("data-svc",cv);}'
+    +   'else if(!cv&&existCust){existCust.remove();}'
+    +   'var noMsg=document.getElementById("qNoSvcsMsg");'
+    +   'if(noMsg)noMsg.style.display=container.children.length===0?"":"none";'
     +   'qcalc();'
     + '}'
     + 'function qUpdateServices(){qRenderTags();qHints();qAutofill();}'
@@ -2668,12 +2713,22 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qliPartsRow").style.display=v==="separate"?"":"none";'
     +   'document.getElementById("qliLaborRow").style.display=v==="separate"?"":"none";'
     + '}'
+    // Sum totals from all per-service rows, update row subtotals and grand total display.
     + 'function qcalc(){'
-    +   'var parts=parseFloat(document.getElementById("qparts").value)||0;'
-    +   'var labor=parseFloat(document.getElementById("qlabor").value)||0;'
-    +   'var ss=parseFloat(document.getElementById("qss").value)||0;'
+    +   'var parts=0,labor=0,ss=0;'
+    +   'Array.from(document.getElementById("qSvcLineItems").querySelectorAll(".q-svc-row")).forEach(function(row){'
+    +     'var p=parseFloat(row.querySelector(".q-svc-parts").value)||0;'
+    +     'var l=parseFloat(row.querySelector(".q-svc-labor").value)||0;'
+    +     'var s=parseFloat(row.querySelector(".q-svc-ss").value)||0;'
+    +     'parts+=p;labor+=l;ss+=s;'
+    +     'var sv=row.querySelector(".q-svc-sub-val");if(sv)sv.textContent=(p+l+s).toFixed(2);'
+    +   '});'
     +   'var tr=parseFloat(document.getElementById("qtr").value)||0;'
     +   'var tax=(parts+ss)*tr/100;var total=parts+labor+ss+tax;'
+    +   // Write hidden totals for server submission
+    +   'document.getElementById("qparts").value=parts.toFixed(2);'
+    +   'document.getElementById("qlabor").value=labor.toFixed(2);'
+    +   'document.getElementById("qss").value=ss.toFixed(2);'
     +   'document.getElementById("qtaxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("qplDisplay").textContent="$"+money(parts+labor);'
     +   'document.getElementById("qpartsOnlyDisplay").textContent="$"+money(parts);'
@@ -2739,6 +2794,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var veh=document.getElementById("qveh");if(veh)veh.value="";'
     +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
     +   'document.getElementById("qCustomSvcHint").style.display="none";'
+    +   'document.getElementById("qSvcLineItems").innerHTML="";'
+    +   'var noMsg=document.getElementById("qNoSvcsMsg");if(noMsg)noMsg.style.display="";'
     +   'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";'
     +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
     +   'var offN=document.querySelector("[name=officeNotes]");if(offN)offN.value="";'
@@ -2765,6 +2822,12 @@ router.get('/quick', requireAuth, function(req, res) {
     +         'cust:(document.querySelector("[name=fuCustom"+i+"]")||{}).value||""'
     +       '};'
     +     '});'
+    +     'var svcRows=Array.from(document.getElementById("qSvcLineItems").querySelectorAll(".q-svc-row")).map(function(row){'
+    +       'return{svc:row.getAttribute("data-svc"),type:row.getAttribute("data-type"),'
+    +         'p:parseFloat(row.querySelector(".q-svc-parts").value)||0,'
+    +         'l:parseFloat(row.querySelector(".q-svc-labor").value)||0,'
+    +         's:parseFloat(row.querySelector(".q-svc-ss").value)||0};'
+    +     '});'
     +     'localStorage.setItem("bk_qq_state",JSON.stringify({'
     +       'mode:qmode,tier:qtier,'
     +       'fn:document.getElementById("qfn").value,'
@@ -2774,9 +2837,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'veh:(document.getElementById("qveh")||{}).value||"",'
     +       'svcs:qCheckedServices(),'
     +       'customSvc:qCustomSvcVal(),'
-    +       'parts:document.getElementById("qparts").value,'
-    +       'labor:document.getElementById("qlabor").value,'
-    +       'ss:document.getElementById("qss").value,'
+    +       'svcRows:svcRows,'
     +       'tr:document.getElementById("qtr").value,'
     +       'payMethod:(document.getElementById("qpm")||{}).value||"",'
     +       'payOther:(document.getElementById("qpmOther")||{}).value||"",'
@@ -2801,10 +2862,16 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(s.veh&&document.getElementById("qveh"))document.getElementById("qveh").value=s.veh;'
     +     'if(s.svcs&&s.svcs.length)document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});'
     +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
-    +     'if(s.parts!==undefined)document.getElementById("qparts").value=s.parts;'
-    +     'if(s.labor!==undefined)document.getElementById("qlabor").value=s.labor;'
-    +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
     +     'if(s.tr!==undefined)document.getElementById("qtr").value=s.tr;'
+    +     'if(s.svcRows&&s.svcRows.length){'
+    +       'var container=document.getElementById("qSvcLineItems");container.innerHTML="";'
+    +       's.svcRows.forEach(function(r){'
+    +         'var sv=QPRICING[r.svc];var isC=!!(sv&&sv.customQuote)||r.type==="custom";'
+    +         'container.insertAdjacentHTML("beforeend",qBuildRow(r.svc,r.p,r.l,r.s,isC,r.type));'
+    +       '});'
+    +       'var noMsg=document.getElementById("qNoSvcsMsg");'
+    +       'if(noMsg)noMsg.style.display=container.children.length===0?"":"none";'
+    +     '}'
     +     'if(s.payMethod&&document.getElementById("qpm"))document.getElementById("qpm").value=s.payMethod;'
     +     'if(s.payOther&&document.getElementById("qpmOther"))document.getElementById("qpmOther").value=s.payOther;'
     +     'var sa=document.querySelector("[name=serviceAddress]");if(s.svcAddr&&sa)sa.value=s.svcAddr;'
@@ -3831,14 +3898,17 @@ router.get('/settings/pricing', requireAuth, function(req, res) {
 
   // ── Service Prices tab ─────────────────────────────────────────────────────
   var svcCards = services.map(function(svc, idx) {
+    var ckey = 'p8svc_' + idx;
     if (svc.custom_quote) {
-      return '<div class="card" style="margin-bottom:10px;">'
-        + '<div style="display:flex;align-items:center;justify-content:space-between;">'
-        + '<div style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</div>'
-        + '<span style="background:rgba(37,99,168,0.12);color:#1a4a7a;font-size:0.72rem;font-weight:700;padding:2px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;">Custom Quote</span>'
-        + '</div>'
-        + '<div style="color:#94a3b8;font-size:0.82rem;margin-top:6px;">No preset pricing. Owner enters price manually on each job.</div>'
-        + '</div>';
+      return '<div class="collapse collapsed card" data-ckey="' + esc(ckey) + '" style="margin-bottom:10px;">'
+        + '<button type="button" class="collapse-head" onclick="toggleCollapse(this)">'
+        + '<span class="collapse-title" style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</span>'
+        + '<span style="background:rgba(37,99,168,0.12);color:#1a4a7a;font-size:0.72rem;font-weight:700;padding:2px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;margin-right:8px;">Custom Quote</span>'
+        + '<svg class="collapse-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>'
+        + '</button>'
+        + '<div class="collapse-body">'
+        + '<div style="color:#94a3b8;font-size:0.82rem;">No preset pricing. Owner enters price manually on each job.</div>'
+        + '</div></div>';
     }
 
     function priceCol(tierKey, isStd) {
@@ -3866,18 +3936,24 @@ router.get('/settings/pricing', requireAuth, function(req, res) {
         + '</div>';
     }
 
-    return '<div class="card" style="margin-bottom:10px;" data-svc-idx="' + idx + '">'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
-      + '<div style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</div>'
-      + '<div style="display:flex;align-items:center;gap:8px;">'
+    return '<div class="collapse collapsed card" data-ckey="' + esc(ckey) + '" data-svc-idx="' + idx + '" style="margin-bottom:10px;">'
+      + '<button type="button" class="collapse-head" onclick="toggleCollapse(this)">'
+      + '<span class="collapse-title" style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</span>'
+      + '<span style="font-size:0.78rem;color:#94a3b8;margin-right:8px;">' + (+svc.minutes || 60) + ' min</span>'
+      + '<svg class="collapse-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>'
+      + '</button>'
+      + '<div class="collapse-body">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">'
+      + '<span style="font-size:0.78rem;color:#475569;">Duration:</span>'
       + '<input type="number" min="0" step="5" class="p8-price-input" data-idx="' + idx + '" data-tier="meta" data-field="minutes" value="' + (+svc.minutes || 60) + '" style="width:54px;padding:4px 6px;border:1px solid var(--gray-200);border-radius:5px;font-size:0.82rem;text-align:right;" title="Duration (minutes)">'
       + '<span style="font-size:0.78rem;color:#94a3b8;">min</span>'
-      + '</div></div>'
+      + '</div>'
       + '<div style="display:flex;gap:16px;flex-wrap:wrap;">'
       + priceCol('std', true)
       + (svc.has_premium
           ? priceCol('prem', false)
           : '<div style="flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;"><span style="color:#94a3b8;font-size:0.82rem;font-style:italic;">Single tier only</span></div>')
+      + '</div>'
       + '</div></div>';
   }).join('');
 
