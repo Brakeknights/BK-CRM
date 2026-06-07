@@ -115,7 +115,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 
 **Phase 6C (deferred — Square auto-trigger):** Instead of the owner manually clicking "Complete Job & Send Receipt," Square events (appointment marked done, or payment taken in the Square POS) automatically fire our receipt + follow-up flow via the Square API/webhooks. Bigger build; spec together when we get there.
 
-**Phase 7 (planned — next build):** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, all owned by Brake Knights. Detailed plan below.
+**Phase 7 (complete):** Full CRM dashboard at `brakeknights.com/admin` — customer profiles, vehicle history, job history, upcoming follow-ups, all owned by Brake Knights. Live on master.
 
 **Phase 7A (complete — Quick Quote / Receipt Generator):** A standalone generator on the dashboard at `/admin/quick`, not bound to any lead, for fast phone/text inquiries. Reuses the existing pricing engine, service multi-select + tier toggle, live auto-calc, and branded quote/receipt templates. "Quick Quote" link added to the admin topbar nav. Built entirely in `routes/admin.js` (`GET`/`POST /admin/quick`), reusing `buildQuoteEmail` / `buildReceiptEmail`. On dev, not yet on master.
 - **Implemented:** Quote/Receipt mode switch on one screen; service multi-select + tier toggle with live auto-fill from the pricing table; any field overridable, total recalcs live. Quote outcomes: (1) calculator only (Clear, nothing saved); (2) Send (create "Quick Quote" lead in Quoted stage, save quote, email branded quote with accept link); (3) Copyable link (create lead + quote + token, return result page with the customer quote URL + one-tap Copy button); plus Save as New Lead (no email). Receipt mode mirrors the receipt builder: vehicle/date/payment(+Other)/address, 4 advisories with timed follow-up reminders, office notes; Send Receipt (emails, advances lead to Receipt Sent + writes followups) or Save as New Lead.
@@ -146,10 +146,10 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/eager-ride-SnMeU` — DB wipe fix, quote fixes, clickable cards, Quick Quote improvements (merged to master via PRs #10–#14 ✅)
+- Last working branch: `claude/funny-davinci-IFPbC` — Phase 7B + 7C (merged to master via PR #15 ✅)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Phases 2, 3, 4, 5, 6, 7A, 7B all complete and live on master. Includes: receipt builder, follow-up reminders + dashboard, Quick Quote / Receipt Generator at `/admin/quick`, delete lead with confirmation modal, advisory date picker, preview email, auto-save localStorage, 1+Add advisory pattern, email-copies-clipboard, Maps autocomplete, nav active states, SQLite session store, blog fix, modern calendar widget on accept page, dynamic admin URL in emails, admin favicon, clickable lead cards, updated quote email banner, DB path outside git directory.
+- Phases 2, 3, 4, 5, 6, 7A, 7B, 7C all complete and live on master.
 - dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
@@ -160,7 +160,7 @@ Update this section at the end of each session to stay caught up next time.
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - **DB path fix:** `NODE_ENV=production` set in Hostinger hPanel for both dev and master — database now stored outside the git directory and survives all deploys ✅
 - Next steps:
-  1. Phase 7: full CRM dashboard (customer profiles, vehicle history, job history) — plan documented above, ready to build
+  1. Phase 8: automated quotes (requires pricing table finalized by vehicle type)
   2. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
 
@@ -204,7 +204,6 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] Phase 7: full CRM dashboard (customer profiles, vehicle history, job history) — plan documented in Platform Build Phases above, ready to start
 - [ ] Phase 6C: Square auto-trigger (Square events fire receipt + follow-up flow) — deferred, spec later
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
@@ -219,6 +218,8 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Phase 7B: CRM customer profiles — `customers` table, auto-link logic, customer list at `/admin/customers`, full profile at `/admin/customer/:id` (contact, vehicles, saved addresses, notes, tags, job history, follow-ups, lifetime stats). Sidebar nav replaces old topbar. Full design-token restyle. Collapsible sections on all profile pages (default closed, state saved in localStorage).
+- [x] Phase 7C: Dashboard + Reports — `/admin/dashboard` (pipeline tiles, stats row, recent-activity feed); `/admin/reports/revenue` (monthly bar chart + service breakdown); `/admin/reports/conversions` (quote-to-job rate, monthly table); `/admin/reports/services` (inquiries, jobs, revenue per service). All four replace placeholder pages. Merged to master via PR #15.
 - [x] DB wipe fix: `NODE_ENV=production` in Hostinger hPanel moves SQLite database outside git directory — survives all future deploys (verified: test lead persisted through a redeploy on dev). PR #10.
 - [x] Quote send error feedback: lead detail page now shows green banner on success and red banner if email fails. PR #11.
 - [x] Delete lead: "Lead not found" bare page replaced with redirect back to admin list; delete button now shows explicit in-page confirmation modal instead of browser native confirm(). PR #11.
