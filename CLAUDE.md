@@ -78,7 +78,7 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/eager-ride-SnMeU`
+- Current feature branch: `claude/dazzling-fermat-dqm3p`
 
 ## Square Integration — Platform Build Plan
 
@@ -146,7 +146,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/funny-davinci-IFPbC` — Phase 7B + 7C (merged to master via PR #15 ✅)
+- Last working branch: `claude/dazzling-fermat-dqm3p` — customer profile tags + follow-up form always visible (deployed to dev, pending master)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C all complete and live on master.
