@@ -146,10 +146,10 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/dazzling-fermat-dqm3p` — customer profile tags + follow-up form always visible (deployed to dev, pending master)
+- Last working branch: `claude/dazzling-fermat-dqm3p` — customer profile tags + follow-up form always visible (merged to master via PR #16 ✅)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Phases 2, 3, 4, 5, 6, 7A, 7B, 7C all complete and live on master.
+- Phases 2, 3, 4, 5, 6, 7A, 7B, 7C + tag/follow-up fix all complete and live on master.
 - dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
