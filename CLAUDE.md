@@ -165,10 +165,11 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/brakeknights-crm-continuation-3r8n6m` — CRM improvements batch (pushed to dev, not yet on master)
-- `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅ — **ahead of master (needs PR)**
+- Last working branch: `claude/brakeknights-crm-continuation-3r8n6m` — CRM improvements batch (merged to master via PR #21 ✅)
+- `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
+- dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
 - Pre-push hook in place — blocks direct pushes to master ✅
@@ -180,8 +181,7 @@ Update this section at the end of each session to stay caught up next time.
 - **VAPID keys:** Must be set in Hostinger hPanel for both dev and master before push notifications work: `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Generate once with `node -e "const wp=require('web-push'); const k=wp.generateVAPIDKeys(); console.log(k);"` and set both envs.
 - **Square import:** Run at brakeknights.com/admin/customers/import-square to pull all production Square customers into the CRM. Sandbox (dev) has test customers only.
 - Next steps:
-  1. Verify CRM improvements on dev.brakeknights.com, then "go master" to deploy
-  2. Set VAPID keys in Hostinger hPanel to activate push notifications
+  1. Set VAPID keys in Hostinger hPanel to activate push notifications
   3. Phase 8: automated quotes (requires pricing table finalized by vehicle type)
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
