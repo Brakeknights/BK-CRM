@@ -165,23 +165,22 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/happy-hamilton-UkPqj` — Phase 8E/8F + Square import + security hardening (merged to master via PR #18 ✅)
-- `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
+- Last working branch: `claude/brakeknights-crm-continuation-3r8n6m` — CRM improvements batch (pushed to dev, not yet on master)
+- `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅ — **ahead of master (needs PR)**
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
-- dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
 - Pre-push hook in place — blocks direct pushes to master ✅
 - Session startup hook shows pending dev-vs-master commits at session start ✅
-- Screenshot skill in place — `node scripts/screenshot.js [path] [selector]` ✅
+- Screenshot skill in place — `node scripts/screenshot.js [path] [selector]` — now auto-logs in for /admin paths ✅
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - **DB path fix:** `NODE_ENV=production` set in Hostinger hPanel for both dev and master — database now stored outside the git directory and survives all deploys ✅
 - **VAPID keys:** Must be set in Hostinger hPanel for both dev and master before push notifications work: `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Generate once with `node -e "const wp=require('web-push'); const k=wp.generateVAPIDKeys(); console.log(k);"` and set both envs.
 - **Square import:** Run at brakeknights.com/admin/customers/import-square to pull all production Square customers into the CRM. Sandbox (dev) has test customers only.
 - Next steps:
-  1. Run Square customer import on live site (brakeknights.com/admin/customers/import-square)
+  1. Verify CRM improvements on dev.brakeknights.com, then "go master" to deploy
   2. Set VAPID keys in Hostinger hPanel to activate push notifications
   3. Phase 8: automated quotes (requires pricing table finalized by vehicle type)
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
@@ -241,6 +240,25 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Quick receipt for off-pipeline jobs: customer search typeahead added to Quick Quote receipt mode — search by name/phone/email, select to auto-fill all fields (name, phone, email, vehicle, address). New customer auto-created in CRM on submit.
+- [x] Completed leads hidden from leads tab: status `receipt_sent` (receipt sent) leads no longer appear in the pipeline list or counts. Only accessible via customer profile. Leads tab = active pipeline only.
+- [x] Customer profile editing: Edit Info button on customer profile — edit first name, last name, email, and phone inline. Saves with green confirmation banner.
+- [x] All lead cards clickable: every card across the entire dashboard (appointments, follow-ups, dashboard recent activity) now opens the lead on tap/click anywhere on the card.
+- [x] Appointments: Reschedule button — toggles an inline date + time form per card (pre-filled with current values). Save updates the appointment and shows a confirmation banner.
+- [x] Appointments: Cancel Appt button — confirm dialog, clears the appointment, returns lead to Approved status in the pipeline. Shows amber banner on redirect.
+- [x] Screenshot script fix: auto-logs in for any /admin path — screenshots now show actual admin content instead of the login page.
+- [x] All changes on dev (pushed to dev.brakeknights.com). Not yet on master.
+
+### Previously Completed This Session
+- [x] Appointments calendar: monthly grid with dot indicators, day-tap filtering, prev/next month navigation. Live on master via PR #20.
+- [x] Customer search typeahead on New Appointment form: replaces giant dropdown, search by name/phone, tap to select, chip badge with clear button.
+- [x] Customer list live client-side filtering: no page reload, keyboard stays open on iOS.
+- [x] Customer search crash fix: SQL `" "` identifier rejected by production SQLite, changed to `' '` string literal.
+- [x] Appointment form double-submit fix: button disables on form submit event (not onclick) so date field is always serialized correctly.
+- [x] Square import createCustomer fix: function was missing from module.exports, caused TypeError on all new records.
+- [x] Square import live on brakeknights.com: all production Square customers imported into CRM.
+
+### Previously Completed This Session
 - [x] Phase 8E/8F: Browser push notifications for new leads (bell icon toggle, service worker, VAPID keys); new-lead sidebar badge showing unactioned lead count. Merged to master via PR #18.
 - [x] CRM: Create New Customer form/button on Customers tab (/admin/customer/new)
 - [x] CRM: Full Appointments tab at /admin/appointments with scheduling, customer search/create, service/pricing, confirmation email

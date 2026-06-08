@@ -1159,21 +1159,20 @@ router.get('/', requireAuth, function(req, res) {
 
   var leads;
   if (search) {
-    // Search spans everything (including archived) so old customers stay findable.
     leads = db.prepare(
-      'SELECT * FROM leads WHERE (first_name || " " || last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR vehicle LIKE ? OR service LIKE ?) ORDER BY id DESC'
+      "SELECT * FROM leads WHERE status != 'receipt' AND archived = 0 AND (first_name || ' ' || last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR vehicle LIKE ? OR service LIKE ?) ORDER BY id DESC"
     ).all(sp, sp, sp, sp, sp);
   } else if (status === 'archived') {
     leads = db.prepare('SELECT * FROM leads WHERE archived = 1 ORDER BY archived_at DESC, id DESC').all();
   } else if (status === 'all') {
-    leads = db.prepare('SELECT * FROM leads WHERE archived = 0 ORDER BY id DESC').all();
+    leads = db.prepare("SELECT * FROM leads WHERE archived = 0 AND status != 'receipt' ORDER BY id DESC").all();
   } else {
     leads = db.prepare('SELECT * FROM leads WHERE status = ? AND archived = 0 ORDER BY id DESC').all(status);
   }
 
-  var counts = db.prepare('SELECT status, COUNT(*) as n FROM leads WHERE archived = 0 GROUP BY status').all()
+  var counts = db.prepare("SELECT status, COUNT(*) as n FROM leads WHERE archived = 0 AND status != 'receipt' GROUP BY status").all()
     .reduce(function(acc, r) { acc[r.status] = r.n; return acc; }, {});
-  var total = db.prepare('SELECT COUNT(*) as n FROM leads WHERE archived = 0').get().n;
+  var total = db.prepare("SELECT COUNT(*) as n FROM leads WHERE archived = 0 AND status != 'receipt'").get().n;
   var archivedCount = db.prepare('SELECT COUNT(*) as n FROM leads WHERE archived = 1').get().n;
 
   var tabs = [
@@ -1184,7 +1183,6 @@ router.get('/', requireAuth, function(req, res) {
     ['quote_accepted', 'Quote Accepted', counts.quote_accepted || 0],
     ['booked',         'Booked',         counts.booked         || 0],
     ['completed',      'Completed',      counts.completed      || 0],
-    ['receipt',        'Receipt Sent',        counts.receipt        || 0],
     ['archived',       'Archived',       archivedCount         || 0],
   ];
 
@@ -2394,7 +2392,7 @@ function followupCard(f, back) {
     + '<span>Due ' + esc(fmtPrefDate(f.due_date)) + '</span>'
     + '</div>';
   if (f.sent) {
-    return '<div class="card" style="opacity:.78;">' + head + desc + meta + '</div>';
+    return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + f.lead_id + '\';}" style="cursor:pointer;opacity:.78;">' + head + desc + meta + '</div>';
   }
   var actions = '<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;align-items:center;">'
     + '<form method="POST" action="/admin/followup/' + f.id + '/reschedule" style="display:flex;gap:6px;margin:0;align-items:center;">'
@@ -2411,7 +2409,7 @@ function followupCard(f, back) {
     + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:6px 4px;">Cancel</button>'
     + '</form>'
     + '</div>';
-  return '<div class="card">' + head + desc + meta + actions + '</div>';
+  return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + f.lead_id + '\';}" style="cursor:pointer;">' + head + desc + meta + actions + '</div>';
 }
 
 router.get('/followups', requireAuth, function(req, res) {
@@ -2519,6 +2517,32 @@ router.get('/quick', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(qqPricing);
   var taxPct = +(PRICING.taxRate * 100).toFixed(2);
 
+  // Customer data for the receipt-mode customer search typeahead.
+  var qqCustomers = db.prepare(
+    'SELECT c.id, c.first_name, c.last_name, c.email, c.phone,'
+    + ' COALESCE('
+    + "  (SELECT TRIM(COALESCE(cv.year,'') || ' ' || COALESCE(cv.make,'') || ' ' || COALESCE(cv.model,''))"
+    + '   FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1),'
+    + "  (SELECT l.vehicle FROM leads l WHERE l.customer_id = c.id AND l.vehicle IS NOT NULL AND l.vehicle != '' ORDER BY l.id DESC LIMIT 1)"
+    + ' ) AS last_vehicle,'
+    + ' (SELECT ca.address FROM customer_addresses ca WHERE ca.customer_id = c.id ORDER BY ca.id DESC LIMIT 1) AS last_address'
+    + ' FROM customers c ORDER BY c.last_name, c.first_name'
+  ).all();
+  var qqCustJson = JSON.stringify(qqCustomers.map(function(c) {
+    var name = ((c.first_name || '') + ' ' + (c.last_name || '')).trim();
+    return {
+      id: c.id,
+      fn: c.first_name || '',
+      ln: c.last_name || '',
+      em: c.email || '',
+      ph: c.phone || '',
+      veh: (c.last_vehicle || '').trim(),
+      addr: c.last_address || '',
+      label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''),
+      search: (name + ' ' + (c.phone || '') + ' ' + (c.email || '')).toLowerCase()
+    };
+  }));
+
   // Drafts list
   var allDrafts = db.prepare('SELECT id, label, created_at FROM quick_drafts ORDER BY id DESC').all();
 
@@ -2588,6 +2612,18 @@ router.get('/quick', requireAuth, function(req, res) {
 
     // Customer (optional for calculator-only; required to save/send)
     + collapseOpen('qq_customer', 'Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(needed to save or send)</span>', true)
+    + '<input type="hidden" name="customer_id" id="qqCustId" value="">'
+    + '<div class="qReceiptOnly" style="display:none;margin-bottom:16px;">'
+    + '<div class="form-group" style="margin-bottom:6px;">'
+    + '<label>Find existing customer <span style="font-weight:400;color:#bbb;">(optional — fills fields below)</span></label>'
+    + '<div style="position:relative;">'
+    + '<input type="text" id="qqCustSearch" placeholder="Type name, phone, or email..." autocomplete="off" oninput="qqDoSearch()" onfocus="qqDoSearch()" onblur="qqHideDd()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;box-sizing:border-box;">'
+    + '<div id="qqCustDropdown" onclick="qqDdClick(event)" style="display:none;position:absolute;z-index:200;background:#fff;border:1.5px solid #b0c4e0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.12);width:100%;max-height:220px;overflow-y:auto;top:calc(100% + 4px);left:0;"></div>'
+    + '</div>'
+    + '<div id="qqCustChip" style="display:none;margin-top:8px;"></div>'
+    + '</div>'
+    + '<div style="text-align:center;font-size:0.8rem;color:#bbb;margin:4px 0 4px;">— or enter new customer info below —</div>'
+    + '</div>'
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>First name</label><input type="text" name="firstName" id="qfn"></div>'
     + '<div class="form-group"><label>Last name</label><input type="text" name="lastName" id="qln"></div>'
@@ -2696,7 +2732,51 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<script>'
     + 'var QPRICING=' + pricingJson + ';'
     + 'var QDRAFT=' + draftJson + ';'
+    + 'var QQCUSTS=' + qqCustJson + ';'
     + 'var qtier="standard";var qmode="quote";'
+    + 'function qqEsc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}'
+    + 'function qqHideDd(){setTimeout(function(){var dd=document.getElementById("qqCustDropdown");if(dd)dd.style.display="none";},150);}'
+    + 'function qqDoSearch(){'
+    +   'var q=document.getElementById("qqCustSearch").value.toLowerCase().trim();'
+    +   'var dd=document.getElementById("qqCustDropdown");'
+    +   'if(!q){dd.style.display="none";return;}'
+    +   'var matches=QQCUSTS.filter(function(c){return c.search.indexOf(q)>=0;}).slice(0,8);'
+    +   'if(!matches.length){dd.innerHTML=\'<div style="padding:10px 12px;color:#888;font-size:0.88rem;">No customers found</div>\';dd.style.display="block";return;}'
+    +   'dd.innerHTML=matches.map(function(c){'
+    +     'return \'<div data-cid="\'+c.id+\'" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:0.88rem;">\''
+    +       '+\'<div style="font-weight:600;color:#0a1f3d;">\'+qqEsc(c.label)+\'</div>\''
+    +       '+(c.em?\'<div style="color:#888;font-size:0.82rem;">\'+qqEsc(c.em)+\'</div>\':"")+'
+    +       '+(c.veh?\'<div style="color:#6b7a8d;font-size:0.82rem;">\'+qqEsc(c.veh)+\'</div>\':"")+'
+    +       '\'</div>\';'
+    +   '}).join("");'
+    +   'dd.style.display="block";'
+    + '}'
+    + 'function qqDdClick(e){'
+    +   'var item=e.target;'
+    +   'while(item&&item!==e.currentTarget){if(item.dataset&&item.dataset.cid){qqCustPick(+item.dataset.cid);return;}item=item.parentElement;}'
+    + '}'
+    + 'function qqCustPick(id){'
+    +   'var c=QQCUSTS.find(function(x){return x.id===id;});if(!c)return;'
+    +   'document.getElementById("qqCustId").value=id;'
+    +   'document.getElementById("qfn").value=c.fn;'
+    +   'document.getElementById("qln").value=c.ln;'
+    +   'document.getElementById("qem").value=c.em;'
+    +   'document.getElementById("qph").value=c.ph;'
+    +   'var vehEl=document.getElementById("qveh");if(vehEl&&c.veh)vehEl.value=c.veh;'
+    +   'var addrEl=document.querySelector("[name=serviceAddress]");if(addrEl&&c.addr&&!addrEl.value)addrEl.value=c.addr;'
+    +   'var name=(c.fn+" "+c.ln).trim();'
+    +   'var chip=document.getElementById("qqCustChip");'
+    +   'chip.innerHTML=\'<span style="display:inline-flex;align-items:center;gap:6px;background:#e8f0fe;border:1.5px solid #b8d0f8;border-radius:20px;padding:4px 12px;font-size:0.85rem;color:#0a1f3d;font-weight:600;">\'+qqEsc(name)+\' <button type="button" onclick="qqCustClear()" style="background:none;border:none;cursor:pointer;color:#888;font-size:1.1rem;padding:0 2px;line-height:1;">&#10005;</button></span>\';'
+    +   'chip.style.display="block";'
+    +   'document.getElementById("qqCustSearch").value="";'
+    +   'document.getElementById("qqCustDropdown").style.display="none";'
+    +   'qSaveState();'
+    + '}'
+    + 'function qqCustClear(){'
+    +   'document.getElementById("qqCustId").value="";'
+    +   'var chip=document.getElementById("qqCustChip");if(chip){chip.innerHTML="";chip.style.display="none";}'
+    +   'qSaveState();'
+    + '}'
 
     + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
     + 'function qCustomSvcVal(){var el=document.getElementById("qCustomSvc");return el?el.value.trim():"";}'
@@ -2876,6 +2956,9 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var addBtn=document.getElementById("qqAddAdvBtn");if(addBtn)addBtn.style.display="";'
     +   'var pb=document.getElementById("qPreviewBox");if(pb){pb.style.display="none";pb.innerHTML="";}'
     +   'var pbt=document.getElementById("qPreviewBtn");if(pbt)pbt.textContent="Preview Email";'
+    +   'document.getElementById("qqCustId").value="";'
+    +   'var qqcChip=document.getElementById("qqCustChip");if(qqcChip){qqcChip.innerHTML="";qqcChip.style.display="none";}'
+    +   'var qqcSrch=document.getElementById("qqCustSearch");if(qqcSrch)qqcSrch.value="";'
     +   'qSetMode("quote");qSetTier("standard");qcalc();'
     +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
     + '}'
@@ -3053,12 +3136,38 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
 
   // Every save/send outcome creates a Quick Quote lead. Quote mode lands it in
   // Quoted; receipt mode reflects a finished job (set further down).
-  var leadInfo = db.prepare(
-    'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status) VALUES (?,?,?,?,?,?,?,?)'
-  ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', mode === 'receipt' ? 'completed' : 'quoted');
+  var existingCustId = parseInt(req.body.customer_id) || 0;
+  var initialStatus = mode === 'receipt' ? 'completed' : 'quoted';
+  var leadInfo;
+  if (existingCustId) {
+    leadInfo = db.prepare(
+      'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status, customer_id) VALUES (?,?,?,?,?,?,?,?,?)'
+    ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', initialStatus, existingCustId);
+  } else {
+    leadInfo = db.prepare(
+      'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status) VALUES (?,?,?,?,?,?,?,?)'
+    ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', initialStatus);
+  }
   var leadId = leadInfo.lastInsertRowid;
-  // Phase 7B: attach to an existing customer (email then phone) or create one.
-  try { customers.linkLead(leadId); } catch (err) { console.error('Customer auto-link error:', err.message); }
+  if (existingCustId) {
+    // Backfill any new contact info onto the existing customer record.
+    try {
+      var eCust = db.prepare('SELECT * FROM customers WHERE id = ?').get(existingCustId);
+      if (eCust) {
+        var eSets = [], eVals = [];
+        if (!eCust.email && email) { eSets.push('email = ?'); eVals.push(email); }
+        if (!eCust.phone && phone) { eSets.push('phone = ?'); eVals.push(phone); }
+        if (eSets.length) {
+          eVals.push(existingCustId);
+          var backfillStmt = db.prepare('UPDATE customers SET ' + eSets.join(', ') + ' WHERE id = ?');
+          backfillStmt.run.apply(backfillStmt, eVals);
+        }
+      }
+    } catch (err) { console.error('Customer backfill error:', err.message); }
+  } else {
+    // Phase 7B: attach to an existing customer (email then phone) or create one.
+    try { customers.linkLead(leadId); } catch (err) { console.error('Customer auto-link error:', err.message); }
+  }
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId);
   logHistory(leadId, 'Lead created from Quick Quote', (mode === 'receipt' ? 'Receipt' : 'Quote') + (service ? ' — ' + service : ''));
 
@@ -3507,12 +3616,25 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'addr_added')   alert = '<div class="alert alert-success">Address saved.</div>';
   if (req.query.msg === 'addr_removed') alert = '<div class="alert alert-success">Address removed.</div>';
   if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
+  if (req.query.msg === 'contact_saved') alert = '<div class="alert alert-success">Contact info updated.</div>';
 
-  // Header card
+  // Year/make option strings for vehicle dropdown
+  var profileCurYear = new Date().getFullYear();
+  var yearOpts = '<option value="">Year</option>';
+  for (var pyr = profileCurYear + 1; pyr >= 1985; pyr--) {
+    yearOpts += '<option value="' + pyr + '">' + pyr + '</option>';
+  }
+  var VEHICLE_MAKES = ['Acura','Alfa Romeo','Audi','Bentley','BMW','Buick','Cadillac',
+    'Chevrolet','Chrysler','Dodge','Ferrari','Ford','Genesis','GMC','Honda',
+    'Hyundai','Infiniti','Jeep','Kia','Lamborghini','Land Rover','Lexus',
+    'Lincoln','Maserati','Mazda','Mercedes-Benz','Mitsubishi','Nissan',
+    'Porsche','Ram','Rolls-Royce','Subaru','Tesla','Toyota','Volkswagen','Volvo'];
+  var makeOpts = '<option value="">Make</option>'
+    + VEHICLE_MAKES.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
+
+  // Header — always visible: name, contact display, action buttons
   var header = '<div class="card">'
-    + '<div class="row-sb" style="margin-bottom:8px;">'
-    + '<div class="lead-name" style="font-size:1.15rem;">' + esc(name) + '</div>'
-    + '</div>'
+    + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
     + '<div class="info-grid">'
     + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
     + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
@@ -3529,9 +3651,19 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
     + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
     + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
-    + '<button type="button" onclick="openSection(\'cust_vehicles\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Vehicle</button>'
     + (recentLeadId ? '<button type="button" onclick="openSection(\'cust_followups\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Follow-Up</button>' : '')
     + '</div>'
+    + '</div>';
+
+  // Contact info edit fields (inside unified save form)
+  var contactCard = '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:12px;">Contact Info</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>First name</label><input type="text" name="first_name" value="' + esc(c.first_name || '') + '" required></div>'
+    + '<div class="form-group"><label>Last name</label><input type="text" name="last_name" value="' + esc(c.last_name || '') + '"></div>'
+    + '</div>'
+    + '<div class="form-group"><label>Email</label><input type="email" name="email" value="' + esc(c.email || '') + '" placeholder="customer@email.com"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
     + '</div>';
 
   // Tags card (collapsible) — removable pills + free-text add + preset quick picks
@@ -3575,51 +3707,65 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<button type="submit" class="btn btn-outline" style="width:auto;">Save Notes</button>'
     + '</form>' + COLLAPSE_CLOSE;
 
-  // Vehicles
+  // Vehicles (no inner form — inside unified save form; delete uses formaction)
   var vehList = vehicles.length
     ? vehicles.map(function(v) {
         var title = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || 'Vehicle';
         return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
           + '<div><div style="font-weight:600;color:#0a1f3d;font-size:0.9rem;">' + esc(title) + '</div>'
           + (v.vin ? '<div style="font-size:0.78rem;color:#888;margin-top:2px;">VIN ' + esc(v.vin) + '</div>' : '') + '</div>'
-          + '<form method="POST" action="/admin/customer/' + c.id + '/vehicle/' + v.id + '/delete" style="margin:0;" onsubmit="return confirm(\'Remove this vehicle?\');">'
-          + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;">Remove</button>'
-          + '</form></div>';
+          + '<button type="submit" formaction="/admin/customer/' + c.id + '/vehicle/' + v.id + '/delete" formmethod="post" onclick="return confirm(\'Remove this vehicle?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button>'
+          + '</div>';
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No vehicles saved yet.</div>';
   var vehCard = collapseOpen('cust_vehicles', 'Vehicles', true)
     + vehList
-    + '<form method="POST" action="/admin/customer/' + c.id + '/vehicle/add" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
-    + '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label><input type="text" name="year" maxlength="4" placeholder="2018"></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label><input type="text" name="make" placeholder="Honda"></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label><input type="text" name="model" placeholder="Accord"></div>'
+    + '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
+    + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add a vehicle</div>'
+    + '<div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;">'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label><select name="veh_year">' + yearOpts + '</select></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label><select name="veh_make">' + makeOpts + '</select></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label><input type="text" name="veh_model" placeholder="Accord"></div>'
     + '</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:10px;"><label>Trim</label><input type="text" name="trim" placeholder="EX-L (optional)"></div>'
-    + '<div class="form-group" style="margin-bottom:10px;"><label>VIN</label><input type="text" name="vin" maxlength="17" placeholder="optional"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Trim</label><input type="text" name="veh_trim" placeholder="EX-L (optional)"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>VIN</label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
     + '</div>'
-    + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Vehicle</button>'
-    + '</form>' + COLLAPSE_CLOSE;
+    + '</div>'
+    + COLLAPSE_CLOSE;
 
-  // Saved addresses
+  // Saved addresses (no inner form — inside unified save form; delete uses formaction)
   var addrList = addresses.length
     ? addresses.map(function(a) {
         return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
           + '<div>' + (a.label ? '<div style="font-weight:600;color:#0a1f3d;font-size:0.88rem;">' + esc(a.label) + '</div>' : '')
           + '<div style="font-size:0.85rem;color:#444;">' + esc(a.address) + '</div></div>'
-          + '<form method="POST" action="/admin/customer/' + c.id + '/address/' + a.id + '/delete" style="margin:0;" onsubmit="return confirm(\'Remove this address?\');">'
-          + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;">Remove</button>'
-          + '</form></div>';
+          + '<button type="submit" formaction="/admin/customer/' + c.id + '/address/' + a.id + '/delete" formmethod="post" onclick="return confirm(\'Remove this address?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button>'
+          + '</div>';
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No saved addresses yet.</div>';
-  var addrCard = collapseOpen('cust_addresses', 'Saved Service Addresses', false)
+  var addrCard = collapseOpen('cust_addresses', 'Saved Service Addresses', true)
     + addrList
-    + '<form method="POST" action="/admin/customer/' + c.id + '/address/add" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Label <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="label" placeholder="Home, Office..."></div>'
-    + '<div class="form-group" style="margin-bottom:10px;"><label>Address</label><input type="text" name="address" placeholder="123 Main St, Sterling, VA"></div>'
-    + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add Address</button>'
-    + '</form>' + COLLAPSE_CLOSE;
+    + '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
+    + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add an address</div>'
+    + '<div class="form-group" style="margin-bottom:8px;">'
+    + '<label>Label</label>'
+    + '<select name="addr_label_preset" onchange="profileAddrChange(this)">'
+    + '<option value="Home">Home</option>'
+    + '<option value="Office">Office</option>'
+    + '<option value="Other">Other</option>'
+    + '</select>'
+    + '</div>'
+    + '<div class="form-group" id="addrOtherWrap" style="margin-bottom:8px;display:none;">'
+    + '<label>Custom label</label>'
+    + '<input type="text" name="addr_label_other" placeholder="Apartment, gym, etc...">'
+    + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;">'
+    + '<label>Address</label>'
+    + '<input type="text" name="addr_address" placeholder="123 Main St, Sterling, VA">'
+    + '</div>'
+    + '</div>'
+    + COLLAPSE_CLOSE;
 
   // Job history
   var jobsHtml = jobs.length
@@ -3686,18 +3832,107 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. A &ldquo;job&rdquo; is a completed service (receipt sent). Conversion rate is jobs completed out of quotes sent.</div>'
     + COLLAPSE_CLOSE;
 
+  var profileScript = '<style>'
+    + '@keyframes bkSavePop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}'
+    + '</style>'
+    + '<script>'
+    + 'function fmtPhoneInput(el){'
+    +   'var v=el.value.replace(/\\D/g,"").slice(0,10);'
+    +   'if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);'
+    +   'else if(v.length>=4)v=v.slice(0,3)+"-"+v.slice(3);'
+    +   'el.value=v;'
+    + '}'
+    + 'function profileAddrChange(sel){'
+    +   'var w=document.getElementById("addrOtherWrap");'
+    +   'if(w)w.style.display=sel.value==="Other"?"":"none";'
+    + '}'
+    + '(function(){'
+    +   'var form=document.getElementById("profileSaveForm");'
+    +   'var bar=document.getElementById("profileSaveBar");'
+    +   'if(!form||!bar)return;'
+    +   'function showSave(){'
+    +     'if(bar.style.display==="none"||bar.style.display===""){'
+    +       'bar.style.display="block";'
+    +       'bar.style.animation="none";'
+    +       'bar.offsetHeight;'
+    +       'bar.style.animation="bkSavePop .18s ease";'
+    +     '}'
+    +   '}'
+    +   'form.addEventListener("input",showSave);'
+    +   'form.addEventListener("change",showSave);'
+    + '})();'
+    + '</script>';
+
+  var saveBar = '<div id="profileSaveBar" style="display:none;position:fixed;top:66px;right:16px;z-index:150;">'
+    + '<button type="submit" form="profileSaveForm"'
+    + ' style="background:#0d1b2a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;box-shadow:0 3px 14px rgba(13,27,42,.3);display:flex;align-items:center;gap:6px;white-space:nowrap;">'
+    + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
+    + 'Save</button>'
+    + '</div>';
+
   var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
     + alert
     + header
     + tagsCard
     + notesCard
+    + '<form method="POST" action="/admin/customer/' + c.id + '/save" id="profileSaveForm">'
+    + contactCard
     + vehCard
     + addrCard
+    + '</form>'
+    + saveBar
     + jobsCard
     + fupCard
-    + statsCard;
+    + statsCard
+    + profileScript;
 
   res.send(page(name, body, req));
+});
+
+router.post('/customer/:id/edit', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var firstName = (req.body.first_name || '').trim();
+  var lastName  = (req.body.last_name  || '').trim();
+  var email     = (req.body.email      || '').trim() || null;
+  var phone     = (req.body.phone      || '').trim() || null;
+  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?')
+    .run(firstName, lastName, email, phone, c.id);
+  res.redirect('/admin/customer/' + c.id + '?msg=contact_saved');
+});
+
+// Unified profile save — contact info + optional new vehicle + optional new address
+router.post('/customer/:id/save', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+
+  var firstName = (req.body.first_name || '').trim();
+  var lastName  = (req.body.last_name  || '').trim();
+  var email     = (req.body.email      || '').trim() || null;
+  var phone     = (req.body.phone      || '').trim() || null;
+  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?')
+    .run(firstName, lastName, email, phone, c.id);
+
+  var vYear  = (req.body.veh_year  || '').trim() || null;
+  var vMake  = (req.body.veh_make  || '').trim() || null;
+  var vModel = (req.body.veh_model || '').trim() || null;
+  var vTrim  = (req.body.veh_trim  || '').trim() || null;
+  var vVin   = (req.body.veh_vin   || '').trim() || null;
+  if (vYear || vMake || vModel) {
+    db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, trim, vin) VALUES (?,?,?,?,?,?)')
+      .run(c.id, vYear, vMake, vModel, vTrim, vVin);
+  }
+
+  var addrAddress = (req.body.addr_address || '').trim();
+  if (addrAddress) {
+    var labelPreset = (req.body.addr_label_preset || 'Home').trim();
+    var labelOther  = (req.body.addr_label_other  || '').trim();
+    var addrLabel   = labelPreset === 'Other' ? (labelOther || 'Other') : labelPreset;
+    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)')
+      .run(c.id, addrLabel, addrAddress);
+  }
+
+  res.redirect('/admin/customer/' + c.id + '?msg=saved');
 });
 
 router.post('/customer/:id/notes', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
@@ -3808,7 +4043,17 @@ router.get('/appointments', requireAuth, function(req, res) {
   function apptCard(a) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
-    return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" style="border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
+    var tOpts = '<option value="">-- Select time --</option>';
+    for (var mins = 8 * 60; mins <= 17 * 60; mins += 30) {
+      if (mins >= 12 * 60 && mins < 13 * 60) continue;
+      var h24 = Math.floor(mins / 60);
+      var m = mins % 60;
+      var ampm = h24 < 12 ? 'AM' : 'PM';
+      var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      var tlabel = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+      tOpts += '<option value="' + tlabel + '"' + (a.pref_time === tlabel ? ' selected' : '') + '>' + tlabel + '</option>';
+    }
+    return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
       + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(a.pref_date)) + '</span>'
@@ -3817,8 +4062,30 @@ router.get('/appointments', requireAuth, function(req, res) {
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
       + (a.pref_location ? '<div style="font-size:0.82rem;color:#666;margin-top:2px;">' + esc(a.pref_location) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(a.total) + '</div>'
-      + '<div style="display:flex;gap:8px;margin-top:10px;">'
+      + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
       + '<a href="/admin/quote/' + a.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('clipboard') + 'Open Lead</a>'
+      + '<button type="button" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">' + ic('calendar') + 'Reschedule</button>'
+      + '<form method="POST" action="/admin/appointments/' + a.id + '/cancel" style="display:inline;margin:0;" onsubmit="return confirm(\'Cancel this appointment? The lead will return to the pipeline.\');">'
+      + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;" onclick="event.stopPropagation();">Cancel Appt</button>'
+      + '</form>'
+      + '</div>'
+      + '<div id="rescheduleForm_' + a.id + '" style="display:none;margin-top:12px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
+      + '<form method="POST" action="/admin/appointments/' + a.id + '/reschedule">'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
+      + '<div class="form-group" style="margin-bottom:0;flex:1;min-width:140px;">'
+      + '<label style="font-size:0.82rem;">New Date</label>'
+      + '<input type="date" name="pref_date" value="' + esc(a.pref_date || '') + '" required style="padding:8px 10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;width:100%;box-sizing:border-box;">'
+      + '</div>'
+      + '<div class="form-group" style="margin-bottom:0;flex:1;min-width:140px;">'
+      + '<label style="font-size:0.82rem;">New Time</label>'
+      + '<select name="pref_time" required style="padding:8px 10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;width:100%;box-sizing:border-box;">' + tOpts + '</select>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;">'
+      + '<button type="submit" class="btn btn-navy btn-sm" style="width:auto;" onclick="event.stopPropagation();">Save</button>'
+      + '<button type="button" class="btn btn-sm" style="width:auto;background:#f8fafc;color:#475569;border:1px solid #e2e8f0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">Cancel</button>'
+      + '</div>'
+      + '</div>'
+      + '</form>'
       + '</div>'
       + '</div>';
   }
@@ -3887,6 +4154,10 @@ router.get('/appointments', requireAuth, function(req, res) {
     + '};'
     + 'document.getElementById("apptPrev").onclick=function(){curMonth--;if(curMonth<0){curMonth=11;curYear--;}render();};'
     + 'document.getElementById("apptNext").onclick=function(){curMonth++;if(curMonth>11){curMonth=0;curYear++;}render();};'
+    + 'window.apptToggleReschedule=function(id){'
+    +   'var f=document.getElementById("rescheduleForm_"+id);'
+    +   'if(f)f.style.display=f.style.display==="none"?"block":"none";'
+    + '};'
     + 'render();'
     + '})();</script>';
 
@@ -3899,10 +4170,15 @@ router.get('/appointments', requireAuth, function(req, res) {
     + '<div id="apptCalGrid"></div>'
     + '</div>';
 
+  var apptMsg = '';
+  if (req.query.msg === 'rescheduled') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment rescheduled.</div>';
+  if (req.query.msg === 'cancelled') apptMsg = '<div class="alert" style="margin-bottom:14px;background:#fff8e1;border:1px solid #f0b429;color:#6b4c00;padding:10px 14px;border-radius:8px;">Appointment cancelled. Lead returned to pipeline.</div>';
+
   var body = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Appointments</h1>'
     + '<a href="/admin/appointments/new" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + '+ New Appointment</a>'
     + '</div>'
+    + apptMsg
     + calHtml
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
     + '<div class="section-title" style="margin:0;" id="apptFilterLabel">All appointments</div>'
@@ -3915,6 +4191,29 @@ router.get('/appointments', requireAuth, function(req, res) {
     + calScript;
 
   res.send(page('Appointments', body, req));
+});
+
+router.post('/appointments/:lead_id/reschedule', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var lead = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.lead_id);
+  if (!lead) return res.redirect('/admin/appointments');
+  var prefDate = (req.body.pref_date || '').trim();
+  var prefTime = (req.body.pref_time || '').trim();
+  if (!prefDate || !prefTime) return res.redirect('/admin/appointments');
+  db.prepare("UPDATE quotes SET pref_date = ?, pref_time = ? WHERE lead_id = ? AND status = 'approved'")
+    .run(prefDate, prefTime, lead.id);
+  logHistory(lead.id, 'Appointment rescheduled', prefDate + ' at ' + prefTime);
+  res.redirect('/admin/appointments?msg=rescheduled');
+});
+
+router.post('/appointments/:lead_id/cancel', requireAuth, function(req, res) {
+  var lead = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.lead_id);
+  if (!lead) return res.redirect('/admin/appointments');
+  db.prepare("UPDATE quotes SET pref_date = NULL, pref_time = NULL WHERE lead_id = ? AND status = 'approved'")
+    .run(lead.id);
+  db.prepare("UPDATE leads SET status = 'approved', status_updated_at = datetime('now') WHERE id = ?")
+    .run(lead.id);
+  logHistory(lead.id, 'Appointment cancelled', 'Lead returned to pipeline');
+  res.redirect('/admin/appointments?msg=cancelled');
 });
 
 router.get('/appointments/new', requireAuth, function(req, res) {
@@ -4340,7 +4639,7 @@ router.get('/dashboard', requireAuth, function(req, res) {
     + (recent.length === 0
         ? '<div style="text-align:center;padding:24px 0;color:#94a3b8;font-size:0.875rem;">No leads yet.</div>'
         : recent.map(function(l, i) {
-            return '<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;'
+            return '<div onclick="window.location=\'/admin/quote/' + l.id + '\';" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;cursor:pointer;'
               + (i < recent.length - 1 ? 'border-bottom:1px solid var(--gray-100);' : '')
               + 'gap:10px;">'
               + '<div style="flex:1;min-width:0;">'
