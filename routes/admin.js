@@ -3234,8 +3234,9 @@ router.get('/customers', requireAuth, function(req, res) {
   res.send(page('Customers',
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Customers</h1>'
-    + '<div style="display:flex;align-items:center;gap:12px;">'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
     + '<a href="/admin/customer/new" class="btn btn-navy btn-sm" style="width:auto;">+ New Customer</a>'
+    + '<a href="/admin/customers/import-square" class="btn btn-outline btn-sm" style="width:auto;">Import from Square</a>'
     + '<span style="color:#aaa;font-size:0.83rem;">' + total + ' total</span>'
     + '</div>'
     + '</div>'
@@ -3312,6 +3313,104 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
   }
 
   res.redirect('/admin/customer/' + newId + '?msg=created');
+});
+
+// ─── Square customer import ───────────────────────────────────────────────────
+
+router.get('/customers/import-square', requireAuth, function(req, res) {
+  var sqEnv = (!process.env.SQUARE_ACCESS_TOKEN || process.env.SQUARE_ENV === 'sandbox') ? 'sandbox' : 'production';
+  var body = '<a href="/admin/customers" class="back-link">&#8592; Customers</a>'
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">Import from Square</h1>'
+    + '<div class="card">'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;">This pulls every customer from your Square account and adds them to the BK CRM. Anyone already in the CRM (matched by email or phone) is linked to their Square record but not duplicated.</p>'
+    + '<p style="color:#888;font-size:0.85rem;margin:0 0 18px;">Environment: <strong>' + esc(sqEnv) + '</strong>. You can run this again any time — duplicates are always skipped.</p>'
+    + '<form method="POST" action="/admin/customers/import-square">'
+    + '<button type="submit" class="btn btn-navy" style="max-width:280px;">Run Import from Square</button>'
+    + '</form>'
+    + '</div>';
+  res.send(page('Import from Square', body, req));
+});
+
+router.post('/customers/import-square', requireAuth, async function(req, res) {
+  var imported = 0, linked = 0, skipped = 0, errors = 0;
+  var { client: sqClient } = require('../square');
+
+  try {
+    var cursor = null;
+    var keepGoing = true;
+
+    while (keepGoing) {
+      var params = { limit: 100 };
+      if (cursor) params.cursor = cursor;
+      var result = await sqClient.customers.list(params);
+      var squareCusts = result.customers || [];
+      cursor = result.cursor || null;
+      keepGoing = !!cursor && squareCusts.length > 0;
+
+      for (var i = 0; i < squareCusts.length; i++) {
+        var sc = squareCusts[i];
+        try {
+          var sqEmail = (sc.emailAddress || '').trim() || null;
+          var sqPhone = (sc.phoneNumber  || '').trim() || null;
+          var sqFirst = (sc.givenName    || '').trim();
+          var sqLast  = (sc.familyName   || '').trim();
+
+          if (!sqFirst && !sqLast && !sqEmail && !sqPhone) { skipped++; continue; }
+
+          var existing = customers.findCustomer(sqEmail, sqPhone);
+          if (existing) {
+            var sets = [], vals = [];
+            if (!existing.square_customer_id && sc.id)  { sets.push('square_customer_id = ?'); vals.push(sc.id); }
+            if (!existing.email && sqEmail)              { sets.push('email = ?');              vals.push(sqEmail); }
+            if (!existing.phone && sqPhone)              { sets.push('phone = ?');              vals.push(sqPhone); }
+            if (!existing.first_name && sqFirst)         { sets.push('first_name = ?');         vals.push(sqFirst); }
+            if (!existing.last_name  && sqLast)          { sets.push('last_name = ?');          vals.push(sqLast); }
+            if (sets.length) {
+              vals.push(existing.id);
+              var stmt = db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?');
+              stmt.run.apply(stmt, vals);
+            }
+            linked++;
+          } else {
+            customers.createCustomer({
+              first_name: sqFirst,
+              last_name:  sqLast,
+              email:      sqEmail,
+              phone:      sqPhone,
+              square_customer_id: sc.id || null
+            });
+            imported++;
+          }
+        } catch (rowErr) {
+          console.error('Square import row error:', rowErr.message);
+          errors++;
+        }
+      }
+
+      if (!squareCusts.length) break;
+    }
+  } catch (apiErr) {
+    console.error('Square import API error:', apiErr.message);
+    return res.send(page('Import from Square',
+      '<a href="/admin/customers/import-square" class="back-link">&#8592; Back</a>'
+      + '<div class="alert alert-error">Square API error: ' + esc(apiErr.message) + '</div>',
+      req
+    ));
+  }
+
+  var total = imported + linked;
+  var body = '<a href="/admin/customers" class="back-link">&#8592; Customers</a>'
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">Import Complete</h1>'
+    + '<div class="card">'
+    + '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">'
+    + '<div style="font-size:1rem;color:#1a7a3a;font-weight:600;">&#10003; ' + imported + ' new customer' + (imported === 1 ? '' : 's') + ' imported from Square</div>'
+    + '<div style="font-size:0.95rem;color:#444;">' + linked + ' existing customer' + (linked === 1 ? '' : 's') + ' linked to their Square record</div>'
+    + (skipped ? '<div style="font-size:0.88rem;color:#aaa;">' + skipped + ' blank records skipped</div>' : '')
+    + (errors  ? '<div style="font-size:0.88rem;color:#c0392b;">&#10005; ' + errors + ' row' + (errors === 1 ? '' : 's') + ' failed (check server logs)</div>' : '')
+    + '</div>'
+    + '<a href="/admin/customers" class="btn btn-navy" style="max-width:200px;">View Customers</a>'
+    + '</div>';
+  res.send(page('Import Complete', body, req));
 });
 
 // Customer profile.
