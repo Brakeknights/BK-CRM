@@ -3832,7 +3832,10 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. A &ldquo;job&rdquo; is a completed service (receipt sent). Conversion rate is jobs completed out of quotes sent.</div>'
     + COLLAPSE_CLOSE;
 
-  var profileScript = '<script>'
+  var profileScript = '<style>'
+    + '@keyframes bkSavePop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}'
+    + '</style>'
+    + '<script>'
     + 'function fmtPhoneInput(el){'
     +   'var v=el.value.replace(/\\D/g,"").slice(0,10);'
     +   'if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);'
@@ -3843,19 +3846,41 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     +   'var w=document.getElementById("addrOtherWrap");'
     +   'if(w)w.style.display=sel.value==="Other"?"":"none";'
     + '}'
+    + '(function(){'
+    +   'var form=document.getElementById("profileSaveForm");'
+    +   'var bar=document.getElementById("profileSaveBar");'
+    +   'if(!form||!bar)return;'
+    +   'function showSave(){'
+    +     'if(bar.style.display==="none"||bar.style.display===""){'
+    +       'bar.style.display="block";'
+    +       'bar.style.animation="none";'
+    +       'bar.offsetHeight;'
+    +       'bar.style.animation="bkSavePop .18s ease";'
+    +     '}'
+    +   '}'
+    +   'form.addEventListener("input",showSave);'
+    +   'form.addEventListener("change",showSave);'
+    + '})();'
     + '</script>';
+
+  var saveBar = '<div id="profileSaveBar" style="display:none;position:fixed;top:66px;right:16px;z-index:150;">'
+    + '<button type="submit" form="profileSaveForm"'
+    + ' style="background:#0d1b2a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;box-shadow:0 3px 14px rgba(13,27,42,.3);display:flex;align-items:center;gap:6px;white-space:nowrap;">'
+    + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
+    + 'Save</button>'
+    + '</div>';
 
   var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
     + alert
     + header
     + tagsCard
     + notesCard
-    + '<form method="POST" action="/admin/customer/' + c.id + '/save">'
+    + '<form method="POST" action="/admin/customer/' + c.id + '/save" id="profileSaveForm">'
     + contactCard
     + vehCard
     + addrCard
-    + '<button type="submit" class="btn btn-navy" style="width:100%;margin-bottom:16px;font-size:1rem;padding:14px;">Save All Changes</button>'
     + '</form>'
+    + saveBar
     + jobsCard
     + fupCard
     + statsCard
