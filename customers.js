@@ -158,6 +158,7 @@ module.exports = {
   normEmail,
   normPhone,
   findCustomer,
+  createCustomer,
   findOrCreateForLead,
   linkLead,
   attachSquareId,
