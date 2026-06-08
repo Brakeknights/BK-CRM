@@ -751,9 +751,12 @@ router.post('/push/unsubscribe', requireAuth, express.json(), function(req, res)
 
 router.get('/login', function(req, res) {
   if (req.session && req.session.adminAuthed) return res.redirect('/admin');
-  var errorHtml = req.query.error
-    ? '<div class="alert alert-error">Incorrect password. Try again.</div>'
-    : '';
+  var errorHtml = '';
+  if (req.query.error === 'locked') {
+    errorHtml = '<div class="alert alert-error">Too many failed attempts. Try again in a few minutes.</div>';
+  } else if (req.query.error) {
+    errorHtml = '<div class="alert alert-error">Incorrect password. Try again.</div>';
+  }
   res.send(page('Login',
     '<div style="max-width:360px;margin:56px auto 0;">'
     + '<div class="card" style="padding:28px;">'
@@ -773,13 +776,54 @@ router.get('/login', function(req, res) {
   ));
 });
 
+// Brute-force guard: track failed logins per IP. After MAX_FAILS within the
+// window, lock that IP out for LOCK_MS. In-memory is fine for a single-process
+// app; it resets on restart, which is acceptable for a sole-owner admin.
+var loginFails = new Map(); // ip -> { count, lockedUntil }
+var LOGIN_MAX_FAILS = 5;
+var LOGIN_LOCK_MS = 15 * 60 * 1000;
+
+function loginClientIp(req) {
+  return req.ip || (req.connection && req.connection.remoteAddress) || 'unknown';
+}
+
+// Constant-time password check so response timing can't reveal how much of the
+// password matched.
+function passwordMatches(input) {
+  var a = Buffer.from(String(input || ''));
+  var b = Buffer.from(String(ADMIN_PASSWORD));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 router.post('/login', express.urlencoded({ extended: false }), function(req, res) {
-  if (req.body.password === ADMIN_PASSWORD) {
-    req.session.adminAuthed = true;
-    res.redirect('/admin');
-  } else {
-    res.redirect('/admin/login?error=1');
+  var ip = loginClientIp(req);
+  var now = Date.now();
+  var rec = loginFails.get(ip);
+
+  if (rec && rec.lockedUntil && rec.lockedUntil > now) {
+    return res.redirect('/admin/login?error=locked');
   }
+
+  if (passwordMatches(req.body.password)) {
+    loginFails.delete(ip);
+    // Prevent session fixation: issue a fresh session id on privilege change.
+    req.session.regenerate(function(err) {
+      if (err) return res.redirect('/admin/login?error=1');
+      req.session.adminAuthed = true;
+      res.redirect('/admin');
+    });
+    return;
+  }
+
+  var next = rec && rec.lockedUntil && rec.lockedUntil > now ? rec : { count: 0, lockedUntil: 0 };
+  next.count = (rec ? rec.count : 0) + 1;
+  if (next.count >= LOGIN_MAX_FAILS) {
+    next.lockedUntil = now + LOGIN_LOCK_MS;
+    next.count = 0;
+  }
+  loginFails.set(ip, next);
+  res.redirect('/admin/login?error=' + (next.lockedUntil > now ? 'locked' : '1'));
 });
 
 router.get('/logout', function(req, res) {

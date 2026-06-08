@@ -46,15 +46,50 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 hours
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Customer-data guard: in production, refuse to start if the admin password or
+// session secret is missing/left at the public default. Serving the CRM behind a
+// known default password would expose every customer record, so a hard stop is
+// safer than running insecure. Crashing here surfaces the misconfiguration on the
+// dev deploy before it can reach the live site.
+if (IS_PROD) {
+  const insecure = [];
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === 'bk-dev-secret-change-in-prod') insecure.push('SESSION_SECRET');
+  if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD === 'brakeknights') insecure.push('ADMIN_PASSWORD');
+  if (insecure.length) {
+    console.error('FATAL: refusing to start in production. Set a strong value for: ' + insecure.join(', ') + ' in the hosting environment.');
+    process.exit(1);
+  }
+}
+
+// Behind Hostinger's HTTPS proxy. Required so secure cookies are sent and req.ip
+// reflects the real client address (used by login rate limiting).
+app.set('trust proxy', 1);
+
+// Baseline security headers on every response.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (IS_PROD) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(session({
+  name: 'bk.sid',
   secret: process.env.SESSION_SECRET || 'bk-dev-secret-change-in-prod',
   resave: false,
   saveUninitialized: false,
   store: new SqliteStore(db, SESSION_TTL),
-  cookie: { maxAge: SESSION_TTL }
+  cookie: {
+    maxAge: SESSION_TTL,
+    httpOnly: true,           // not readable by JavaScript — blocks XSS cookie theft
+    sameSite: 'lax',          // blocks cross-site POSTs from carrying the session — CSRF guard
+    secure: IS_PROD           // HTTPS-only in production; off locally so http://localhost works
+  }
 }));
 
 // 301 redirects for old blog posts and old-format location URLs from previous site
