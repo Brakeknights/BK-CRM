@@ -4058,8 +4058,15 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<input type="checkbox" name="send_email" value="1" style="width:18px;height:18px;"> Send confirmation email to customer</label>'
     + '</div>'
 
-    + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="margin-bottom:24px;" onclick="this.disabled=true;this.textContent=\'Creating…\';this.form.submit();">Create Appointment</button>'
+    + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="margin-bottom:24px;">Create Appointment</button>'
     + '</form>'
+    + '<script>(function(){'
+    + 'var form=document.querySelector("form[action=\'/admin/appointments/new\']");'
+    + 'if(form)form.addEventListener("submit",function(){'
+    + 'var btn=document.getElementById("apptSubmitBtn");'
+    + 'if(btn){btn.disabled=true;btn.textContent="Creating…";}'
+    + '});'
+    + '})();</script>'
 
     + '<script>'
     + 'var APPT_PRICING=' + pricingJson + ';'
