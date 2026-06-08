@@ -3408,7 +3408,7 @@ router.post('/customers/import-square/chunk', requireAuth, express.json(), async
   var imported = 0, linked = 0, skipped = 0, errors = 0;
 
   try {
-    var reqBody = { limit: 100 };
+    var reqBody = { limit: BigInt(100) };
     if (cursor) reqBody.cursor = cursor;
 
     var resp = await squareClient.customers.search(reqBody);
