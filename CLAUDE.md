@@ -165,10 +165,10 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/funny-davinci-IFPbC` — Phase 7B + 7C (merged to master via PR #15 ✅)
+- Last working branch: `claude/happy-hamilton-UkPqj` — Phase 8E/8F + Square import + security hardening (merged to master via PR #18 ✅)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
-- Phases 2, 3, 4, 5, 6, 7A, 7B, 7C all complete and live on master.
+- Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
 - dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
@@ -178,9 +178,13 @@ Update this section at the end of each session to stay caught up next time.
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - **DB path fix:** `NODE_ENV=production` set in Hostinger hPanel for both dev and master — database now stored outside the git directory and survives all deploys ✅
+- **VAPID keys:** Must be set in Hostinger hPanel for both dev and master before push notifications work: `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Generate once with `node -e "const wp=require('web-push'); const k=wp.generateVAPIDKeys(); console.log(k);"` and set both envs.
+- **Square import:** Run at brakeknights.com/admin/customers/import-square to pull all production Square customers into the CRM. Sandbox (dev) has test customers only.
 - Next steps:
-  1. Phase 8: automated quotes (requires pricing table finalized by vehicle type)
-  2. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
+  1. Run Square customer import on live site (brakeknights.com/admin/customers/import-square)
+  2. Set VAPID keys in Hostinger hPanel to activate push notifications
+  3. Phase 8: automated quotes (requires pricing table finalized by vehicle type)
+  4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
 
 ## Pre-Launch Checklist (Before Merging to Master)
@@ -237,6 +241,15 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Phase 8E/8F: Browser push notifications for new leads (bell icon toggle, service worker, VAPID keys); new-lead sidebar badge showing unactioned lead count. Merged to master via PR #18.
+- [x] CRM: Create New Customer form/button on Customers tab (/admin/customer/new)
+- [x] CRM: Full Appointments tab at /admin/appointments with scheduling, customer search/create, service/pricing, confirmation email
+- [x] Eastern Time timestamps: all admin timestamps now display in America/New_York timezone
+- [x] Square customer import: /admin/customers/import-square — pulls all Square customers into CRM, dedup by email/phone, client-driven pagination with live progress, 0 errors confirmed on sandbox
+- [x] Security hardening: production secret guard, hardened session cookies, login brute-force lockout (5 fails/IP → 15 min), constant-time password compare, session regeneration on login, site-wide security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS in prod)
+- [x] Rule #1 documented in CLAUDE.md: customer data protection as top priority
+
+### Previously Completed This Session
 - [x] Phase 7B: CRM customer profiles — `customers` table, auto-link logic, customer list at `/admin/customers`, full profile at `/admin/customer/:id` (contact, vehicles, saved addresses, notes, tags, job history, follow-ups, lifetime stats). Sidebar nav replaces old topbar. Full design-token restyle. Collapsible sections on all profile pages (default closed, state saved in localStorage).
 - [x] Phase 7C: Dashboard + Reports — `/admin/dashboard` (pipeline tiles, stats row, recent-activity feed); `/admin/reports/revenue` (monthly bar chart + service breakdown); `/admin/reports/conversions` (quote-to-job rate, monthly table); `/admin/reports/services` (inquiries, jobs, revenue per service). All four replace placeholder pages. Merged to master via PR #15.
 - [x] DB wipe fix: `NODE_ENV=production` in Hostinger hPanel moves SQLite database outside git directory — survives all future deploys (verified: test lead persisted through a redeploy on dev). PR #10.
