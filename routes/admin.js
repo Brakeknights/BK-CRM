@@ -3360,121 +3360,122 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
 });
 
 // ─── Square customer import ───────────────────────────────────────────────────
-// The import runs in the BACKGROUND, not inside the HTTP request. Pulling and
-// inserting hundreds of Square customers can take longer than Hostinger's proxy
-// request timeout, which previously returned a 503. Now the POST starts the job
-// and returns immediately; the page polls a status endpoint for live progress.
+// Client-driven, one page (100 customers) per request. The browser calls the
+// /chunk endpoint repeatedly, passing the Square pagination cursor, and updates
+// the on-screen counts after each page. Each request is short so it can never hit
+// Hostinger's proxy timeout (the cause of the earlier 503), and progress is fully
+// visible. The server keeps no hidden state; dedup makes re-runs safe.
 
-var squareImport = { running: false, done: false, imported: 0, linked: 0, skipped: 0, errors: 0, error: null, startedAt: 0, finishedAt: 0 };
+// Upserts one Square customer into the CRM. Returns 'imported', 'linked', or
+// 'skipped'. Matches an existing customer by email then phone and backfills any
+// missing contact fields rather than creating a duplicate.
+function processSquareCustomer(sc) {
+  var sqEmail = (sc.emailAddress || '').trim() || null;
+  var sqPhone = (sc.phoneNumber  || '').trim() || null;
+  var sqFirst = (sc.givenName    || '').trim();
+  var sqLast  = (sc.familyName   || '').trim();
 
-async function runSquareImport() {
-  squareImport = { running: true, done: false, imported: 0, linked: 0, skipped: 0, errors: 0, error: null, startedAt: Date.now(), finishedAt: 0 };
-  var sqClient = require('../square').client;
-  try {
-    var pageIter = await sqClient.customers.list({ limit: 100, sortField: 'DEFAULT' });
-    for await (var sc of pageIter) {
-      try {
-        var sqEmail = (sc.emailAddress || '').trim() || null;
-        var sqPhone = (sc.phoneNumber  || '').trim() || null;
-        var sqFirst = (sc.givenName    || '').trim();
-        var sqLast  = (sc.familyName   || '').trim();
+  if (!sqFirst && !sqLast && !sqEmail && !sqPhone) return 'skipped';
 
-        if (!sqFirst && !sqLast && !sqEmail && !sqPhone) { squareImport.skipped++; continue; }
-
-        var existing = customers.findCustomer(sqEmail, sqPhone);
-        if (existing) {
-          var sets = [], vals = [];
-          if (!existing.square_customer_id && sc.id)  { sets.push('square_customer_id = ?'); vals.push(sc.id); }
-          if (!existing.email && sqEmail)              { sets.push('email = ?');              vals.push(sqEmail); }
-          if (!existing.phone && sqPhone)              { sets.push('phone = ?');              vals.push(sqPhone); }
-          if (!existing.first_name && sqFirst)         { sets.push('first_name = ?');         vals.push(sqFirst); }
-          if (!existing.last_name  && sqLast)          { sets.push('last_name = ?');          vals.push(sqLast); }
-          if (sets.length) {
-            vals.push(existing.id);
-            var stmt = db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?');
-            stmt.run.apply(stmt, vals);
-          }
-          squareImport.linked++;
-        } else {
-          customers.createCustomer({
-            first_name: sqFirst,
-            last_name:  sqLast,
-            email:      sqEmail,
-            phone:      sqPhone,
-            square_customer_id: sc.id || null
-          });
-          squareImport.imported++;
-        }
-      } catch (rowErr) {
-        console.error('Square import row error:', rowErr.message);
-        squareImport.errors++;
-      }
+  var existing = customers.findCustomer(sqEmail, sqPhone);
+  if (existing) {
+    var sets = [], vals = [];
+    if (!existing.square_customer_id && sc.id)  { sets.push('square_customer_id = ?'); vals.push(sc.id); }
+    if (!existing.email && sqEmail)              { sets.push('email = ?');              vals.push(sqEmail); }
+    if (!existing.phone && sqPhone)              { sets.push('phone = ?');              vals.push(sqPhone); }
+    if (!existing.first_name && sqFirst)         { sets.push('first_name = ?');         vals.push(sqFirst); }
+    if (!existing.last_name  && sqLast)          { sets.push('last_name = ?');          vals.push(sqLast); }
+    if (sets.length) {
+      vals.push(existing.id);
+      var stmt = db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?');
+      stmt.run.apply(stmt, vals);
     }
-  } catch (apiErr) {
-    console.error('Square import API error:', apiErr.message);
-    squareImport.error = apiErr.message;
+    return 'linked';
   }
-  squareImport.running = false;
-  squareImport.done = true;
-  squareImport.finishedAt = Date.now();
+  customers.createCustomer({
+    first_name: sqFirst, last_name: sqLast, email: sqEmail, phone: sqPhone,
+    square_customer_id: sc.id || null
+  });
+  return 'imported';
 }
 
-router.get('/customers/import-square/status', requireAuth, function(req, res) {
-  res.json(squareImport);
+// Imports a single page of Square customers and returns the next cursor.
+router.post('/customers/import-square/chunk', requireAuth, express.json(), async function(req, res) {
+  var cursor = (req.body && req.body.cursor) ? String(req.body.cursor) : null;
+  var wantCount = !cursor; // ask for the total only on the first page
+  var imported = 0, linked = 0, skipped = 0, errors = 0;
+
+  try {
+    var params = { limit: 100, sortField: 'DEFAULT' };
+    if (cursor) params.cursor = cursor;
+    if (wantCount) params.count = true;
+
+    var pageObj = await squareClient.customers.list(params);
+    var resp = (pageObj && pageObj.response) || {};
+    var list = resp.customers || [];
+
+    for (var i = 0; i < list.length; i++) {
+      try {
+        var r = processSquareCustomer(list[i]);
+        if (r === 'imported') imported++;
+        else if (r === 'linked') linked++;
+        else skipped++;
+      } catch (rowErr) {
+        console.error('Square import row error:', rowErr.message);
+        errors++;
+      }
+    }
+
+    var out = { ok: true, imported: imported, linked: linked, skipped: skipped, errors: errors, processed: list.length, cursor: resp.cursor || null };
+    if (wantCount && resp.count != null) out.total = Number(resp.count);
+    res.json(out);
+  } catch (apiErr) {
+    console.error('Square import chunk error:', apiErr.message);
+    res.json({ ok: false, error: apiErr.message });
+  }
 });
 
 router.get('/customers/import-square', requireAuth, function(req, res) {
   var sqEnv = (!process.env.SQUARE_ACCESS_TOKEN || process.env.SQUARE_ENV === 'sandbox') ? 'sandbox' : 'production';
-  var body;
 
-  if (squareImport.running || squareImport.done) {
-    body = '<a href="/admin/customers" class="back-link">&#8592; Customers</a>'
-      + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">Import from Square</h1>'
-      + '<div class="card">'
-      + '<div id="impStatus" style="font-weight:700;color:#0a1f3d;font-size:1rem;margin-bottom:16px;">' + (squareImport.done ? 'Import complete' : 'Importing from Square…') + '</div>'
-      + '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;font-size:0.95rem;color:#444;">'
-      + '<div>New customers imported: <strong id="impImported" style="color:#1a7a3a;">' + squareImport.imported + '</strong></div>'
-      + '<div>Existing linked to Square: <strong id="impLinked">' + squareImport.linked + '</strong></div>'
-      + '<div>Blank records skipped: <strong id="impSkipped" style="color:#aaa;">' + squareImport.skipped + '</strong></div>'
-      + '<div>Errors: <strong id="impErrors" style="color:#c0392b;">' + squareImport.errors + '</strong></div>'
-      + '</div>'
-      + '<div id="impError" style="display:' + (squareImport.error ? 'block' : 'none') + ';background:#fdecea;border:1px solid #f5c2c0;color:#c0392b;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:0.88rem;">' + (squareImport.error ? 'Square error: ' + esc(squareImport.error) : '') + '</div>'
-      + '<div id="impDone" style="display:' + (squareImport.done ? 'flex' : 'none') + ';gap:8px;flex-wrap:wrap;">'
-      + '<a href="/admin/customers" class="btn btn-navy" style="width:auto;">View Customers</a>'
-      + '<form method="POST" action="/admin/customers/import-square" style="margin:0;"><button type="submit" class="btn btn-outline" style="width:auto;">Run Again</button></form>'
-      + '</div>'
-      + '</div>'
-      + '<script>(function(){'
-      + 'function tick(){'
-      + 'fetch("/admin/customers/import-square/status",{headers:{"Accept":"application/json"}}).then(function(r){return r.json();}).then(function(s){'
-      + 'document.getElementById("impImported").textContent=s.imported;'
-      + 'document.getElementById("impLinked").textContent=s.linked;'
-      + 'document.getElementById("impSkipped").textContent=s.skipped;'
-      + 'document.getElementById("impErrors").textContent=s.errors;'
-      + 'if(s.error){var e=document.getElementById("impError");e.style.display="block";e.textContent="Square error: "+s.error;}'
-      + 'if(s.done){document.getElementById("impStatus").textContent=s.error?"Import stopped":"Import complete";document.getElementById("impDone").style.display="flex";}'
-      + 'else{setTimeout(tick,1500);}'
-      + '}).catch(function(){setTimeout(tick,2500);});'
-      + '}'
-      + 'if(!' + (squareImport.done ? 'true' : 'false') + '){tick();}'
-      + '})();</script>';
-  } else {
-    body = '<a href="/admin/customers" class="back-link">&#8592; Customers</a>'
-      + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">Import from Square</h1>'
-      + '<div class="card">'
-      + '<p style="color:#444;line-height:1.6;margin:0 0 12px;">This pulls every customer from your Square account and adds them to the BK CRM. Anyone already in the CRM (matched by email or phone) is linked to their Square record but not duplicated.</p>'
-      + '<p style="color:#888;font-size:0.85rem;margin:0 0 18px;">Environment: <strong>' + esc(sqEnv) + '</strong>. The import runs in the background, so you can leave this page open and watch the progress. Run it again any time: duplicates are always skipped.</p>'
-      + '<form method="POST" action="/admin/customers/import-square">'
-      + '<button type="submit" class="btn btn-navy" style="max-width:280px;">Run Import from Square</button>'
-      + '</form>'
-      + '</div>';
-  }
+  var body = '<a href="/admin/customers" class="back-link">&#8592; Customers</a>'
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">Import from Square</h1>'
+    + '<div class="card">'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;">This pulls every customer from your Square account and adds them to the BK CRM. Anyone already in the CRM (matched by email or phone) is linked to their Square record, never duplicated.</p>'
+    + '<p style="color:#888;font-size:0.85rem;margin:0 0 18px;">Environment: <strong>' + esc(sqEnv) + '</strong>. The page imports in pages of 100 and updates live. Keep this page open until it finishes. Run it again any time: duplicates are always skipped.</p>'
+    + '<button id="impStart" class="btn btn-navy" style="max-width:280px;">Run Import from Square</button>'
+    + '<div id="impProgress" style="display:none;">'
+    + '<div id="impStatusText" style="font-weight:700;color:#0a1f3d;font-size:1rem;margin-bottom:16px;">Starting…</div>'
+    + '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;font-size:0.95rem;color:#444;">'
+    + '<div>New customers imported: <strong id="impImported" style="color:#1a7a3a;">0</strong></div>'
+    + '<div>Existing linked to Square: <strong id="impLinked">0</strong></div>'
+    + '<div>Blank records skipped: <strong id="impSkipped" style="color:#aaa;">0</strong></div>'
+    + '<div>Errors: <strong id="impErrors" style="color:#c0392b;">0</strong></div>'
+    + '</div>'
+    + '<div id="impError" style="display:none;background:#fdecea;border:1px solid #f5c2c0;color:#c0392b;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:0.88rem;"></div>'
+    + '<div id="impDone" style="display:none;gap:8px;flex-wrap:wrap;">'
+    + '<a href="/admin/customers" class="btn btn-navy" style="width:auto;">View Customers</a>'
+    + '<a href="/admin/customers/import-square" class="btn btn-outline" style="width:auto;">Run Again</a>'
+    + '</div>'
+    + '</div>'
+    + '</div>'
+    + '<script>(function(){'
+    + 'var t={imported:0,linked:0,skipped:0,errors:0,processed:0,total:null};'
+    + 'function g(id){return document.getElementById(id);}'
+    + 'function render(msg){g("impImported").textContent=t.imported;g("impLinked").textContent=t.linked;g("impSkipped").textContent=t.skipped;g("impErrors").textContent=t.errors;'
+    + 'g("impStatusText").textContent=msg+(t.total!=null?" ("+t.processed+" of "+t.total+" read)":" ("+t.processed+" read)");}'
+    + 'function chunk(cursor){'
+    + 'fetch("/admin/customers/import-square/chunk",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cursor:cursor})})'
+    + '.then(function(r){return r.json();}).then(function(s){'
+    + 'if(!s.ok){render("Stopped");var e=g("impError");e.style.display="block";e.textContent="Square error: "+(s.error||"unknown");return;}'
+    + 't.imported+=s.imported;t.linked+=s.linked;t.skipped+=s.skipped;t.errors+=s.errors;t.processed+=s.processed;if(s.total!=null)t.total=s.total;'
+    + 'if(s.cursor){render("Importing…");chunk(s.cursor);}else{render("Import complete");g("impDone").style.display="flex";}'
+    + '}).catch(function(){render("Connection hiccup, retrying…");setTimeout(function(){chunk(cursor);},2500);});'
+    + '}'
+    + 'g("impStart").addEventListener("click",function(){g("impStart").style.display="none";g("impProgress").style.display="block";render("Importing…");chunk(null);});'
+    + '})();</script>';
+
   res.send(page('Import from Square', body, req));
-});
-
-router.post('/customers/import-square', requireAuth, function(req, res) {
-  if (!squareImport.running) runSquareImport();
-  res.redirect('/admin/customers/import-square');
 });
 
 // Customer profile.
