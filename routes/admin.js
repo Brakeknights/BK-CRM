@@ -3796,16 +3796,22 @@ router.get('/appointments', requireAuth, function(req, res) {
     + 'FROM leads l '
     + 'JOIN quotes q ON q.lead_id = l.id AND q.status = \'approved\' AND q.pref_date IS NOT NULL '
     + 'WHERE l.status = \'booked\' AND l.archived = 0 AND q.pref_date < ? '
-    + 'ORDER BY q.pref_date DESC, q.pref_time DESC LIMIT 20'
+    + 'ORDER BY q.pref_date DESC, q.pref_time DESC LIMIT 30'
   ).all(today);
+
+  // Build date → count map for the calendar dots.
+  var dateMap = {};
+  upcoming.concat(past).forEach(function(a) {
+    if (a.pref_date) dateMap[a.pref_date] = (dateMap[a.pref_date] || 0) + 1;
+  });
 
   function apptCard(a) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
-    return '<div class="card" style="border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
+    return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" style="border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
-      + '<span style="font-size:0.82rem;color:#888;">' + esc(a.pref_date) + '</span>'
+      + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(a.pref_date)) + '</span>'
       + '</div>'
       + '<div style="font-size:0.9rem;color:#444;margin-top:5px;">' + esc(a.q_service || 'Service TBD') + '</div>'
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
@@ -3817,23 +3823,96 @@ router.get('/appointments', requireAuth, function(req, res) {
       + '</div>';
   }
 
-  var upcomingHtml = upcoming.length
-    ? upcoming.map(apptCard).join('')
-    : '<div class="card" style="text-align:center;padding:32px;color:#888;">No upcoming appointments. Create one with the button above.</div>';
+  var allCards = upcoming.map(apptCard).join('') + (past.length
+    ? '<div id="pastHeader" class="section-title" style="margin:20px 0 10px;">Recent Past</div>' + past.map(apptCard).join('')
+    : '');
 
-  var pastHtml = past.length
-    ? '<div style="margin-top:24px;"><div class="section-title" style="margin-bottom:10px;">Recent Past Appointments</div>'
-      + past.map(apptCard).join('')
-      + '</div>'
+  var emptyAll = '<div id="apptEmpty" style="display:none;text-align:center;padding:32px;color:#888;">No appointments on this date.</div>';
+
+  var noUpcoming = upcoming.length === 0
+    ? '<div class="card" style="text-align:center;padding:32px;color:#888;" id="apptNoUpcoming">No upcoming appointments. Create one with the button above.</div>'
     : '';
+
+  var calScript = '<script>(function(){'
+    + 'var DATE_MAP=' + JSON.stringify(dateMap) + ';'
+    + 'var TODAY="' + today + '";'
+    + 'var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];'
+    + 'var DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];'
+    + 'var curYear,curMonth,selDate=null;'
+    // Start on the month of the first upcoming appointment, or today
+    + (upcoming.length ? 'var firstDate="' + upcoming[0].pref_date + '";curYear=parseInt(firstDate.slice(0,4));curMonth=parseInt(firstDate.slice(5,7))-1;'
+                       : 'var td=new Date();curYear=td.getFullYear();curMonth=td.getMonth();')
+    + 'function render(){'
+    +   'var cal=document.getElementById("apptCalGrid");'
+    +   'if(!cal)return;'
+    +   'var firstDay=new Date(curYear,curMonth,1).getDay();'
+    +   'var daysInMonth=new Date(curYear,curMonth+1,0).getDate();'
+    +   'document.getElementById("apptCalTitle").textContent=MONTHS[curMonth]+" "+curYear;'
+    +   'var h=\'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">\';'
+    +   'DAYS.forEach(function(d){h+=\'<div style="text-align:center;font-size:0.7rem;font-weight:600;color:#94a3b8;padding:4px 0;">\'+d+\'</div>\';});'
+    +   'h+=\'</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">\';'
+    +   'for(var i=0;i<firstDay;i++)h+=\'<div></div>\';'
+    +   'for(var d=1;d<=daysInMonth;d++){'
+    +     'var mm=String(curMonth+1).padStart(2,"0");'
+    +     'var dd=String(d).padStart(2,"0");'
+    +     'var dateStr=curYear+"-"+mm+"-"+dd;'
+    +     'var isToday=dateStr===TODAY;'
+    +     'var isSel=dateStr===selDate;'
+    +     'var hasAppt=!!DATE_MAP[dateStr];'
+    +     'var bg=isSel?"#0d1b2a":isToday?"#4169e1":"transparent";'
+    +     'var fg=isSel||isToday?"#fff":"#0f172a";'
+    +     'h+=\'<div onclick="apptDayClick(\\\'\'+dateStr+\'\\\')" style="text-align:center;padding:6px 2px;border-radius:8px;cursor:pointer;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:\'+bg+\';-webkit-tap-highlight-color:transparent;">\';'
+    +     'h+=\'<span style="font-size:0.88rem;font-weight:\'+(isToday||isSel?"700":"400")+\';color:\'+fg+\'">\'+d+\'</span>\';'
+    +     'if(hasAppt)h+=\'<span style="display:block;width:5px;height:5px;border-radius:50%;background:\'+(isSel||isToday?"#fff":"#4169e1")+\';margin-top:2px;"></span>\';'
+    +     'h+=\'</div>\';'
+    +   '}'
+    +   'h+=\'</div>\';'
+    +   'cal.innerHTML=h;'
+    + '}'
+    + 'window.apptDayClick=function(date){'
+    +   'if(selDate===date){selDate=null;}else{selDate=date;}'
+    +   'render();'
+    +   'var cards=document.querySelectorAll(".appt-card");'
+    +   'var shown=0;'
+    +   'cards.forEach(function(c){var show=!selDate||c.dataset.date===selDate;c.style.display=show?"":"none";if(show)shown++;});'
+    +   'var empty=document.getElementById("apptEmpty");'
+    +   'var noUp=document.getElementById("apptNoUpcoming");'
+    +   'var pastHdr=document.getElementById("pastHeader");'
+    +   'if(empty)empty.style.display=(selDate&&shown===0)?"block":"none";'
+    +   'if(noUp)noUp.style.display=selDate?"none":"";'
+    +   'if(pastHdr)pastHdr.style.display=selDate?"none":"";'
+    +   'var lbl=document.getElementById("apptFilterLabel");'
+    +   'if(lbl)lbl.textContent=selDate?("Showing "+selDate):"All appointments";'
+    +   'if(selDate){var el=document.getElementById("apptList");if(el)el.scrollIntoView({behavior:"smooth",block:"start"});}'
+    + '};'
+    + 'document.getElementById("apptPrev").onclick=function(){curMonth--;if(curMonth<0){curMonth=11;curYear--;}render();};'
+    + 'document.getElementById("apptNext").onclick=function(){curMonth++;if(curMonth>11){curMonth=0;curYear++;}render();};'
+    + 'render();'
+    + '})();</script>';
+
+  var calHtml = '<div class="card" style="margin-bottom:16px;padding:16px;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+    + '<button id="apptPrev" type="button" style="background:none;border:1px solid #e2e8f0;border-radius:8px;width:36px;height:36px;font-size:1.1rem;cursor:pointer;color:#475569;display:flex;align-items:center;justify-content:center;">&#8249;</button>'
+    + '<span id="apptCalTitle" style="font-weight:700;font-size:1rem;color:#0f172a;"></span>'
+    + '<button id="apptNext" type="button" style="background:none;border:1px solid #e2e8f0;border-radius:8px;width:36px;height:36px;font-size:1.1rem;cursor:pointer;color:#475569;display:flex;align-items:center;justify-content:center;">&#8250;</button>'
+    + '</div>'
+    + '<div id="apptCalGrid"></div>'
+    + '</div>';
 
   var body = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Appointments</h1>'
     + '<a href="/admin/appointments/new" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + '+ New Appointment</a>'
     + '</div>'
-    + '<div class="section-title" style="margin-bottom:10px;">Upcoming</div>'
-    + upcomingHtml
-    + pastHtml;
+    + calHtml
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+    + '<div class="section-title" style="margin:0;" id="apptFilterLabel">All appointments</div>'
+    + '</div>'
+    + '<div id="apptList">'
+    + noUpcoming
+    + allCards
+    + emptyAll
+    + '</div>'
+    + calScript;
 
   res.send(page('Appointments', body, req));
 });
