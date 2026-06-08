@@ -3220,60 +3220,47 @@ function statBlock(label, val) {
 
 // Customer list — searchable, with per-customer lifetime stats.
 router.get('/customers', requireAuth, function(req, res) {
-  var search = (req.query.q || '').trim();
-  var rows;
-  if (search) {
-    var sp = '%' + search + '%';
-    rows = db.prepare(
-      'SELECT DISTINCT c.* FROM customers c '
-      + 'LEFT JOIN customer_vehicles v ON v.customer_id = c.id '
-      + 'LEFT JOIN leads l ON l.customer_id = c.id '
-      + 'WHERE (c.first_name || " " || c.last_name) LIKE ? OR c.email LIKE ? OR c.phone LIKE ? '
-      + 'OR v.make LIKE ? OR v.model LIKE ? OR v.year LIKE ? OR v.vin LIKE ? OR l.vehicle LIKE ? '
-      + 'ORDER BY c.id DESC'
-    ).all(sp, sp, sp, sp, sp, sp, sp, sp);
-  } else {
-    rows = db.prepare('SELECT * FROM customers ORDER BY id DESC').all();
-  }
+  // Always load all customers — client-side JS filters in place so no page reload
+  // (page reloads dismiss the iOS keyboard on every keystroke, which is unusable).
+  var rows = db.prepare('SELECT * FROM customers ORDER BY id DESC').all();
 
   // Attach stats and surface the most recently active customers first.
   var list = rows.map(function(c) { return { c: c, s: customers.statsFor(c.id) }; });
   list.sort(function(a, b) { return (b.s.lastLeadDate || '').localeCompare(a.s.lastLeadDate || ''); });
 
-  var total = db.prepare('SELECT COUNT(*) AS n FROM customers').get().n;
+  var total = rows.length;
 
-  var searchBar = '<form method="GET" action="/admin/customers" style="margin-bottom:14px;display:flex;gap:8px;">'
-    + '<input type="text" name="q" value="' + esc(search) + '" placeholder="Search by name, phone, email, vehicle..." '
-    + 'style="flex:1;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;">'
-    + (search ? '<a href="/admin/customers" style="padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;background:#fff;color:#666;text-decoration:none;font-size:0.9rem;white-space:nowrap;">&#10005; Clear</a>' : '')
-    + '</form>';
+  var searchBar = '<div style="margin-bottom:14px;display:flex;gap:8px;">'
+    + '<input type="text" id="custSearchInput" placeholder="Search by name, phone, or email..." '
+    + 'style="flex:1;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;" autocomplete="off">'
+    + '</div>';
 
-  var emptyMsg = search
-    ? 'No customers match &ldquo;' + esc(search) + '&rdquo;.'
-    : 'No customers yet. They are created automatically as leads come in.';
+  var emptyMsg = 'No customers yet. They are created automatically as leads come in.';
 
   var cards = list.length === 0
-    ? '<div class="empty"><div style="margin-bottom:10px;">' + icon('users') + '</div>' + emptyMsg + '</div>'
-    : list.map(function(item) {
-        var c = item.c, s = item.s;
-        var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
-        return '<div class="card" onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
-          + '<div class="row-sb">'
-          + '<div class="lead-name">' + esc(name) + '</div>'
-          + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.completedCount + ' job' + (s.completedCount === 1 ? '' : 's') + '</span>'
-          + '</div>'
-          + '<div class="lead-meta" style="margin-top:4px;">'
-          + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;text-decoration:none;" onclick="event.stopPropagation();">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">No phone</span>')
-          + (c.email ? ' &middot; ' + esc(c.email) : '')
-          + '</div>'
-          + customerTagBadges(c.tags)
-          + '<div style="display:flex;gap:18px;margin-top:11px;font-size:0.82rem;color:#444;flex-wrap:wrap;">'
-          + '<span><strong style="color:#0a1f3d;">$' + money(s.revenue) + '</strong> lifetime</span>'
-          + '<span>Last activity ' + shortDate(s.lastLeadDate) + '</span>'
-          + (s.lastJobDate ? '<span>Last job ' + shortDate(s.lastJobDate) + '</span>' : '')
-          + '</div>'
-          + '</div>';
-      }).join('');
+    ? '<div class="empty" id="custEmpty"><div style="margin-bottom:10px;">' + icon('users') + '</div>' + emptyMsg + '</div>'
+    : '<div id="custEmpty" style="display:none;padding:32px;text-align:center;color:#888;">No customers match your search.</div>'
+      + list.map(function(item) {
+          var c = item.c, s = item.s;
+          var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
+          var searchText = (name + ' ' + (c.phone || '') + ' ' + (c.email || '')).toLowerCase();
+          return '<div class="card cust-card" data-search="' + esc(searchText) + '" onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
+            + '<div class="row-sb">'
+            + '<div class="lead-name">' + esc(name) + '</div>'
+            + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.completedCount + ' job' + (s.completedCount === 1 ? '' : 's') + '</span>'
+            + '</div>'
+            + '<div class="lead-meta" style="margin-top:4px;">'
+            + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;text-decoration:none;" onclick="event.stopPropagation();">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">No phone</span>')
+            + (c.email ? ' &middot; ' + esc(c.email) : '')
+            + '</div>'
+            + customerTagBadges(c.tags)
+            + '<div style="display:flex;gap:18px;margin-top:11px;font-size:0.82rem;color:#444;flex-wrap:wrap;">'
+            + '<span><strong style="color:#0a1f3d;">$' + money(s.revenue) + '</strong> lifetime</span>'
+            + '<span>Last activity ' + shortDate(s.lastLeadDate) + '</span>'
+            + (s.lastJobDate ? '<span>Last job ' + shortDate(s.lastJobDate) + '</span>' : '')
+            + '</div>'
+            + '</div>';
+        }).join('');
 
   res.send(page('Customers',
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
@@ -3281,11 +3268,29 @@ router.get('/customers', requireAuth, function(req, res) {
     + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
     + '<a href="/admin/customer/new" class="btn btn-navy btn-sm" style="width:auto;">+ New Customer</a>'
     + '<a href="/admin/customers/import-square" class="btn btn-outline btn-sm" style="width:auto;">Import from Square</a>'
-    + '<span style="color:#aaa;font-size:0.83rem;">' + total + ' total</span>'
+    + '<span style="color:#aaa;font-size:0.83rem;" id="custCount">' + total + ' total</span>'
     + '</div>'
     + '</div>'
     + searchBar
-    + cards,
+    + '<div id="custList">' + cards + '</div>'
+    + '<script>(function(){'
+    + 'var inp=document.getElementById("custSearchInput");'
+    + 'var count=document.getElementById("custCount");'
+    + 'var empty=document.getElementById("custEmpty");'
+    + 'if(!inp)return;'
+    + 'inp.addEventListener("input",function(){'
+    + 'var q=inp.value.trim().toLowerCase();'
+    + 'var cards=document.querySelectorAll(".cust-card");'
+    + 'var shown=0;'
+    + 'cards.forEach(function(el){'
+    + 'var match=!q||el.dataset.search.indexOf(q)!==-1;'
+    + 'el.style.display=match?"":"none";'
+    + 'if(match)shown++;'
+    + '});'
+    + 'if(count)count.textContent=q?(shown+" of ' + total + '"):"' + total + ' total";'
+    + 'if(empty)empty.style.display=(shown===0&&q)?"block":"none";'
+    + '});'
+    + '})();</script>',
     req
   ));
 });
