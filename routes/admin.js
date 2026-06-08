@@ -3336,58 +3336,44 @@ router.post('/customers/import-square', requireAuth, async function(req, res) {
   var { client: sqClient } = require('../square');
 
   try {
-    var cursor = null;
-    var keepGoing = true;
+    var page = await sqClient.customers.list({ limit: 100, sortField: 'DEFAULT' });
+    for await (var sc of page) {
+      try {
+        var sqEmail = (sc.emailAddress || '').trim() || null;
+        var sqPhone = (sc.phoneNumber  || '').trim() || null;
+        var sqFirst = (sc.givenName    || '').trim();
+        var sqLast  = (sc.familyName   || '').trim();
 
-    while (keepGoing) {
-      var params = { limit: 100, sortField: 'DEFAULT' };
-      if (cursor) params.cursor = cursor;
-      var result = await sqClient.customers.list(params);
-      var squareCusts = result.customers || [];
-      cursor = result.cursor || null;
-      keepGoing = !!cursor && squareCusts.length > 0;
+        if (!sqFirst && !sqLast && !sqEmail && !sqPhone) { skipped++; continue; }
 
-      for (var i = 0; i < squareCusts.length; i++) {
-        var sc = squareCusts[i];
-        try {
-          var sqEmail = (sc.emailAddress || '').trim() || null;
-          var sqPhone = (sc.phoneNumber  || '').trim() || null;
-          var sqFirst = (sc.givenName    || '').trim();
-          var sqLast  = (sc.familyName   || '').trim();
-
-          if (!sqFirst && !sqLast && !sqEmail && !sqPhone) { skipped++; continue; }
-
-          var existing = customers.findCustomer(sqEmail, sqPhone);
-          if (existing) {
-            var sets = [], vals = [];
-            if (!existing.square_customer_id && sc.id)  { sets.push('square_customer_id = ?'); vals.push(sc.id); }
-            if (!existing.email && sqEmail)              { sets.push('email = ?');              vals.push(sqEmail); }
-            if (!existing.phone && sqPhone)              { sets.push('phone = ?');              vals.push(sqPhone); }
-            if (!existing.first_name && sqFirst)         { sets.push('first_name = ?');         vals.push(sqFirst); }
-            if (!existing.last_name  && sqLast)          { sets.push('last_name = ?');          vals.push(sqLast); }
-            if (sets.length) {
-              vals.push(existing.id);
-              var stmt = db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?');
-              stmt.run.apply(stmt, vals);
-            }
-            linked++;
-          } else {
-            customers.createCustomer({
-              first_name: sqFirst,
-              last_name:  sqLast,
-              email:      sqEmail,
-              phone:      sqPhone,
-              square_customer_id: sc.id || null
-            });
-            imported++;
+        var existing = customers.findCustomer(sqEmail, sqPhone);
+        if (existing) {
+          var sets = [], vals = [];
+          if (!existing.square_customer_id && sc.id)  { sets.push('square_customer_id = ?'); vals.push(sc.id); }
+          if (!existing.email && sqEmail)              { sets.push('email = ?');              vals.push(sqEmail); }
+          if (!existing.phone && sqPhone)              { sets.push('phone = ?');              vals.push(sqPhone); }
+          if (!existing.first_name && sqFirst)         { sets.push('first_name = ?');         vals.push(sqFirst); }
+          if (!existing.last_name  && sqLast)          { sets.push('last_name = ?');          vals.push(sqLast); }
+          if (sets.length) {
+            vals.push(existing.id);
+            var stmt = db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?');
+            stmt.run.apply(stmt, vals);
           }
-        } catch (rowErr) {
-          console.error('Square import row error:', rowErr.message);
-          errors++;
+          linked++;
+        } else {
+          customers.createCustomer({
+            first_name: sqFirst,
+            last_name:  sqLast,
+            email:      sqEmail,
+            phone:      sqPhone,
+            square_customer_id: sc.id || null
+          });
+          imported++;
         }
+      } catch (rowErr) {
+        console.error('Square import row error:', rowErr.message);
+        errors++;
       }
-
-      if (!squareCusts.length) break;
     }
   } catch (apiErr) {
     console.error('Square import API error:', apiErr.message);
