@@ -2392,7 +2392,7 @@ function followupCard(f, back) {
     + '<span>Due ' + esc(fmtPrefDate(f.due_date)) + '</span>'
     + '</div>';
   if (f.sent) {
-    return '<div class="card" style="opacity:.78;">' + head + desc + meta + '</div>';
+    return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + f.lead_id + '\';}" style="cursor:pointer;opacity:.78;">' + head + desc + meta + '</div>';
   }
   var actions = '<div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;align-items:center;">'
     + '<form method="POST" action="/admin/followup/' + f.id + '/reschedule" style="display:flex;gap:6px;margin:0;align-items:center;">'
@@ -2409,7 +2409,7 @@ function followupCard(f, back) {
     + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:6px 4px;">Cancel</button>'
     + '</form>'
     + '</div>';
-  return '<div class="card">' + head + desc + meta + actions + '</div>';
+  return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + f.lead_id + '\';}" style="cursor:pointer;">' + head + desc + meta + actions + '</div>';
 }
 
 router.get('/followups', requireAuth, function(req, res) {
@@ -3950,7 +3950,7 @@ router.get('/appointments', requireAuth, function(req, res) {
   function apptCard(a) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
-    return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" style="border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
+    return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
       + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(a.pref_date)) + '</span>'
@@ -4482,7 +4482,7 @@ router.get('/dashboard', requireAuth, function(req, res) {
     + (recent.length === 0
         ? '<div style="text-align:center;padding:24px 0;color:#94a3b8;font-size:0.875rem;">No leads yet.</div>'
         : recent.map(function(l, i) {
-            return '<div style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;'
+            return '<div onclick="window.location=\'/admin/quote/' + l.id + '\';" style="display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;cursor:pointer;'
               + (i < recent.length - 1 ? 'border-bottom:1px solid var(--gray-100);' : '')
               + 'gap:10px;">'
               + '<div style="flex:1;min-width:0;">'
