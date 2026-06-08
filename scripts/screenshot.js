@@ -12,6 +12,7 @@ const urlPath  = process.argv[2] || '/';
 const selector = process.argv[3] || '';
 const output   = process.argv[4] || '/tmp/screenshot.png';
 const PORT     = 3000;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'brakeknights';
 
 async function main() {
   // Kill any existing process on PORT
@@ -35,6 +36,15 @@ async function main() {
   const browser = await chromium.launch();
   const page    = await browser.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });
+
+  // Auto-login for admin pages
+  if (urlPath.startsWith('/admin')) {
+    await page.goto(`http://localhost:${PORT}/admin/login`);
+    await page.fill('input[name="password"]', ADMIN_PASSWORD);
+    await page.click('button[type="submit"]');
+    await page.waitForURL(`http://localhost:${PORT}/admin**`, { timeout: 5000 });
+  }
+
   await page.goto(`http://localhost:${PORT}${urlPath}`);
 
   if (selector) {
