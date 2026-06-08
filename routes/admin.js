@@ -3225,12 +3225,12 @@ router.get('/customers', requireAuth, function(req, res) {
   if (search) {
     var sp = '%' + search + '%';
     rows = db.prepare(
-      'SELECT DISTINCT c.* FROM customers c '
-      + 'LEFT JOIN customer_vehicles v ON v.customer_id = c.id '
-      + 'LEFT JOIN leads l ON l.customer_id = c.id '
-      + 'WHERE (c.first_name || " " || c.last_name) LIKE ? OR c.email LIKE ? OR c.phone LIKE ? '
-      + 'OR v.make LIKE ? OR v.model LIKE ? OR v.year LIKE ? OR v.vin LIKE ? OR l.vehicle LIKE ? '
-      + 'ORDER BY c.id DESC'
+      "SELECT DISTINCT c.* FROM customers c "
+      + "LEFT JOIN customer_vehicles v ON v.customer_id = c.id "
+      + "LEFT JOIN leads l ON l.customer_id = c.id "
+      + "WHERE (c.first_name || ' ' || c.last_name) LIKE ? OR c.email LIKE ? OR c.phone LIKE ? "
+      + "OR v.make LIKE ? OR v.model LIKE ? OR v.year LIKE ? OR v.vin LIKE ? OR l.vehicle LIKE ? "
+      + "ORDER BY c.id DESC"
     ).all(sp, sp, sp, sp, sp, sp, sp, sp);
   } else {
     rows = db.prepare('SELECT * FROM customers ORDER BY id DESC').all();
@@ -3242,11 +3242,20 @@ router.get('/customers', requireAuth, function(req, res) {
 
   var total = db.prepare('SELECT COUNT(*) AS n FROM customers').get().n;
 
-  var searchBar = '<form method="GET" action="/admin/customers" style="margin-bottom:14px;display:flex;gap:8px;">'
-    + '<input type="text" name="q" value="' + esc(search) + '" placeholder="Search by name, phone, email, vehicle..." '
-    + 'style="flex:1;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;">'
+  var searchBar = '<form method="GET" action="/admin/customers" id="custSearchForm" style="margin-bottom:14px;display:flex;gap:8px;">'
+    + '<input type="text" name="q" id="custSearchInput" value="' + esc(search) + '" placeholder="Search by name, phone, email, vehicle..." '
+    + 'style="flex:1;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;" autocomplete="off">'
     + (search ? '<a href="/admin/customers" style="padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;background:#fff;color:#666;text-decoration:none;font-size:0.9rem;white-space:nowrap;">&#10005; Clear</a>' : '')
-    + '</form>';
+    + '</form>'
+    + '<script>(function(){'
+    + 'var t=null,inp=document.getElementById("custSearchInput"),form=document.getElementById("custSearchForm");'
+    + 'if(!inp)return;'
+    + 'inp.addEventListener("input",function(){'
+    + 'clearTimeout(t);var v=inp.value.trim();'
+    + 'if(!v){window.location="/admin/customers";return;}'
+    + 't=setTimeout(function(){form.submit();},400);'
+    + '});'
+    + '})();</script>';
 
   var emptyMsg = search
     ? 'No customers match &ldquo;' + esc(search) + '&rdquo;.'
