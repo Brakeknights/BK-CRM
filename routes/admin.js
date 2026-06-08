@@ -3616,32 +3616,53 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'addr_added')   alert = '<div class="alert alert-success">Address saved.</div>';
   if (req.query.msg === 'addr_removed') alert = '<div class="alert alert-success">Address removed.</div>';
   if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
+  if (req.query.msg === 'contact_saved') alert = '<div class="alert alert-success">Contact info updated.</div>';
 
-  // Header card
-  var header = '<div class="card">'
-    + '<div class="row-sb" style="margin-bottom:8px;">'
-    + '<div class="lead-name" style="font-size:1.15rem;">' + esc(name) + '</div>'
-    + '</div>'
-    + '<div class="info-grid">'
-    + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
-    + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
-    + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
-    + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
-    + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
-    + '</div>'
-    + customerTagBadges(c.tags)
-    + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
-    + (c.phone ? '<a href="tel:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>' : '')
-    + (c.phone ? '<a href="sms:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>' : '')
-    + (c.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(c.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
-    + '</div>'
-    + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
-    + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
-    + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
-    + '<button type="button" onclick="openSection(\'cust_vehicles\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Vehicle</button>'
-    + (recentLeadId ? '<button type="button" onclick="openSection(\'cust_followups\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Follow-Up</button>' : '')
-    + '</div>'
-    + '</div>';
+  // Header card — view mode or edit mode depending on ?edit=1
+  var header;
+  if (req.query.edit === '1') {
+    header = '<div class="card">'
+      + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:16px;">Edit Contact Info</div>'
+      + '<form method="POST" action="/admin/customer/' + c.id + '/edit">'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+      + '<div class="form-group"><label>First name</label><input type="text" name="first_name" value="' + esc(c.first_name || '') + '" required></div>'
+      + '<div class="form-group"><label>Last name</label><input type="text" name="last_name" value="' + esc(c.last_name || '') + '"></div>'
+      + '</div>'
+      + '<div class="form-group"><label>Email</label><input type="email" name="email" value="' + esc(c.email || '') + '" placeholder="customer@email.com"></div>'
+      + '<div class="form-group" style="margin-bottom:0;"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
+      + '<button type="submit" class="btn btn-blue" style="width:auto;">Save Changes</button>'
+      + '<a href="/admin/customer/' + c.id + '" class="btn btn-outline" style="width:auto;">Cancel</a>'
+      + '</div>'
+      + '</form>'
+      + '</div>';
+  } else {
+    header = '<div class="card">'
+      + '<div class="row-sb" style="margin-bottom:8px;">'
+      + '<div class="lead-name" style="font-size:1.15rem;">' + esc(name) + '</div>'
+      + '<a href="/admin/customer/' + c.id + '?edit=1" class="btn btn-outline btn-sm" style="width:auto;">Edit Info</a>'
+      + '</div>'
+      + '<div class="info-grid">'
+      + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
+      + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
+      + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
+      + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
+      + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
+      + '</div>'
+      + customerTagBadges(c.tags)
+      + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
+      + (c.phone ? '<a href="tel:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>' : '')
+      + (c.phone ? '<a href="sms:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>' : '')
+      + (c.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(c.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
+      + '</div>'
+      + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
+      + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
+      + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
+      + '<button type="button" onclick="openSection(\'cust_vehicles\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Vehicle</button>'
+      + (recentLeadId ? '<button type="button" onclick="openSection(\'cust_followups\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Follow-Up</button>' : '')
+      + '</div>'
+      + '</div>';
+  }
 
   // Tags card (collapsible) — removable pills + free-text add + preset quick picks
   var currentTagsList = (c.tags || '').split(',').map(function(t) { return t.trim(); }).filter(Boolean);
@@ -3807,6 +3828,18 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + statsCard;
 
   res.send(page(name, body, req));
+});
+
+router.post('/customer/:id/edit', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var firstName = (req.body.first_name || '').trim();
+  var lastName  = (req.body.last_name  || '').trim();
+  var email     = (req.body.email      || '').trim() || null;
+  var phone     = (req.body.phone      || '').trim() || null;
+  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?')
+    .run(firstName, lastName, email, phone, c.id);
+  res.redirect('/admin/customer/' + c.id + '?msg=contact_saved');
 });
 
 router.post('/customer/:id/notes', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
