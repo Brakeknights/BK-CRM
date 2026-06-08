@@ -78,7 +78,7 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/eager-ride-SnMeU`
+- Current feature branch: `claude/zen-bardeen-NKF4w`
 
 ## Square Integration — Platform Build Plan
 
@@ -134,7 +134,19 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 - **Build order:** 1) customers table + migration, 2) auto-link on lead create, 3) customer list page, 4) customer profile page, 5) admin dashboard home (recent activity, pipeline summary).
 - **Not in Phase 7:** SMS, Square Appointments auto-booking, pricing matrix, white-label.
 
-**Phase 8:** Automated quotes — instant quote emails based on vehicle type and service selected (requires pricing table to be finalized first).
+**Phase 8 (in progress):** Admin tooling and notification improvements. See Phase 8 Status below.
+
+**Phase 8A (complete):** Pricing & Tiers settings page at `/admin/settings/pricing` — three-tab page: Service Prices (editable parts/labor/supplies per tier, live total, Save All), Vehicle Tiers (make/model → standard/premium/not_serviced mapping rules, add/delete), Unknown Vehicles (log of unrecognized vehicles for manual classification). Data stored in `pricing_overrides`, `vehicle_tier_mappings`, `unknown_vehicles` tables. `getEffectivePricing()` helper reads from DB at request time, falls back to `pricing.js`. Service price cards default collapsed.
+
+**Phase 8B (not yet built):** Vehicle tier lookup engine — `getVehicleTier(make, model)` function that reads `vehicle_tier_mappings` at quote time, applies model overrides, logs unrecognized vehicles to `unknown_vehicles`. Required before 8D.
+
+**Phase 8C (complete):** Cascading Year/Make/Model dropdowns on both public contact forms (homepage + /contact). Curated static makes list (34 brands) + NHTSA vpic API for model lookup. Tesla blocked with friendly "not serviced" message. Hidden `vehicle` field assembled from selections for backend compatibility.
+
+**Phase 8D (deferred — owner decision pending):** Auto-price calculation on leads using vehicle tier + service selected. Requires 8B first. Owner may not build this phase.
+
+**Phase 8E (not yet built):** New lead notification system. Spec TBD next session — owner wants to clarify: (1) browser push notification to phone when new lead arrives, (2) admin queue UI showing unactioned new leads, or both.
+
+**Phase 8F (not yet built):** Sidebar badge showing count of unactioned leads (status = `new`, not yet quoted). Spec TBD alongside 8E.
 
 **Phase 9:** White-label packaging — multi-tenant architecture, per-brand configuration, reseller infrastructure for other service businesses.
 
@@ -146,22 +158,25 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/funny-davinci-IFPbC` — Phase 7B + 7C (merged to master via PR #15 ✅)
+- Last working branch: `claude/zen-bardeen-NKF4w` — Phase 8A + 8C + build note fixes (on dev, not yet on master)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C all complete and live on master.
-- dev and master are in sync.
+- Phase 8A + 8C complete and pushed to dev (PR not yet created for master).
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
 - Pre-push hook in place — blocks direct pushes to master ✅
 - Session startup hook shows pending dev-vs-master commits at session start ✅
-- Screenshot skill in place — `node scripts/screenshot.js [path] [selector]` ✅
-- Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
+- Screenshot skill in place — `node scripts/screenshot.js [path] [selector]` ✅ Admin routes auto-login now.
+- Square SDK installed, `square.js` module live. `/api/square/verify` now requires admin session. ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - **DB path fix:** `NODE_ENV=production` set in Hostinger hPanel for both dev and master — database now stored outside the git directory and survives all deploys ✅
 - Next steps:
-  1. Phase 8: automated quotes (requires pricing table finalized by vehicle type)
-  2. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
+  1. Phase 8E: new lead notification system (browser push + admin queue UI) — spec to be decided at session start
+  2. Phase 8F: sidebar badge for unactioned new leads — spec to be decided alongside 8E
+  3. Phase 8B: vehicle tier lookup engine (deferred, needed before 8D)
+  4. Phase 8D: auto-price calculation on leads (deferred — owner decision pending)
+  5. Merge current dev branch to master (Phase 8A + 8C + build notes)
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
 
 ## Pre-Launch Checklist (Before Merging to Master)
@@ -204,20 +219,31 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
+- [ ] Phase 8E: new lead notification system — browser push to phone + admin queue UI. Spec: (1) browser push notification when new lead arrives, (2) admin queue showing unactioned `new` leads, or both. Decide at session start.
+- [ ] Phase 8F: sidebar badge showing count of unactioned leads (status = `new`). Spec alongside 8E.
+- [ ] Phase 8B: vehicle tier lookup engine — `getVehicleTier(make, model)` reads `vehicle_tier_mappings`, logs unknowns. Required before 8D.
+- [ ] Phase 8D: auto-price calculation on leads — deferred, owner decision pending.
+- [ ] Merge dev → master: Phase 8A + 8C + build note fixes not yet on master (create PR when ready).
 - [ ] Phase 6C: Square auto-trigger (Square events fire receipt + follow-up flow) — deferred, spec later
-- [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
-- [ ] Vehicle year/make/model cascading dropdowns on contact forms (replace free-text vehicle field) — use NHTSA free API (vpic.nhtsa.dot.gov) for model lookup, no data to maintain; tackle after Phase 3B/3C
-- [ ] Finalize pricing table by vehicle type (required before Phase 8) — flat pricing today; Phase 8 needs per-vehicle-class matrix
-- [ ] Review/update existing service prices — owner flagged that "some service prices need updating". Walk through the pricing table tier by tier and update any that changed. (IN PROGRESS)
+- [ ] Review/update existing service prices — now editable via /admin/settings/pricing. Walk through tier by tier.
 - [ ] CRM improvement: tag submission source (homepage vs contact page) in Square customer note
-- [ ] CRM improvement: replace flat note field with structured data fields once Phase 7 CRM is built
 - [ ] CRM improvement: add visible alert/logging if Square customer sync fails on a form submission
-- [ ] Customer auto-nudge: if a sent quote has not been accepted after X hours, automatically send the customer a gentle follow-up email ("Just checking in — your quote is still available"). Currently manual; add as opt-in feature once Phase 3D is tested in production.
+- [ ] Customer auto-nudge: if a sent quote has not been accepted after X hours, automatically send a gentle follow-up email. Currently manual.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Phase 8A: Pricing & Tiers settings page at `/admin/settings/pricing` — editable service prices (collapsible cards, default closed), vehicle tier mapping rules (add/delete), unknown vehicle classification log. `getEffectivePricing()` reads from DB at runtime.
+- [x] Phase 8C: Cascading Year/Make/Model dropdowns on both public contact forms. NHTSA API for models, curated 34-brand makes list, Tesla blocked with friendly message.
+- [x] Quick Quote per-service price rows: each selected service gets its own Parts/Labor/Supplies inputs (auto-filled, editable). Custom service opens highlighted inputs with $10 supplies auto-filled. Hidden totals still posted to server unchanged.
+- [x] Security: `/api/square/verify` now requires admin session (was open to the internet).
+- [x] Screenshot script: auto-login before visiting any `/admin` route.
+- [x] Header: removed "Home" nav item from all 47 pages, full-width desktop header, Facebook/Google icons inline with text.
+- [x] Contact forms: removed all field labels, placeholder text only for cleaner layout.
+- [x] All Phase 8A/8C/build-note changes pushed to `claude/zen-bardeen-NKF4w` and merged to dev. Not yet on master.
+
+### Completed Previous Session
 - [x] Phase 7B: CRM customer profiles — `customers` table, auto-link logic, customer list at `/admin/customers`, full profile at `/admin/customer/:id` (contact, vehicles, saved addresses, notes, tags, job history, follow-ups, lifetime stats). Sidebar nav replaces old topbar. Full design-token restyle. Collapsible sections on all profile pages (default closed, state saved in localStorage).
 - [x] Phase 7C: Dashboard + Reports — `/admin/dashboard` (pipeline tiles, stats row, recent-activity feed); `/admin/reports/revenue` (monthly bar chart + service breakdown); `/admin/reports/conversions` (quote-to-job rate, monthly table); `/admin/reports/services` (inquiries, jobs, revenue per service). All four replace placeholder pages. Merged to master via PR #15.
 - [x] DB wipe fix: `NODE_ENV=production` in Hostinger hPanel moves SQLite database outside git directory — survives all future deploys (verified: test lead persisted through a redeploy on dev). PR #10.
