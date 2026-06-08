@@ -3399,20 +3399,20 @@ function processSquareCustomer(sc) {
   return 'imported';
 }
 
-// Imports a single page of Square customers and returns the next cursor.
+// Imports a single page of Square customers and returns the next cursor. Uses the
+// search endpoint (JSON body) rather than list (query params): list serializes
+// empty sort enum strings that Square rejects, and search is already proven in
+// square.js. An empty query returns all customers in the account.
 router.post('/customers/import-square/chunk', requireAuth, express.json(), async function(req, res) {
   var cursor = (req.body && req.body.cursor) ? String(req.body.cursor) : null;
-  var wantCount = !cursor; // ask for the total only on the first page
   var imported = 0, linked = 0, skipped = 0, errors = 0;
 
   try {
-    var params = { limit: 100, sortField: 'DEFAULT' };
-    if (cursor) params.cursor = cursor;
-    if (wantCount) params.count = true;
+    var reqBody = { limit: BigInt(100) };
+    if (cursor) reqBody.cursor = cursor;
 
-    var pageObj = await squareClient.customers.list(params);
-    var resp = (pageObj && pageObj.response) || {};
-    var list = resp.customers || [];
+    var resp = await squareClient.customers.search(reqBody);
+    var list = (resp && resp.customers) || [];
 
     for (var i = 0; i < list.length; i++) {
       try {
@@ -3426,9 +3426,7 @@ router.post('/customers/import-square/chunk', requireAuth, express.json(), async
       }
     }
 
-    var out = { ok: true, imported: imported, linked: linked, skipped: skipped, errors: errors, processed: list.length, cursor: resp.cursor || null };
-    if (wantCount && resp.count != null) out.total = Number(resp.count);
-    res.json(out);
+    res.json({ ok: true, imported: imported, linked: linked, skipped: skipped, errors: errors, processed: list.length, cursor: (resp && resp.cursor) || null });
   } catch (apiErr) {
     console.error('Square import chunk error:', apiErr.message);
     res.json({ ok: false, error: apiErr.message });
