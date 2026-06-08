@@ -80,7 +80,7 @@ app.get('/blog', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'blog', 'index.html'));
 });
 
-app.get('/api/square/verify', async (req, res) => {
+app.get('/api/square/verify', (req, res, next) => { if (req.session && req.session.adminAuthed) return next(); res.status(401).json({ error: 'Unauthorized' }); }, async (req, res) => {
   const result = await verifyConnection();
   const ok = result.customers === 'ok' && result.bookings === 'ok';
   res.status(ok ? 200 : 502).json(result);
