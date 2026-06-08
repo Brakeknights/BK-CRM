@@ -3796,16 +3796,22 @@ router.get('/appointments', requireAuth, function(req, res) {
     + 'FROM leads l '
     + 'JOIN quotes q ON q.lead_id = l.id AND q.status = \'approved\' AND q.pref_date IS NOT NULL '
     + 'WHERE l.status = \'booked\' AND l.archived = 0 AND q.pref_date < ? '
-    + 'ORDER BY q.pref_date DESC, q.pref_time DESC LIMIT 20'
+    + 'ORDER BY q.pref_date DESC, q.pref_time DESC LIMIT 30'
   ).all(today);
+
+  // Build date → count map for the calendar dots.
+  var dateMap = {};
+  upcoming.concat(past).forEach(function(a) {
+    if (a.pref_date) dateMap[a.pref_date] = (dateMap[a.pref_date] || 0) + 1;
+  });
 
   function apptCard(a) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
-    return '<div class="card" style="border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
+    return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" style="border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
-      + '<span style="font-size:0.82rem;color:#888;">' + esc(a.pref_date) + '</span>'
+      + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(a.pref_date)) + '</span>'
       + '</div>'
       + '<div style="font-size:0.9rem;color:#444;margin-top:5px;">' + esc(a.q_service || 'Service TBD') + '</div>'
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
@@ -3817,23 +3823,96 @@ router.get('/appointments', requireAuth, function(req, res) {
       + '</div>';
   }
 
-  var upcomingHtml = upcoming.length
-    ? upcoming.map(apptCard).join('')
-    : '<div class="card" style="text-align:center;padding:32px;color:#888;">No upcoming appointments. Create one with the button above.</div>';
+  var allCards = upcoming.map(apptCard).join('') + (past.length
+    ? '<div id="pastHeader" class="section-title" style="margin:20px 0 10px;">Recent Past</div>' + past.map(apptCard).join('')
+    : '');
 
-  var pastHtml = past.length
-    ? '<div style="margin-top:24px;"><div class="section-title" style="margin-bottom:10px;">Recent Past Appointments</div>'
-      + past.map(apptCard).join('')
-      + '</div>'
+  var emptyAll = '<div id="apptEmpty" style="display:none;text-align:center;padding:32px;color:#888;">No appointments on this date.</div>';
+
+  var noUpcoming = upcoming.length === 0
+    ? '<div class="card" style="text-align:center;padding:32px;color:#888;" id="apptNoUpcoming">No upcoming appointments. Create one with the button above.</div>'
     : '';
+
+  var calScript = '<script>(function(){'
+    + 'var DATE_MAP=' + JSON.stringify(dateMap) + ';'
+    + 'var TODAY="' + today + '";'
+    + 'var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];'
+    + 'var DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];'
+    + 'var curYear,curMonth,selDate=null;'
+    // Start on the month of the first upcoming appointment, or today
+    + (upcoming.length ? 'var firstDate="' + upcoming[0].pref_date + '";curYear=parseInt(firstDate.slice(0,4));curMonth=parseInt(firstDate.slice(5,7))-1;'
+                       : 'var td=new Date();curYear=td.getFullYear();curMonth=td.getMonth();')
+    + 'function render(){'
+    +   'var cal=document.getElementById("apptCalGrid");'
+    +   'if(!cal)return;'
+    +   'var firstDay=new Date(curYear,curMonth,1).getDay();'
+    +   'var daysInMonth=new Date(curYear,curMonth+1,0).getDate();'
+    +   'document.getElementById("apptCalTitle").textContent=MONTHS[curMonth]+" "+curYear;'
+    +   'var h=\'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px;">\';'
+    +   'DAYS.forEach(function(d){h+=\'<div style="text-align:center;font-size:0.7rem;font-weight:600;color:#94a3b8;padding:4px 0;">\'+d+\'</div>\';});'
+    +   'h+=\'</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">\';'
+    +   'for(var i=0;i<firstDay;i++)h+=\'<div></div>\';'
+    +   'for(var d=1;d<=daysInMonth;d++){'
+    +     'var mm=String(curMonth+1).padStart(2,"0");'
+    +     'var dd=String(d).padStart(2,"0");'
+    +     'var dateStr=curYear+"-"+mm+"-"+dd;'
+    +     'var isToday=dateStr===TODAY;'
+    +     'var isSel=dateStr===selDate;'
+    +     'var hasAppt=!!DATE_MAP[dateStr];'
+    +     'var bg=isSel?"#0d1b2a":isToday?"#4169e1":"transparent";'
+    +     'var fg=isSel||isToday?"#fff":"#0f172a";'
+    +     'h+=\'<div onclick="apptDayClick(\\\'\'+dateStr+\'\\\')" style="text-align:center;padding:6px 2px;border-radius:8px;cursor:pointer;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:\'+bg+\';-webkit-tap-highlight-color:transparent;">\';'
+    +     'h+=\'<span style="font-size:0.88rem;font-weight:\'+(isToday||isSel?"700":"400")+\';color:\'+fg+\'">\'+d+\'</span>\';'
+    +     'if(hasAppt)h+=\'<span style="display:block;width:5px;height:5px;border-radius:50%;background:\'+(isSel||isToday?"#fff":"#4169e1")+\';margin-top:2px;"></span>\';'
+    +     'h+=\'</div>\';'
+    +   '}'
+    +   'h+=\'</div>\';'
+    +   'cal.innerHTML=h;'
+    + '}'
+    + 'window.apptDayClick=function(date){'
+    +   'if(selDate===date){selDate=null;}else{selDate=date;}'
+    +   'render();'
+    +   'var cards=document.querySelectorAll(".appt-card");'
+    +   'var shown=0;'
+    +   'cards.forEach(function(c){var show=!selDate||c.dataset.date===selDate;c.style.display=show?"":"none";if(show)shown++;});'
+    +   'var empty=document.getElementById("apptEmpty");'
+    +   'var noUp=document.getElementById("apptNoUpcoming");'
+    +   'var pastHdr=document.getElementById("pastHeader");'
+    +   'if(empty)empty.style.display=(selDate&&shown===0)?"block":"none";'
+    +   'if(noUp)noUp.style.display=selDate?"none":"";'
+    +   'if(pastHdr)pastHdr.style.display=selDate?"none":"";'
+    +   'var lbl=document.getElementById("apptFilterLabel");'
+    +   'if(lbl)lbl.textContent=selDate?("Showing "+selDate):"All appointments";'
+    +   'if(selDate){var el=document.getElementById("apptList");if(el)el.scrollIntoView({behavior:"smooth",block:"start"});}'
+    + '};'
+    + 'document.getElementById("apptPrev").onclick=function(){curMonth--;if(curMonth<0){curMonth=11;curYear--;}render();};'
+    + 'document.getElementById("apptNext").onclick=function(){curMonth++;if(curMonth>11){curMonth=0;curYear++;}render();};'
+    + 'render();'
+    + '})();</script>';
+
+  var calHtml = '<div class="card" style="margin-bottom:16px;padding:16px;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
+    + '<button id="apptPrev" type="button" style="background:none;border:1px solid #e2e8f0;border-radius:8px;width:36px;height:36px;font-size:1.1rem;cursor:pointer;color:#475569;display:flex;align-items:center;justify-content:center;">&#8249;</button>'
+    + '<span id="apptCalTitle" style="font-weight:700;font-size:1rem;color:#0f172a;"></span>'
+    + '<button id="apptNext" type="button" style="background:none;border:1px solid #e2e8f0;border-radius:8px;width:36px;height:36px;font-size:1.1rem;cursor:pointer;color:#475569;display:flex;align-items:center;justify-content:center;">&#8250;</button>'
+    + '</div>'
+    + '<div id="apptCalGrid"></div>'
+    + '</div>';
 
   var body = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Appointments</h1>'
     + '<a href="/admin/appointments/new" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + '+ New Appointment</a>'
     + '</div>'
-    + '<div class="section-title" style="margin-bottom:10px;">Upcoming</div>'
-    + upcomingHtml
-    + pastHtml;
+    + calHtml
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
+    + '<div class="section-title" style="margin:0;" id="apptFilterLabel">All appointments</div>'
+    + '</div>'
+    + '<div id="apptList">'
+    + noUpcoming
+    + allCards
+    + emptyAll
+    + '</div>'
+    + calScript;
 
   res.send(page('Appointments', body, req));
 });
@@ -3844,16 +3923,21 @@ router.get('/appointments/new', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(apptPricing);
   var taxRate = PRICING.taxRate;
 
-  var allCustomers = db.prepare('SELECT * FROM customers ORDER BY last_name, first_name').all();
+  var allCustomers = db.prepare('SELECT id, first_name, last_name, phone FROM customers ORDER BY last_name, first_name').all();
 
   var preselectedCustomerId = (req.query.customer_id || '').trim();
+  var preselectedCustomer = preselectedCustomerId
+    ? allCustomers.find(function(c) { return String(c.id) === preselectedCustomerId; }) || null
+    : null;
+  var preselectedName = preselectedCustomer
+    ? ((preselectedCustomer.first_name + ' ' + preselectedCustomer.last_name).trim() + (preselectedCustomer.phone ? ' (' + fmtPhone(preselectedCustomer.phone) + ')' : ''))
+    : '';
 
-  var customerOpts = '<option value="">-- New customer --</option>'
-    + allCustomers.map(function(c) {
-        var name = (c.first_name + ' ' + c.last_name).trim();
-        var selected = preselectedCustomerId && String(c.id) === preselectedCustomerId ? ' selected' : '';
-        return '<option value="' + c.id + '"' + selected + '>' + esc(name) + (c.phone ? ' (' + esc(fmtPhone(c.phone)) + ')' : '') + '</option>';
-      }).join('');
+  // Embed minimal customer data for client-side typeahead (id, display name, phone digits for search).
+  var custJson = JSON.stringify(allCustomers.map(function(c) {
+    var name = (c.first_name + ' ' + c.last_name).trim();
+    return { id: c.id, label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''), search: (name + ' ' + (c.phone || '')).toLowerCase() };
+  }));
 
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
@@ -3888,11 +3972,22 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
-    + '<div class="form-group"><label>Select existing customer</label>'
-    + '<select name="customer_id" id="apptCustSel" onchange="apptOnCustChange()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;">'
-    + customerOpts
-    + '</select></div>'
-    + '<div id="apptNewCustFields" style="display:' + (preselectedCustomerId ? 'none' : 'block') + ';">'
+    + '<input type="hidden" name="customer_id" id="apptCustId" value="' + esc(preselectedCustomerId) + '">'
+    + '<div class="form-group" style="margin-bottom:0;">'
+    + '<label>Search existing customer</label>'
+    + '<div style="position:relative;">'
+    + '<input type="text" id="custPickerInput" autocomplete="off" placeholder="Type name or phone..." '
+    + 'value="' + esc(preselectedName) + '" '
+    + 'style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
+    + '<div id="custPickerDrop" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde3ea;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:200;max-height:220px;overflow-y:auto;"></div>'
+    + '</div>'
+    + '<div id="custPickerChip" style="display:' + (preselectedName ? 'flex' : 'none') + ';align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:#e3f0ff;border-radius:8px;">'
+    + '<span id="custPickerLabel" style="flex:1;font-size:0.9rem;color:#0a1f3d;font-weight:500;">' + esc(preselectedName) + '</span>'
+    + '<button type="button" id="custPickerClearBtn" style="background:none;border:none;font-size:1.1rem;color:#888;cursor:pointer;padding:0 4px;line-height:1;">&#10005;</button>'
+    + '</div>'
+    + '</div>'
+    + '<div id="apptNewCustFields" style="margin-top:14px;display:' + (preselectedCustomerId ? 'none' : 'block') + ';">'
+    + '<div class="section-title" style="margin:0 0 10px;">Or create new customer</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>First name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_first" id="apptCustFirst"></div>'
     + '<div class="form-group"><label>Last name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_last" id="apptCustLast"></div>'
@@ -3963,16 +4058,69 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<input type="checkbox" name="send_email" value="1" style="width:18px;height:18px;"> Send confirmation email to customer</label>'
     + '</div>'
 
-    + '<button type="submit" class="btn btn-navy" style="margin-bottom:24px;">Create Appointment</button>'
+    + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="margin-bottom:24px;">Create Appointment</button>'
     + '</form>'
+    + '<script>(function(){'
+    + 'var form=document.querySelector("form[action=\'/admin/appointments/new\']");'
+    + 'if(form)form.addEventListener("submit",function(){'
+    + 'var btn=document.getElementById("apptSubmitBtn");'
+    + 'if(btn){btn.disabled=true;btn.textContent="Creating…";}'
+    + '});'
+    + '})();</script>'
 
     + '<script>'
     + 'var APPT_PRICING=' + pricingJson + ';'
+    + 'var CUST_LIST=' + custJson + ';'
     + 'var apptTier="standard";'
-    + 'function apptOnCustChange(){'
-    +   'var sel=document.getElementById("apptCustSel");'
-    +   'document.getElementById("apptNewCustFields").style.display=sel.value?"none":"block";'
-    + '}'
+    // Customer typeahead
+    + '(function(){'
+    +   'var inp=document.getElementById("custPickerInput");'
+    +   'var drop=document.getElementById("custPickerDrop");'
+    +   'var hidId=document.getElementById("apptCustId");'
+    +   'var chip=document.getElementById("custPickerChip");'
+    +   'var chipLbl=document.getElementById("custPickerLabel");'
+    +   'var newFields=document.getElementById("apptNewCustFields");'
+    +   'var clearBtn=document.getElementById("custPickerClearBtn");'
+    +   'function showDrop(items){'
+    +     'if(!items.length){drop.style.display="none";return;}'
+    +     'drop.innerHTML=items.map(function(c){'
+    +       'return "<div data-id=\'"+c.id+"\' style=\'padding:11px 14px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:0.92rem;color:#0f172a;\'>"+c.label+"</div>";'
+    +     '}).join("");'
+    +     'drop.querySelectorAll("div").forEach(function(el){'
+    +       'el.addEventListener("mousedown",function(e){e.preventDefault();selectCust(el.dataset.id,el.textContent);});'
+    +       'el.addEventListener("touchend",function(e){e.preventDefault();selectCust(el.dataset.id,el.textContent);});'
+    +     '});'
+    +     'drop.style.display="block";'
+    +   '}'
+    +   'function selectCust(id,label){'
+    +     'hidId.value=id;'
+    +     'inp.value="";'
+    +     'drop.style.display="none";'
+    +     'chip.style.display="flex";'
+    +     'chipLbl.textContent=label;'
+    +     'newFields.style.display="none";'
+    +   '}'
+    +   'function clearCust(){'
+    +     'hidId.value="";'
+    +     'inp.value="";'
+    +     'chip.style.display="none";'
+    +     'chipLbl.textContent="";'
+    +     'newFields.style.display="block";'
+    +     'inp.focus();'
+    +   '}'
+    +   'clearBtn.addEventListener("click",clearCust);'
+    +   'inp.addEventListener("input",function(){'
+    +     'var q=inp.value.trim().toLowerCase();'
+    +     'if(!q){drop.style.display="none";return;}'
+    +     'var hits=CUST_LIST.filter(function(c){return c.search.indexOf(q)!==-1;}).slice(0,8);'
+    +     'showDrop(hits);'
+    +   '});'
+    +   'inp.addEventListener("blur",function(){setTimeout(function(){drop.style.display="none";},150);});'
+    +   'inp.addEventListener("focus",function(){'
+    +     'var q=inp.value.trim().toLowerCase();'
+    +     'if(q){var hits=CUST_LIST.filter(function(c){return c.search.indexOf(q)!==-1;}).slice(0,8);showDrop(hits);}'
+    +   '});'
+    + '})();'
     + 'function apptSetTier(t){'
     +   'apptTier=t;document.getElementById("apptTier").value=t;'
     +   'document.getElementById("apptBtnStd").classList.toggle("active",t==="standard");'
