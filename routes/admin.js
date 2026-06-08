@@ -3340,7 +3340,7 @@ router.post('/customers/import-square', requireAuth, async function(req, res) {
     var keepGoing = true;
 
     while (keepGoing) {
-      var params = { limit: 100 };
+      var params = { limit: 100, sortField: 'DEFAULT' };
       if (cursor) params.cursor = cursor;
       var result = await sqClient.customers.list(params);
       var squareCusts = result.customers || [];
