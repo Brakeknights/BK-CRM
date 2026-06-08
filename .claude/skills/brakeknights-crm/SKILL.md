@@ -12,6 +12,15 @@ description: >
 
 # Brake Knights CRM — Master Context
 
+## RULE #1 — Customer Data Protection (Always the Top Priority)
+Protecting customer data is the number one rule for everything in this project. Customer PII (names, phones, emails, addresses, vehicles, job history) must never be exposed, leaked, or left vulnerable. Security comes before convenience, speed, or features. Defaults to always follow:
+- Admin routes stay behind `requireAuth`; never add an unauthenticated route that returns customer data (only public path is the tokenized quote-accept flow).
+- All SQL parameterized (`?`); dynamic column names only from a fixed code allowlist, never request input.
+- HTML-escape all customer values with `esc()`.
+- Secrets only in env vars; DB and `.env` gitignored; never hardcode/commit secrets.
+- Do not weaken the security guards in `server.js` / `routes/admin.js`: production secret guard, hardened session cookie (`httpOnly`/`sameSite`/`secure`+`trust proxy`), login rate-limit + constant-time compare + session regeneration, and site-wide security headers.
+- When unsure, pick the safer option for customer data and flag the trade-off to the owner (Alex).
+
 ## Business Overview
 **Brake Knights** is a mobile brake repair service in Northern Virginia / Sterling /
 Loudoun County. ASE-certified technicians travel to customers' homes or offices for

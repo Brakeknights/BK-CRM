@@ -1,5 +1,24 @@
 # Brakeknights Project
 
+## RULE #1 — Customer Data Protection (Highest Priority, Always)
+Protecting customer data is the number one priority for everything built in this project. Customer information (names, phones, emails, addresses, vehicles, job history) must never be exposed, leaked, or left vulnerable. When designing or changing anything that touches customer data, security comes before convenience, speed, or features. Apply these rules by default:
+
+- **Never log full customer PII** to console or files beyond what is needed for debugging (IDs are fine; avoid dumping full records).
+- **All admin routes stay behind `requireAuth`.** Never add an unauthenticated route that returns customer data. The only public data path is the tokenized quote-accept flow (`crypto.randomUUID` tokens).
+- **All SQL stays parameterized** (`?` placeholders). Never interpolate user input into a query string. Dynamic column names must come from a fixed code allowlist, never from the request.
+- **Always HTML-escape** customer values with `esc()` before rendering.
+- **Secrets only in env vars** (`ADMIN_PASSWORD`, `SESSION_SECRET`, tokens, SMTP/Square creds). Never hardcode or commit them. The DB and `.env` are gitignored — keep them that way.
+- **Production refuses to boot** without a strong `ADMIN_PASSWORD` and `SESSION_SECRET` (guard in `server.js`). Do not remove this guard.
+- **Session cookies** are `httpOnly` + `sameSite:lax` + `secure` in production, behind `trust proxy`. Login is rate-limited and uses a constant-time password check with session regeneration. Do not weaken these.
+- When in doubt, choose the option that better protects customer data, and flag the trade-off to the owner.
+
+### Security measures in place (do not weaken without explicit owner approval)
+- Production secret guard (refuses known-default / missing `ADMIN_PASSWORD`/`SESSION_SECRET`)
+- Hardened session cookie (`httpOnly`, `sameSite:lax`, `secure` in prod), `trust proxy` set
+- Login brute-force lockout (5 fails per IP → 15 min lock), constant-time compare, session regeneration on login
+- Security headers site-wide: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, HSTS in prod
+- Parameterized SQL everywhere; admin behind auth; tokenized customer quote links; DB gitignored
+
 ## Session Startup Checklist (Run These First, Every Session)
 1. `git config core.hooksPath .githooks` — activates the master push block
 2. `git branch --show-current` — confirm you are on your feature branch (not `dev` or `master`); create a new one if starting fresh: `git checkout -b claude/<new-branch-name>`
