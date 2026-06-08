@@ -3923,16 +3923,21 @@ router.get('/appointments/new', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(apptPricing);
   var taxRate = PRICING.taxRate;
 
-  var allCustomers = db.prepare('SELECT * FROM customers ORDER BY last_name, first_name').all();
+  var allCustomers = db.prepare('SELECT id, first_name, last_name, phone FROM customers ORDER BY last_name, first_name').all();
 
   var preselectedCustomerId = (req.query.customer_id || '').trim();
+  var preselectedCustomer = preselectedCustomerId
+    ? allCustomers.find(function(c) { return String(c.id) === preselectedCustomerId; }) || null
+    : null;
+  var preselectedName = preselectedCustomer
+    ? ((preselectedCustomer.first_name + ' ' + preselectedCustomer.last_name).trim() + (preselectedCustomer.phone ? ' (' + fmtPhone(preselectedCustomer.phone) + ')' : ''))
+    : '';
 
-  var customerOpts = '<option value="">-- New customer --</option>'
-    + allCustomers.map(function(c) {
-        var name = (c.first_name + ' ' + c.last_name).trim();
-        var selected = preselectedCustomerId && String(c.id) === preselectedCustomerId ? ' selected' : '';
-        return '<option value="' + c.id + '"' + selected + '>' + esc(name) + (c.phone ? ' (' + esc(fmtPhone(c.phone)) + ')' : '') + '</option>';
-      }).join('');
+  // Embed minimal customer data for client-side typeahead (id, display name, phone digits for search).
+  var custJson = JSON.stringify(allCustomers.map(function(c) {
+    var name = (c.first_name + ' ' + c.last_name).trim();
+    return { id: c.id, label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''), search: (name + ' ' + (c.phone || '')).toLowerCase() };
+  }));
 
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
@@ -3967,11 +3972,22 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
-    + '<div class="form-group"><label>Select existing customer</label>'
-    + '<select name="customer_id" id="apptCustSel" onchange="apptOnCustChange()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;">'
-    + customerOpts
-    + '</select></div>'
-    + '<div id="apptNewCustFields" style="display:' + (preselectedCustomerId ? 'none' : 'block') + ';">'
+    + '<input type="hidden" name="customer_id" id="apptCustId" value="' + esc(preselectedCustomerId) + '">'
+    + '<div class="form-group" style="margin-bottom:0;">'
+    + '<label>Search existing customer</label>'
+    + '<div style="position:relative;">'
+    + '<input type="text" id="custPickerInput" autocomplete="off" placeholder="Type name or phone..." '
+    + 'value="' + esc(preselectedName) + '" '
+    + 'style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
+    + '<div id="custPickerDrop" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde3ea;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:200;max-height:220px;overflow-y:auto;"></div>'
+    + '</div>'
+    + '<div id="custPickerChip" style="display:' + (preselectedName ? 'flex' : 'none') + ';align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:#e3f0ff;border-radius:8px;">'
+    + '<span id="custPickerLabel" style="flex:1;font-size:0.9rem;color:#0a1f3d;font-weight:500;">' + esc(preselectedName) + '</span>'
+    + '<button type="button" id="custPickerClearBtn" style="background:none;border:none;font-size:1.1rem;color:#888;cursor:pointer;padding:0 4px;line-height:1;">&#10005;</button>'
+    + '</div>'
+    + '</div>'
+    + '<div id="apptNewCustFields" style="margin-top:14px;display:' + (preselectedCustomerId ? 'none' : 'block') + ';">'
+    + '<div class="section-title" style="margin:0 0 10px;">Or create new customer</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>First name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_first" id="apptCustFirst"></div>'
     + '<div class="form-group"><label>Last name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_last" id="apptCustLast"></div>'
@@ -4047,11 +4063,57 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
     + '<script>'
     + 'var APPT_PRICING=' + pricingJson + ';'
+    + 'var CUST_LIST=' + custJson + ';'
     + 'var apptTier="standard";'
-    + 'function apptOnCustChange(){'
-    +   'var sel=document.getElementById("apptCustSel");'
-    +   'document.getElementById("apptNewCustFields").style.display=sel.value?"none":"block";'
-    + '}'
+    // Customer typeahead
+    + '(function(){'
+    +   'var inp=document.getElementById("custPickerInput");'
+    +   'var drop=document.getElementById("custPickerDrop");'
+    +   'var hidId=document.getElementById("apptCustId");'
+    +   'var chip=document.getElementById("custPickerChip");'
+    +   'var chipLbl=document.getElementById("custPickerLabel");'
+    +   'var newFields=document.getElementById("apptNewCustFields");'
+    +   'var clearBtn=document.getElementById("custPickerClearBtn");'
+    +   'function showDrop(items){'
+    +     'if(!items.length){drop.style.display="none";return;}'
+    +     'drop.innerHTML=items.map(function(c){'
+    +       'return "<div data-id=\'"+c.id+"\' style=\'padding:11px 14px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:0.92rem;color:#0f172a;\'>"+c.label+"</div>";'
+    +     '}).join("");'
+    +     'drop.querySelectorAll("div").forEach(function(el){'
+    +       'el.addEventListener("mousedown",function(e){e.preventDefault();selectCust(el.dataset.id,el.textContent);});'
+    +       'el.addEventListener("touchend",function(e){e.preventDefault();selectCust(el.dataset.id,el.textContent);});'
+    +     '});'
+    +     'drop.style.display="block";'
+    +   '}'
+    +   'function selectCust(id,label){'
+    +     'hidId.value=id;'
+    +     'inp.value="";'
+    +     'drop.style.display="none";'
+    +     'chip.style.display="flex";'
+    +     'chipLbl.textContent=label;'
+    +     'newFields.style.display="none";'
+    +   '}'
+    +   'function clearCust(){'
+    +     'hidId.value="";'
+    +     'inp.value="";'
+    +     'chip.style.display="none";'
+    +     'chipLbl.textContent="";'
+    +     'newFields.style.display="block";'
+    +     'inp.focus();'
+    +   '}'
+    +   'clearBtn.addEventListener("click",clearCust);'
+    +   'inp.addEventListener("input",function(){'
+    +     'var q=inp.value.trim().toLowerCase();'
+    +     'if(!q){drop.style.display="none";return;}'
+    +     'var hits=CUST_LIST.filter(function(c){return c.search.indexOf(q)!==-1;}).slice(0,8);'
+    +     'showDrop(hits);'
+    +   '});'
+    +   'inp.addEventListener("blur",function(){setTimeout(function(){drop.style.display="none";},150);});'
+    +   'inp.addEventListener("focus",function(){'
+    +     'var q=inp.value.trim().toLowerCase();'
+    +     'if(q){var hits=CUST_LIST.filter(function(c){return c.search.indexOf(q)!==-1;}).slice(0,8);showDrop(hits);}'
+    +   '});'
+    + '})();'
     + 'function apptSetTier(t){'
     +   'apptTier=t;document.getElementById("apptTier").value=t;'
     +   'document.getElementById("apptBtnStd").classList.toggle("active",t==="standard");'
