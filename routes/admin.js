@@ -3950,6 +3950,16 @@ router.get('/appointments', requireAuth, function(req, res) {
   function apptCard(a) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
+    var tOpts = '<option value="">-- Select time --</option>';
+    for (var mins = 8 * 60; mins <= 17 * 60; mins += 30) {
+      if (mins >= 12 * 60 && mins < 13 * 60) continue;
+      var h24 = Math.floor(mins / 60);
+      var m = mins % 60;
+      var ampm = h24 < 12 ? 'AM' : 'PM';
+      var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+      var tlabel = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+      tOpts += '<option value="' + tlabel + '"' + (a.pref_time === tlabel ? ' selected' : '') + '>' + tlabel + '</option>';
+    }
     return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
@@ -3959,8 +3969,30 @@ router.get('/appointments', requireAuth, function(req, res) {
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
       + (a.pref_location ? '<div style="font-size:0.82rem;color:#666;margin-top:2px;">' + esc(a.pref_location) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(a.total) + '</div>'
-      + '<div style="display:flex;gap:8px;margin-top:10px;">'
+      + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
       + '<a href="/admin/quote/' + a.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('clipboard') + 'Open Lead</a>'
+      + '<button type="button" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">' + ic('calendar') + 'Reschedule</button>'
+      + '<form method="POST" action="/admin/appointments/' + a.id + '/cancel" style="display:inline;margin:0;" onsubmit="return confirm(\'Cancel this appointment? The lead will return to the pipeline.\');">'
+      + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;" onclick="event.stopPropagation();">Cancel Appt</button>'
+      + '</form>'
+      + '</div>'
+      + '<div id="rescheduleForm_' + a.id + '" style="display:none;margin-top:12px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
+      + '<form method="POST" action="/admin/appointments/' + a.id + '/reschedule">'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
+      + '<div class="form-group" style="margin-bottom:0;flex:1;min-width:140px;">'
+      + '<label style="font-size:0.82rem;">New Date</label>'
+      + '<input type="date" name="pref_date" value="' + esc(a.pref_date || '') + '" required style="padding:8px 10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;width:100%;box-sizing:border-box;">'
+      + '</div>'
+      + '<div class="form-group" style="margin-bottom:0;flex:1;min-width:140px;">'
+      + '<label style="font-size:0.82rem;">New Time</label>'
+      + '<select name="pref_time" required style="padding:8px 10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;width:100%;box-sizing:border-box;">' + tOpts + '</select>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;">'
+      + '<button type="submit" class="btn btn-navy btn-sm" style="width:auto;" onclick="event.stopPropagation();">Save</button>'
+      + '<button type="button" class="btn btn-sm" style="width:auto;background:#f8fafc;color:#475569;border:1px solid #e2e8f0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">Cancel</button>'
+      + '</div>'
+      + '</div>'
+      + '</form>'
       + '</div>'
       + '</div>';
   }
@@ -4029,6 +4061,10 @@ router.get('/appointments', requireAuth, function(req, res) {
     + '};'
     + 'document.getElementById("apptPrev").onclick=function(){curMonth--;if(curMonth<0){curMonth=11;curYear--;}render();};'
     + 'document.getElementById("apptNext").onclick=function(){curMonth++;if(curMonth>11){curMonth=0;curYear++;}render();};'
+    + 'window.apptToggleReschedule=function(id){'
+    +   'var f=document.getElementById("rescheduleForm_"+id);'
+    +   'if(f)f.style.display=f.style.display==="none"?"block":"none";'
+    + '};'
     + 'render();'
     + '})();</script>';
 
@@ -4041,10 +4077,15 @@ router.get('/appointments', requireAuth, function(req, res) {
     + '<div id="apptCalGrid"></div>'
     + '</div>';
 
+  var apptMsg = '';
+  if (req.query.msg === 'rescheduled') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment rescheduled.</div>';
+  if (req.query.msg === 'cancelled') apptMsg = '<div class="alert" style="margin-bottom:14px;background:#fff8e1;border:1px solid #f0b429;color:#6b4c00;padding:10px 14px;border-radius:8px;">Appointment cancelled. Lead returned to pipeline.</div>';
+
   var body = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Appointments</h1>'
     + '<a href="/admin/appointments/new" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + '+ New Appointment</a>'
     + '</div>'
+    + apptMsg
     + calHtml
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
     + '<div class="section-title" style="margin:0;" id="apptFilterLabel">All appointments</div>'
@@ -4057,6 +4098,29 @@ router.get('/appointments', requireAuth, function(req, res) {
     + calScript;
 
   res.send(page('Appointments', body, req));
+});
+
+router.post('/appointments/:lead_id/reschedule', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var lead = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.lead_id);
+  if (!lead) return res.redirect('/admin/appointments');
+  var prefDate = (req.body.pref_date || '').trim();
+  var prefTime = (req.body.pref_time || '').trim();
+  if (!prefDate || !prefTime) return res.redirect('/admin/appointments');
+  db.prepare("UPDATE quotes SET pref_date = ?, pref_time = ? WHERE lead_id = ? AND status = 'approved'")
+    .run(prefDate, prefTime, lead.id);
+  logHistory(lead.id, 'Appointment rescheduled', prefDate + ' at ' + prefTime);
+  res.redirect('/admin/appointments?msg=rescheduled');
+});
+
+router.post('/appointments/:lead_id/cancel', requireAuth, function(req, res) {
+  var lead = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.lead_id);
+  if (!lead) return res.redirect('/admin/appointments');
+  db.prepare("UPDATE quotes SET pref_date = NULL, pref_time = NULL WHERE lead_id = ? AND status = 'approved'")
+    .run(lead.id);
+  db.prepare("UPDATE leads SET status = 'approved', status_updated_at = datetime('now') WHERE id = ?")
+    .run(lead.id);
+  logHistory(lead.id, 'Appointment cancelled', 'Lead returned to pipeline');
+  res.redirect('/admin/appointments?msg=cancelled');
 });
 
 router.get('/appointments/new', requireAuth, function(req, res) {
