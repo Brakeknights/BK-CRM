@@ -159,7 +159,7 @@ function timeAgo(dateStr) {
   if (h < 24) return h + 'h ago';
   const d = Math.floor(h / 24);
   if (d < 30) return d + 'd ago';
-  return new Date(dateStr + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return new Date(dateStr + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
 }
 
 // Pipeline status color (full-color text; the pill uses a 15% tint of it as the
@@ -197,8 +197,8 @@ function logHistory(leadId, event, detail) {
 
 function fmtHistoryTime(dateStr) {
   var d = new Date(dateStr + 'Z');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
+    + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/New_York' });
 }
 
 // Today's date in Eastern Time as YYYY-MM-DD (en-CA yields ISO order).
@@ -1358,7 +1358,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
         if (receipts.length === 0) return '';
         var cards = receipts.map(function(rc) {
           var when = rc.sent_at
-            ? 'Sent ' + new Date(rc.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            ? 'Sent ' + new Date(rc.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
             : 'Saved (not emailed)';
           var advisories = [];
           try { advisories = JSON.parse(rc.customer_notes || '[]'); } catch (_) {}
@@ -1433,7 +1433,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '</tr></thead><tbody>'
           + allQuotes.map(function(pq, i) {
               var isLatest = i === 0;
-              var sentDate = pq.sent_at ? new Date(pq.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—';
+              var sentDate = pq.sent_at ? new Date(pq.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit', timeZone: 'America/New_York' }) : '—';
               var tierLabel = pq.tier === 'premium' ? 'Premium' : 'Standard';
               return '<tr style="border-bottom:1px solid #f0f0f0;' + (isLatest ? 'font-weight:600;' : 'color:#666;') + '">'
                 + '<td style="padding:7px 8px 7px 0;white-space:nowrap;">' + sentDate + (isLatest ? ' <span style="font-size:0.72rem;background:#e3f0ff;color:#1a6fc4;padding:1px 6px;border-radius:10px;font-weight:700;">Latest</span>' : '') + '</td>'
@@ -2201,7 +2201,7 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
   var notes = [];
   try { notes = JSON.parse(receipt.customer_notes || '[]'); } catch (_) {}
   var when = receipt.sent_at
-    ? 'Emailed ' + new Date(receipt.sent_at + 'Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    ? 'Emailed ' + new Date(receipt.sent_at + 'Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
     : 'Saved, not emailed';
 
   var fus = db.prepare('SELECT * FROM followups WHERE receipt_id = ? ORDER BY due_date ASC').all(receipt.id);
@@ -3140,13 +3140,13 @@ var CUSTOMER_TAGS = customers.TAGS;
 // short "Jun 5, 2026". Returns an em-free dash placeholder when empty.
 function shortDate(str) {
   if (!str) return '—';
-  var d;
   if (str.length > 10) {
-    d = new Date(str.replace(' ', 'T') + 'Z');
-  } else {
-    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
-    d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(str);
+    var d = new Date(str.replace(' ', 'T') + 'Z');
+    if (isNaN(d.getTime())) return esc(str);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
   }
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  var d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(str);
   if (isNaN(d.getTime())) return esc(str);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
