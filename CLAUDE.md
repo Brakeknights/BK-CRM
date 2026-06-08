@@ -165,7 +165,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/happy-hamilton-UkPqj` — Phase 8E/8F + Square import + security hardening (merged to master via PR #18 ✅)
+- Last working branch: `claude/happy-hamilton-UkPqj` — Appointments calendar, customer search typeahead, bug fixes (merged to master via PR #20 ✅)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
@@ -241,6 +241,15 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Appointments calendar: monthly grid with dot indicators, day-tap filtering, prev/next month navigation. Live on master via PR #20.
+- [x] Customer search typeahead on New Appointment form: replaces giant dropdown, search by name/phone, tap to select, chip badge with clear button.
+- [x] Customer list live client-side filtering: no page reload, keyboard stays open on iOS.
+- [x] Customer search crash fix: SQL `" "` identifier rejected by production SQLite, changed to `' '` string literal.
+- [x] Appointment form double-submit fix: button disables on form submit event (not onclick) so date field is always serialized correctly.
+- [x] Square import createCustomer fix: function was missing from module.exports, caused TypeError on all new records.
+- [x] Square import live on brakeknights.com: all production Square customers imported into CRM.
+
+### Previously Completed This Session
 - [x] Phase 8E/8F: Browser push notifications for new leads (bell icon toggle, service worker, VAPID keys); new-lead sidebar badge showing unactioned lead count. Merged to master via PR #18.
 - [x] CRM: Create New Customer form/button on Customers tab (/admin/customer/new)
 - [x] CRM: Full Appointments tab at /admin/appointments with scheduling, customer search/create, service/pricing, confirmation email
