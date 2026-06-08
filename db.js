@@ -180,6 +180,18 @@ addLeadCol('vin',                'TEXT');
 addLeadCol('internal_notes',     'TEXT');
 addLeadCol('customer_id',        'INTEGER REFERENCES customers(id)');
 
+// ─── Phase 8E: push subscriptions for new-lead browser notifications ─────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    endpoint          TEXT    NOT NULL UNIQUE,
+    p256dh            TEXT    NOT NULL,
+    auth              TEXT    NOT NULL,
+    device_label      TEXT
+  );
+`);
+
 // ─── Phase 8: pricing overrides, vehicle tier mappings, unknown vehicles ──────
 db.exec(`
   CREATE TABLE IF NOT EXISTS pricing_overrides (

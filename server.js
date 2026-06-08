@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const nodemailer = require('nodemailer');
+const webpush = require('web-push');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 const { toEasternRfc3339 } = require('./datetime');
 const db = require('./db');
@@ -9,6 +10,37 @@ const customers = require('./customers');
 const SqliteStore = require('./sqlite-session-store');
 const adminRouter = require('./routes/admin');
 const quoteRouter = require('./routes/quote');
+
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    'mailto:greetings@brakeknights.com',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+}
+
+function sendNewLeadPush(lead) {
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
+  var subs = db.prepare('SELECT * FROM push_subscriptions').all();
+  if (!subs.length) return;
+  var name = lead.first_name + ' ' + lead.last_name;
+  var body = [lead.service, lead.vehicle].filter(Boolean).join(' — ') || lead.phone;
+  var payload = JSON.stringify({
+    title: 'New Lead: ' + name,
+    body: body,
+    url: '/admin?status=new'
+  });
+  subs.forEach(function(row) {
+    var sub = { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } };
+    webpush.sendNotification(sub, payload).catch(function(err) {
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        db.prepare('DELETE FROM push_subscriptions WHERE id = ?').run(row.id);
+      } else {
+        console.error('Push send error:', err.message);
+      }
+    });
+  });
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -241,6 +273,9 @@ app.post('/api/contact', async (req, res) => {
     }
 
     res.json({ success: true });
+
+    // Fire push notification to all registered browsers
+    sendNewLeadPush({ first_name: firstName, last_name: lastName, service, vehicle, phone });
 
     // Create or find Square customer — runs after response so it never blocks the form
     const squareNote = [service && `Service: ${service}`, vehicle && `Vehicle: ${vehicle}`, message].filter(Boolean).join(' | ');

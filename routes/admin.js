@@ -500,6 +500,11 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 #deleteModalBtns button{flex:1;padding:11px;border-radius:8px;font-weight:700;font-size:0.92rem;cursor:pointer;}
 #deleteModalCancel{border:1.5px solid #dde3ea;background:#fff;color:#444;}
 #deleteModalConfirm{border:none;background:#c0392b;color:#fff;}
+.push-btn{display:none;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;color:var(--gray-600);cursor:pointer;background:none;border:none}
+.push-btn:hover{background:var(--gray-100)}
+.push-btn svg{width:22px;height:22px}
+.push-btn.on{color:#1a7a3a}
+.nav-new-badge{background:#e07000;color:#fff;font-size:0.6rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;margin-left:auto;flex-shrink:0}
 `;
 
 // Heroicons (outline, 1.5px stroke). Inline so the admin stays dependency-free
@@ -523,7 +528,8 @@ var ICON_PATHS = {
   trash:       '<path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>',
   archive:     '<path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>',
   user:        '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>',
-  calendar:    '<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>'
+  calendar:    '<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>',
+  'bell-slash': '<path stroke-linecap="round" stroke-linejoin="round" d="M9.143 17.082a24.248 24.248 0 003.844.148m-3.844-.148a23.856 23.856 0 01-5.455-1.31A8.967 8.967 0 012.25 9c0-.06 0-.12.003-.18m5.894 8.262a24.265 24.265 0 003.844.148m-3.844-.148L9 21m-6-4.5A8.967 8.967 0 012.25 9c0-.06 0-.12.003-.18M21 21L3 3m18 0a8.967 8.967 0 011.003 3.82M21.003 8.82A8.97 8.97 0 0121.75 12c0 3.26-1.74 6.12-4.357 7.773m-1.393-1.39a23.848 23.848 0 01-4.143.699m4.143-.699L15 21m-3-3.75a3 3 0 005.714 0"/>'
 };
 function icon(name) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' + (ICON_PATHS[name] || '') + '</svg>';
@@ -616,14 +622,25 @@ function page(title, body, req) {
     dueCount = db.prepare("SELECT COUNT(*) AS n FROM followups WHERE sent = 0 AND date(due_date) <= date('now')").get().n;
   } catch (_) {}
 
+  // Count of unactioned new leads for the sidebar badge.
+  var newLeadCount = 0;
+  try {
+    newLeadCount = db.prepare("SELECT COUNT(*) AS n FROM leads WHERE status = 'new' AND archived = 0").get().n;
+  } catch (_) {}
+
+  var vapidKey = process.env.VAPID_PUBLIC_KEY || '';
+
   var active = navActive(req.path || '/');
   var sidebar = '<aside class="sidebar" id="sidebar">'
     + '<a href="/admin" class="sidebar-logo"><img src="/images/favicon.png" alt=""> Brake Knights</a>'
     + NAV.map(function(sec) {
         return '<div class="nav-section"><div class="nav-label">' + sec[0] + '</div>'
           + sec[1].map(function(it) {
+              var badge = (it[0] === 'leads' && newLeadCount > 0)
+                ? '<span class="nav-new-badge">' + newLeadCount + '</span>'
+                : '';
               return '<a href="' + it[2] + '" class="nav-item' + (active === it[0] ? ' active' : '') + '">'
-                + icon(it[3]) + '<span>' + it[1] + '</span></a>';
+                + icon(it[3]) + '<span>' + it[1] + '</span>' + badge + '</a>';
             }).join('')
           + '</div>';
       }).join('')
@@ -632,10 +649,15 @@ function page(title, body, req) {
   var bell = '<a href="/admin/followups" class="appbar-bell" aria-label="Follow-ups">'
     + icon('bell') + (dueCount > 0 ? '<span class="cnt">' + dueCount + '</span>' : '') + '</a>';
 
+  var pushBtn = vapidKey
+    ? '<button id="push-btn" class="push-btn" onclick="togglePush()" title="Enable push notifications" aria-label="Enable push notifications">'
+      + icon('bell-slash') + '</button>'
+    : '';
+
   var appbar = '<header class="appbar">'
     + '<button class="hamburger" onclick="openNav()" aria-label="Open menu">' + icon('bars') + '</button>'
     + '<div class="appbar-title">' + esc(title) + '</div>'
-    + '<div class="appbar-right">' + bell + '<a href="/admin/logout" class="appbar-logout">Log out</a></div>'
+    + '<div class="appbar-right">' + pushBtn + bell + '<a href="/admin/logout" class="appbar-logout">Log out</a></div>'
     + '</header>';
 
   return head
@@ -663,9 +685,64 @@ function page(title, body, req) {
     + 'function closeDeleteModal(){document.getElementById("deleteModal").classList.remove("active");_delForm=null;}'
     + 'function submitDeleteForm(){if(_delForm)_delForm.submit();}'
     + 'document.getElementById("deleteModal").addEventListener("click",function(e){if(e.target===this)closeDeleteModal();});'
+    + (vapidKey ? (
+        'var _VAPID_KEY=' + JSON.stringify(vapidKey) + ';'
+      + 'function _b64u(b){var p="=".repeat((4-b.length%4)%4);var s=(b+p).replace(/-/g,"+").replace(/_/g,"/");var r=atob(s);var o=new Uint8Array(r.length);for(var i=0;i<r.length;i++)o[i]=r.charCodeAt(i);return o;}'
+      + '(function(){'
+      +   'if(!("serviceWorker" in navigator&&"PushManager" in window))return;'
+      +   'var btn=document.getElementById("push-btn");if(!btn)return;'
+      +   'navigator.serviceWorker.register("/sw.js").then(function(reg){'
+      +     'reg.pushManager.getSubscription().then(function(sub){'
+      +       'if(sub){btn.classList.add("on");btn.title="Push notifications on";btn.innerHTML=' + JSON.stringify(icon('bell')) + ';}'
+      +       'btn.style.display="inline-flex";'
+      +     '});'
+      +   '});'
+      + '})();'
+      + 'function togglePush(){'
+      +   'if(!("serviceWorker" in navigator&&"PushManager" in window))return;'
+      +   'var btn=document.getElementById("push-btn");'
+      +   'navigator.serviceWorker.ready.then(function(reg){'
+      +     'reg.pushManager.getSubscription().then(function(sub){'
+      +       'if(sub){'
+      +         'sub.unsubscribe().then(function(){'
+      +           'fetch("/admin/push/unsubscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:sub.endpoint})});'
+      +           'btn.classList.remove("on");btn.title="Enable push notifications";btn.innerHTML=' + JSON.stringify(icon('bell-slash')) + ';'
+      +         '});'
+      +       '}else{'
+      +         'Notification.requestPermission().then(function(p){'
+      +           'if(p!=="granted")return;'
+      +           'reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:_b64u(_VAPID_KEY)}).then(function(s){'
+      +             'var j=s.toJSON();'
+      +             'fetch("/admin/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:j.endpoint,p256dh:j.keys.p256dh,auth:j.keys.auth})});'
+      +             'btn.classList.add("on");btn.title="Push notifications on (tap to disable)";btn.innerHTML=' + JSON.stringify(icon('bell')) + ';'
+      +           '}).catch(function(e){console.error("Push subscribe error",e);});'
+      +         '});'
+      +       '}'
+      +     '});'
+      +   '});'
+      + '}'
+    ) : '')
     + '</script>'
     + '</body></html>';
 }
+
+// ─── Push notification subscription routes ────────────────────────────────────
+
+router.post('/push/subscribe', requireAuth, express.json(), function(req, res) {
+  var b = req.body;
+  if (!b || !b.endpoint || !b.p256dh || !b.auth) return res.status(400).json({ ok: false });
+  db.prepare(
+    'INSERT INTO push_subscriptions (endpoint, p256dh, auth) VALUES (?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth'
+  ).run(b.endpoint, b.p256dh, b.auth);
+  res.json({ ok: true });
+});
+
+router.post('/push/unsubscribe', requireAuth, express.json(), function(req, res) {
+  if (req.body && req.body.endpoint) {
+    db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(req.body.endpoint);
+  }
+  res.json({ ok: true });
+});
 
 // ─── Auth routes ─────────────────────────────────────────────────────────────
 
