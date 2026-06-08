@@ -1159,21 +1159,20 @@ router.get('/', requireAuth, function(req, res) {
 
   var leads;
   if (search) {
-    // Search spans everything (including archived) so old customers stay findable.
     leads = db.prepare(
-      'SELECT * FROM leads WHERE (first_name || " " || last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR vehicle LIKE ? OR service LIKE ?) ORDER BY id DESC'
+      "SELECT * FROM leads WHERE status != 'receipt' AND archived = 0 AND (first_name || ' ' || last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR vehicle LIKE ? OR service LIKE ?) ORDER BY id DESC"
     ).all(sp, sp, sp, sp, sp);
   } else if (status === 'archived') {
     leads = db.prepare('SELECT * FROM leads WHERE archived = 1 ORDER BY archived_at DESC, id DESC').all();
   } else if (status === 'all') {
-    leads = db.prepare('SELECT * FROM leads WHERE archived = 0 ORDER BY id DESC').all();
+    leads = db.prepare("SELECT * FROM leads WHERE archived = 0 AND status != 'receipt' ORDER BY id DESC").all();
   } else {
     leads = db.prepare('SELECT * FROM leads WHERE status = ? AND archived = 0 ORDER BY id DESC').all(status);
   }
 
-  var counts = db.prepare('SELECT status, COUNT(*) as n FROM leads WHERE archived = 0 GROUP BY status').all()
+  var counts = db.prepare("SELECT status, COUNT(*) as n FROM leads WHERE archived = 0 AND status != 'receipt' GROUP BY status").all()
     .reduce(function(acc, r) { acc[r.status] = r.n; return acc; }, {});
-  var total = db.prepare('SELECT COUNT(*) as n FROM leads WHERE archived = 0').get().n;
+  var total = db.prepare("SELECT COUNT(*) as n FROM leads WHERE archived = 0 AND status != 'receipt'").get().n;
   var archivedCount = db.prepare('SELECT COUNT(*) as n FROM leads WHERE archived = 1').get().n;
 
   var tabs = [
@@ -1184,7 +1183,6 @@ router.get('/', requireAuth, function(req, res) {
     ['quote_accepted', 'Quote Accepted', counts.quote_accepted || 0],
     ['booked',         'Booked',         counts.booked         || 0],
     ['completed',      'Completed',      counts.completed      || 0],
-    ['receipt',        'Receipt Sent',        counts.receipt        || 0],
     ['archived',       'Archived',       archivedCount         || 0],
   ];
 
@@ -2519,6 +2517,32 @@ router.get('/quick', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(qqPricing);
   var taxPct = +(PRICING.taxRate * 100).toFixed(2);
 
+  // Customer data for the receipt-mode customer search typeahead.
+  var qqCustomers = db.prepare(
+    'SELECT c.id, c.first_name, c.last_name, c.email, c.phone,'
+    + ' COALESCE('
+    + "  (SELECT TRIM(COALESCE(cv.year,'') || ' ' || COALESCE(cv.make,'') || ' ' || COALESCE(cv.model,''))"
+    + '   FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1),'
+    + "  (SELECT l.vehicle FROM leads l WHERE l.customer_id = c.id AND l.vehicle IS NOT NULL AND l.vehicle != '' ORDER BY l.id DESC LIMIT 1)"
+    + ' ) AS last_vehicle,'
+    + ' (SELECT ca.address FROM customer_addresses ca WHERE ca.customer_id = c.id ORDER BY ca.id DESC LIMIT 1) AS last_address'
+    + ' FROM customers c ORDER BY c.last_name, c.first_name'
+  ).all();
+  var qqCustJson = JSON.stringify(qqCustomers.map(function(c) {
+    var name = ((c.first_name || '') + ' ' + (c.last_name || '')).trim();
+    return {
+      id: c.id,
+      fn: c.first_name || '',
+      ln: c.last_name || '',
+      em: c.email || '',
+      ph: c.phone || '',
+      veh: (c.last_vehicle || '').trim(),
+      addr: c.last_address || '',
+      label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''),
+      search: (name + ' ' + (c.phone || '') + ' ' + (c.email || '')).toLowerCase()
+    };
+  }));
+
   // Drafts list
   var allDrafts = db.prepare('SELECT id, label, created_at FROM quick_drafts ORDER BY id DESC').all();
 
@@ -2588,6 +2612,18 @@ router.get('/quick', requireAuth, function(req, res) {
 
     // Customer (optional for calculator-only; required to save/send)
     + collapseOpen('qq_customer', 'Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(needed to save or send)</span>', true)
+    + '<input type="hidden" name="customer_id" id="qqCustId" value="">'
+    + '<div class="qReceiptOnly" style="display:none;margin-bottom:16px;">'
+    + '<div class="form-group" style="margin-bottom:6px;">'
+    + '<label>Find existing customer <span style="font-weight:400;color:#bbb;">(optional — fills fields below)</span></label>'
+    + '<div style="position:relative;">'
+    + '<input type="text" id="qqCustSearch" placeholder="Type name, phone, or email..." autocomplete="off" oninput="qqDoSearch()" onfocus="qqDoSearch()" onblur="qqHideDd()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;box-sizing:border-box;">'
+    + '<div id="qqCustDropdown" onclick="qqDdClick(event)" style="display:none;position:absolute;z-index:200;background:#fff;border:1.5px solid #b0c4e0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.12);width:100%;max-height:220px;overflow-y:auto;top:calc(100% + 4px);left:0;"></div>'
+    + '</div>'
+    + '<div id="qqCustChip" style="display:none;margin-top:8px;"></div>'
+    + '</div>'
+    + '<div style="text-align:center;font-size:0.8rem;color:#bbb;margin:4px 0 4px;">— or enter new customer info below —</div>'
+    + '</div>'
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>First name</label><input type="text" name="firstName" id="qfn"></div>'
     + '<div class="form-group"><label>Last name</label><input type="text" name="lastName" id="qln"></div>'
@@ -2696,7 +2732,51 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<script>'
     + 'var QPRICING=' + pricingJson + ';'
     + 'var QDRAFT=' + draftJson + ';'
+    + 'var QQCUSTS=' + qqCustJson + ';'
     + 'var qtier="standard";var qmode="quote";'
+    + 'function qqEsc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}'
+    + 'function qqHideDd(){setTimeout(function(){var dd=document.getElementById("qqCustDropdown");if(dd)dd.style.display="none";},150);}'
+    + 'function qqDoSearch(){'
+    +   'var q=document.getElementById("qqCustSearch").value.toLowerCase().trim();'
+    +   'var dd=document.getElementById("qqCustDropdown");'
+    +   'if(!q){dd.style.display="none";return;}'
+    +   'var matches=QQCUSTS.filter(function(c){return c.search.indexOf(q)>=0;}).slice(0,8);'
+    +   'if(!matches.length){dd.innerHTML=\'<div style="padding:10px 12px;color:#888;font-size:0.88rem;">No customers found</div>\';dd.style.display="block";return;}'
+    +   'dd.innerHTML=matches.map(function(c){'
+    +     'return \'<div data-cid="\'+c.id+\'" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:0.88rem;">\''
+    +       '+\'<div style="font-weight:600;color:#0a1f3d;">\'+qqEsc(c.label)+\'</div>\''
+    +       '+(c.em?\'<div style="color:#888;font-size:0.82rem;">\'+qqEsc(c.em)+\'</div>\':"")+'
+    +       '+(c.veh?\'<div style="color:#6b7a8d;font-size:0.82rem;">\'+qqEsc(c.veh)+\'</div>\':"")+'
+    +       '\'</div>\';'
+    +   '}).join("");'
+    +   'dd.style.display="block";'
+    + '}'
+    + 'function qqDdClick(e){'
+    +   'var item=e.target;'
+    +   'while(item&&item!==e.currentTarget){if(item.dataset&&item.dataset.cid){qqCustPick(+item.dataset.cid);return;}item=item.parentElement;}'
+    + '}'
+    + 'function qqCustPick(id){'
+    +   'var c=QQCUSTS.find(function(x){return x.id===id;});if(!c)return;'
+    +   'document.getElementById("qqCustId").value=id;'
+    +   'document.getElementById("qfn").value=c.fn;'
+    +   'document.getElementById("qln").value=c.ln;'
+    +   'document.getElementById("qem").value=c.em;'
+    +   'document.getElementById("qph").value=c.ph;'
+    +   'var vehEl=document.getElementById("qveh");if(vehEl&&c.veh)vehEl.value=c.veh;'
+    +   'var addrEl=document.querySelector("[name=serviceAddress]");if(addrEl&&c.addr&&!addrEl.value)addrEl.value=c.addr;'
+    +   'var name=(c.fn+" "+c.ln).trim();'
+    +   'var chip=document.getElementById("qqCustChip");'
+    +   'chip.innerHTML=\'<span style="display:inline-flex;align-items:center;gap:6px;background:#e8f0fe;border:1.5px solid #b8d0f8;border-radius:20px;padding:4px 12px;font-size:0.85rem;color:#0a1f3d;font-weight:600;">\'+qqEsc(name)+\' <button type="button" onclick="qqCustClear()" style="background:none;border:none;cursor:pointer;color:#888;font-size:1.1rem;padding:0 2px;line-height:1;">&#10005;</button></span>\';'
+    +   'chip.style.display="block";'
+    +   'document.getElementById("qqCustSearch").value="";'
+    +   'document.getElementById("qqCustDropdown").style.display="none";'
+    +   'qSaveState();'
+    + '}'
+    + 'function qqCustClear(){'
+    +   'document.getElementById("qqCustId").value="";'
+    +   'var chip=document.getElementById("qqCustChip");if(chip){chip.innerHTML="";chip.style.display="none";}'
+    +   'qSaveState();'
+    + '}'
 
     + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
     + 'function qCustomSvcVal(){var el=document.getElementById("qCustomSvc");return el?el.value.trim():"";}'
@@ -2876,6 +2956,9 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var addBtn=document.getElementById("qqAddAdvBtn");if(addBtn)addBtn.style.display="";'
     +   'var pb=document.getElementById("qPreviewBox");if(pb){pb.style.display="none";pb.innerHTML="";}'
     +   'var pbt=document.getElementById("qPreviewBtn");if(pbt)pbt.textContent="Preview Email";'
+    +   'document.getElementById("qqCustId").value="";'
+    +   'var qqcChip=document.getElementById("qqCustChip");if(qqcChip){qqcChip.innerHTML="";qqcChip.style.display="none";}'
+    +   'var qqcSrch=document.getElementById("qqCustSearch");if(qqcSrch)qqcSrch.value="";'
     +   'qSetMode("quote");qSetTier("standard");qcalc();'
     +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
     + '}'
@@ -3053,12 +3136,38 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
 
   // Every save/send outcome creates a Quick Quote lead. Quote mode lands it in
   // Quoted; receipt mode reflects a finished job (set further down).
-  var leadInfo = db.prepare(
-    'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status) VALUES (?,?,?,?,?,?,?,?)'
-  ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', mode === 'receipt' ? 'completed' : 'quoted');
+  var existingCustId = parseInt(req.body.customer_id) || 0;
+  var initialStatus = mode === 'receipt' ? 'completed' : 'quoted';
+  var leadInfo;
+  if (existingCustId) {
+    leadInfo = db.prepare(
+      'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status, customer_id) VALUES (?,?,?,?,?,?,?,?,?)'
+    ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', initialStatus, existingCustId);
+  } else {
+    leadInfo = db.prepare(
+      'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status) VALUES (?,?,?,?,?,?,?,?)'
+    ).run(firstName, lastName, phone, email, vehicle, service || null, 'Quick Quote', initialStatus);
+  }
   var leadId = leadInfo.lastInsertRowid;
-  // Phase 7B: attach to an existing customer (email then phone) or create one.
-  try { customers.linkLead(leadId); } catch (err) { console.error('Customer auto-link error:', err.message); }
+  if (existingCustId) {
+    // Backfill any new contact info onto the existing customer record.
+    try {
+      var eCust = db.prepare('SELECT * FROM customers WHERE id = ?').get(existingCustId);
+      if (eCust) {
+        var eSets = [], eVals = [];
+        if (!eCust.email && email) { eSets.push('email = ?'); eVals.push(email); }
+        if (!eCust.phone && phone) { eSets.push('phone = ?'); eVals.push(phone); }
+        if (eSets.length) {
+          eVals.push(existingCustId);
+          var backfillStmt = db.prepare('UPDATE customers SET ' + eSets.join(', ') + ' WHERE id = ?');
+          backfillStmt.run.apply(backfillStmt, eVals);
+        }
+      }
+    } catch (err) { console.error('Customer backfill error:', err.message); }
+  } else {
+    // Phase 7B: attach to an existing customer (email then phone) or create one.
+    try { customers.linkLead(leadId); } catch (err) { console.error('Customer auto-link error:', err.message); }
+  }
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId);
   logHistory(leadId, 'Lead created from Quick Quote', (mode === 'receipt' ? 'Receipt' : 'Quote') + (service ? ' — ' + service : ''));
 
