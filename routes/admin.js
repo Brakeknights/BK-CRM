@@ -3003,7 +3003,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var fn=document.getElementById("qfn").value.trim();'
     +   'var ln=document.getElementById("qln").value.trim();'
     +   'var em=document.getElementById("qem").value.trim();'
-    +   'var svcs=qCheckedServices();'
+    +   'var svcs=qCheckedServices();var qcsv=(document.getElementById("qCustomSvc")||{}).value||"";if(qcsv.trim())svcs=svcs.concat(qcsv.trim().split(",").map(function(s){return s.trim();}).filter(Boolean));'
     +   'var total=document.getElementById("qtotalAmt").textContent;'
     +   'var rec=qmode==="receipt";'
     +   'var toLine=(fn||ln?(fn+" "+ln).trim()+" ":"")+(em?"&lt;"+em+"&gt;":"<em style=\'color:#e07000\'>(no email entered)</em>");'
@@ -3215,6 +3215,8 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   if (isSend && !email) return res.redirect('/admin/quick?err=email');
 
   var service      = (req.body.service || '').trim();
+  var customSvc    = (req.body.customService || '').trim();
+  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
   var tier         = req.body.tier === 'premium' ? 'premium' : 'standard';
   var parts        = parseFloat(req.body.parts)        || 0;
   var labor        = parseFloat(req.body.labor)        || 0;
