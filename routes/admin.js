@@ -1260,6 +1260,9 @@ router.get('/', requireAuth, function(req, res) {
     .reduce(function(acc, r) { acc[r.status] = r.n; return acc; }, {});
   var total = db.prepare("SELECT COUNT(*) as n FROM leads WHERE archived = 0 AND status != 'receipt'").get().n;
   var archivedCount = db.prepare('SELECT COUNT(*) as n FROM leads WHERE archived = 1').get().n;
+  // Receipt Sent leads are kept out of the active pipeline (All view + counts above)
+  // but still reachable via this tab so they can be found, edited, or deleted.
+  var receiptCount = db.prepare("SELECT COUNT(*) as n FROM leads WHERE archived = 0 AND status = 'receipt'").get().n;
 
   var tabs = [
     ['all',            'All',            total],
@@ -1269,6 +1272,7 @@ router.get('/', requireAuth, function(req, res) {
     ['quote_accepted', 'Quote Accepted', counts.quote_accepted || 0],
     ['booked',         'Booked',         counts.booked         || 0],
     ['completed',      'Completed',      counts.completed      || 0],
+    ['receipt',        'Receipt Sent',   receiptCount          || 0],
     ['archived',       'Archived',       archivedCount         || 0],
   ];
 
@@ -1564,7 +1568,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
               var sentDate = pq.sent_at ? new Date(pq.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit', timeZone: 'America/New_York' }) : '—';
               var tierLabel = pq.tier === 'premium' ? 'Premium' : 'Standard';
               return '<tr style="border-bottom:1px solid #f0f0f0;' + (isLatest ? 'font-weight:600;' : 'color:#666;') + '">'
-                + '<td style="padding:7px 8px 7px 0;white-space:nowrap;">' + sentDate + (isLatest ? ' <span style="font-size:0.72rem;background:#e3f0ff;color:#1a6fc4;padding:1px 6px;border-radius:10px;font-weight:700;">Latest</span>' : '') + '</td>'
+                + '<td style="padding:7px 8px 7px 0;white-space:nowrap;">' + sentDate
+                  + (isLatest ? ' <span style="font-size:0.72rem;background:#e3f0ff;color:#1a6fc4;padding:1px 6px;border-radius:10px;font-weight:700;">Latest</span>' : '')
+                  + (isLatest && allQuotes.length > 1 ? ' <span style="font-size:0.72rem;background:#fdeccb;color:#9a6a16;padding:1px 6px;border-radius:10px;font-weight:700;">Updated</span>' : '')
+                  + '</td>'
                 + '<td style="padding:7px 8px;">' + esc(pq.service || '—') + '</td>'
                 + '<td style="padding:7px 8px;">' + tierLabel + '</td>'
                 + '<td style="padding:7px 0 7px 8px;text-align:right;">$' + money(pq.total) + '</td>'
@@ -1848,17 +1855,14 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
   var acceptToken = crypto.randomBytes(24).toString('hex');
 
-  // Has a quote already gone out to this email address before? If so, this send is a
-  // revision, so the email subject should say the quote was updated. Checked before
-  // the INSERT below so the new quote doesn't count itself. Spans all leads sharing
-  // the email (Quick Quote can create more than one lead for the same customer).
-  var isRevisedQuote = false;
-  if (lead.email) {
-    isRevisedQuote = db.prepare(
-      'SELECT COUNT(*) AS n FROM quotes q JOIN leads l ON l.id = q.lead_id '
-      + 'WHERE l.email = ? AND q.sent_at IS NOT NULL'
-    ).get(lead.email).n > 0;
-  }
+  // Has a quote already gone out on THIS lead before? If so, this send is a revision,
+  // so the email subject should say the quote was updated. Checked before the INSERT
+  // below so the new quote doesn't count itself. Scoped to the lead, not the email: a
+  // repeat customer starting a fresh inquiry (new lead, even with the same email)
+  // always gets a "new" quote. Only a re-send on the same lead counts as an update.
+  var isRevisedQuote = db.prepare(
+    'SELECT COUNT(*) AS n FROM quotes WHERE lead_id = ? AND sent_at IS NOT NULL'
+  ).get(lead.id).n > 0;
 
   var info = db.prepare(
     'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, accept_token, sent_at, status) '
@@ -1866,7 +1870,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, acceptToken, lead.email ? 'sent' : 'saved');
 
   db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
-  logHistory(lead.id, 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
+  logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
 
   if (!lead.email) return res.redirect('/admin?msg=saved');
 
@@ -3281,12 +3285,12 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       console.error('SMTP_PASS not set — Quick Quote saved but not emailed');
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_err');
     }
-    // If this email already has a sent quote on file, mark this one as updated. The
-    // new quote above still has sent_at = null, so it won't count itself here.
+    // If THIS lead already has a sent quote on file, mark this one as updated. Scoped
+    // to the lead, not the email, so a repeat customer's fresh inquiry reads as "new".
+    // The new quote above still has sent_at = null, so it won't count itself here.
     var qqRevised = db.prepare(
-      'SELECT COUNT(*) AS n FROM quotes q JOIN leads l ON l.id = q.lead_id '
-      + 'WHERE l.email = ? AND q.sent_at IS NOT NULL'
-    ).get(email).n > 0;
+      'SELECT COUNT(*) AS n FROM quotes WHERE lead_id = ? AND sent_at IS NOT NULL'
+    ).get(leadId).n > 0;
     try {
       var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
       await tx.sendMail({
