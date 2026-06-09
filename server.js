@@ -155,7 +155,7 @@ app.get('/api/square/verify', async (req, res) => {
 
 
 app.post('/api/contact', async (req, res) => {
-  const { firstName, lastName, phone, email, vehicle, service, preferredContact, message, source } = req.body;
+  const { firstName, lastName, phone, email, vehicle, vehicleYear, vehicleMake, vehicleModel, service, preferredContact, message, source } = req.body;
 
   if (!firstName || !lastName || !phone) {
     return res.status(400).json({ success: false, error: 'Missing required fields' });
@@ -187,6 +187,20 @@ app.post('/api/contact', async (req, res) => {
   let customerId = null;
   try { customerId = customers.linkLead(lead.lastInsertRowid); }
   catch (err) { console.error('Customer auto-link error:', err.message); }
+
+  // Store structured vehicle data in customer_vehicles when year+make are known.
+  if (customerId && vehicleYear && vehicleMake) {
+    try {
+      const existing = db.prepare(
+        'SELECT id FROM customer_vehicles WHERE customer_id = ? AND year = ? AND make = ? AND (model = ? OR (model IS NULL AND ? IS NULL))'
+      ).get(customerId, vehicleYear, vehicleMake, vehicleModel || null, vehicleModel || null);
+      if (!existing) {
+        db.prepare(
+          'INSERT INTO customer_vehicles (customer_id, year, make, model) VALUES (?, ?, ?, ?)'
+        ).run(customerId, vehicleYear, vehicleMake, vehicleModel || null);
+      }
+    } catch (err) { console.error('Customer vehicle insert error:', err.message); }
+  }
 
   if (!process.env.SMTP_PASS) {
     console.error('SMTP_PASS environment variable is not set');
