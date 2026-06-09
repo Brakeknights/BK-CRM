@@ -5112,15 +5112,28 @@ router.get('/settings/pricing', requireAuth, function(req, res) {
   }
 
   // ── Service Prices tab ─────────────────────────────────────────────────────
+  // Chevron SVG for collapsible service headers.
+  var p8Chev = '<svg class="p8-svc-chev" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" style="width:18px;height:18px;flex-shrink:0;transition:transform .15s;"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>';
+
+  // Wraps a service in a collapsible card: header (name + summary + chevron) always
+  // visible, body (editable inputs) hidden until the header is tapped.
+  function svcShell(idx, name, summaryHtml, bodyHtml) {
+    return '<div class="card p8-svc-card" data-svc-idx="' + idx + '" style="margin-bottom:8px;padding:0;overflow:hidden;">'
+      + '<button type="button" class="p8-svc-head" onclick="p8ToggleSvc(this)" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;">'
+      + '<span style="font-weight:600;color:#0a1f3d;font-size:0.95rem;">' + esc(name) + '</span>'
+      + '<span style="display:flex;align-items:center;gap:10px;">'
+      + '<span class="p8-svc-summary" id="p8-summary-' + idx + '" style="font-size:0.78rem;color:#94a3b8;white-space:nowrap;">' + summaryHtml + '</span>'
+      + p8Chev
+      + '</span></button>'
+      + '<div class="p8-svc-body" style="display:none;padding:0 16px 16px;">' + bodyHtml + '</div>'
+      + '</div>';
+  }
+
   var svcCards = services.map(function(svc, idx) {
     if (svc.custom_quote) {
-      return '<div class="card" style="margin-bottom:10px;">'
-        + '<div style="display:flex;align-items:center;justify-content:space-between;">'
-        + '<div style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</div>'
-        + '<span style="background:rgba(37,99,168,0.12);color:#1a4a7a;font-size:0.72rem;font-weight:700;padding:2px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;">Custom Quote</span>'
-        + '</div>'
-        + '<div style="color:#94a3b8;font-size:0.82rem;margin-top:6px;">No preset pricing. Owner enters price manually on each job.</div>'
-        + '</div>';
+      return svcShell(idx, svc.service_name,
+        '<span style="background:rgba(37,99,168,0.12);color:#1a4a7a;font-weight:700;padding:2px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;font-size:0.7rem;">Custom Quote</span>',
+        '<div style="color:#94a3b8;font-size:0.82rem;">No preset pricing. Owner enters price manually on each job.</div>');
     }
 
     function priceCol(tierKey, isStd) {
@@ -5148,19 +5161,25 @@ router.get('/settings/pricing', requireAuth, function(req, res) {
         + '</div>';
     }
 
-    return '<div class="card" style="margin-bottom:10px;" data-svc-idx="' + idx + '">'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
-      + '<div style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</div>'
-      + '<div style="display:flex;align-items:center;gap:8px;">'
+    var stdTotal = +svc.std_parts + +svc.std_labor + +svc.std_supplies + (+svc.std_parts + +svc.std_supplies) * PRICING.taxRate;
+    var premTotal = +svc.prem_parts + +svc.prem_labor + +svc.prem_supplies + (+svc.prem_parts + +svc.prem_supplies) * PRICING.taxRate;
+    var summary = svc.has_premium
+      ? 'Std $' + money(stdTotal) + ' &middot; Prem $' + money(premTotal)
+      : '$' + money(stdTotal);
+
+    var bodyHtml = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:12px;">'
+      + '<span style="font-size:0.75rem;color:#94a3b8;">Duration</span>'
       + '<input type="number" min="0" step="5" class="p8-price-input" data-idx="' + idx + '" data-tier="meta" data-field="minutes" value="' + (+svc.minutes || 60) + '" style="width:54px;padding:4px 6px;border:1px solid var(--gray-200);border-radius:5px;font-size:0.82rem;text-align:right;" title="Duration (minutes)">'
       + '<span style="font-size:0.78rem;color:#94a3b8;">min</span>'
-      + '</div></div>'
+      + '</div>'
       + '<div style="display:flex;gap:16px;flex-wrap:wrap;">'
       + priceCol('std', true)
       + (svc.has_premium
           ? priceCol('prem', false)
           : '<div style="flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;"><span style="color:#94a3b8;font-size:0.82rem;font-style:italic;">Single tier only</span></div>')
-      + '</div></div>';
+      + '</div>';
+
+    return svcShell(idx, svc.service_name, summary, bodyHtml);
   }).join('');
 
   var pricesTab = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
@@ -5286,7 +5305,23 @@ router.get('/settings/pricing', requireAuth, function(req, res) {
     + '  }'
     + '  recalcTier(\'std\',\'p8-std-total-\'+idx);'
     + '  recalcTier(\'prem\',\'p8-prem-total-\'+idx);'
+    + '  var sumEl=document.getElementById(\'p8-summary-\'+idx);'
+    + '  if(sumEl){'
+    + '    function tot(tk){var p=gv(tk,\'parts\'),l=gv(tk,\'labor\'),s=gv(tk,\'supplies\');return p+l+s+(p+s)*P8_TAX;}'
+    + '    function fmt(n){return n.toLocaleString(\'en-US\',{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + '    var hasPrem=!!document.querySelector(\'.p8-price-input[data-idx="\'+idx+\'"][data-tier="prem"]\');'
+    + '    sumEl.innerHTML=hasPrem?(\'Std $\'+fmt(tot(\'std\'))+\' &middot; Prem $\'+fmt(tot(\'prem\'))):(\'$\'+fmt(tot(\'std\')));'
+    + '  }'
     + '});'
+
+    + 'function p8ToggleSvc(btn){'
+    + '  var card=btn.closest(\'.p8-svc-card\');if(!card)return;'
+    + '  var body=card.querySelector(\'.p8-svc-body\');'
+    + '  var chev=card.querySelector(\'.p8-svc-chev\');'
+    + '  var open=body.style.display!=="none";'
+    + '  body.style.display=open?"none":"block";'
+    + '  if(chev)chev.style.transform=open?"":"rotate(180deg)";'
+    + '}'
 
     + 'function saveAllPrices(){'
     + '  var rows=P8_SVCS.map(function(name,idx){'
