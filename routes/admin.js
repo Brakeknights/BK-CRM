@@ -3464,7 +3464,7 @@ router.get('/customers', requireAuth, function(req, res) {
     + 'style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;" autocomplete="off">'
     + '<select id="custSortSelect" style="flex:0 0 auto;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;color:#0a1f3d;">'
     + '<option value="activity">Recent activity</option>'
-    + '<option value="visit">Recent visits</option>'
+    + '<option value="visit">Most jobs</option>'
     + '<option value="fn">First name (A–Z)</option>'
     + '<option value="ln">Last name (A–Z)</option>'
     + '<option value="newest">Newest added</option>'
@@ -3486,8 +3486,9 @@ router.get('/customers', requireAuth, function(req, res) {
             + ' data-ln="' + esc((c.last_name || '').toLowerCase()) + '"'
             + ' data-created="' + esc(c.created_at || '') + '"'
             + ' data-activity="' + esc(s.lastLeadDate || '') + '"'
-            + ' data-visit="' + esc(s.lastJobDate || '') + '"';
-          return '<div class="card cust-card"' + dataAttrs + ' onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
+            + ' data-visit="' + esc(s.lastJobDate || '') + '"'
+            + ' data-jobs="' + String(s.completedCount || 0).padStart(6, '0') + '"';
+          return '<div class="card cust-card"' + dataAttrs + ' onclick="if(!event.target.closest(\'a,button,form\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
             + '<div class="row-sb">'
             + '<div class="lead-name">' + esc(name) + '</div>'
             + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.completedCount + ' job' + (s.completedCount === 1 ? '' : 's') + '</span>'
@@ -3502,6 +3503,9 @@ router.get('/customers', requireAuth, function(req, res) {
             + '<span>Last activity ' + shortDate(s.lastLeadDate) + '</span>'
             + (s.lastJobDate ? '<span>Last job ' + shortDate(s.lastJobDate) + '</span>' : '')
             + '</div>'
+            + '<form method="POST" action="/admin/customer/' + c.id + '/delete" style="margin-top:10px;" onsubmit="return confirm(\'Delete this customer? Their leads will be kept but unlinked.\');">'
+            + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">' + ic('trash') + 'Delete customer</button>'
+            + '</form>'
             + '</div>';
         }).join('');
 
@@ -3546,8 +3550,10 @@ router.get('/customers', requireAuth, function(req, res) {
     + 'if(mode==="ln")return g(a,"data-ln").localeCompare(g(b,"data-ln"))||g(a,"data-fn").localeCompare(g(b,"data-fn"));'
     + 'if(mode==="newest")return g(b,"data-created").localeCompare(g(a,"data-created"));'
     + 'if(mode==="oldest")return g(a,"data-created").localeCompare(g(b,"data-created"));'
-    + 'if(mode==="visit")return g(b,"data-visit").localeCompare(g(a,"data-visit"));'
-    + 'return g(b,"data-activity").localeCompare(g(a,"data-activity"));'
+    + 'if(mode==="visit")return g(b,"data-jobs").localeCompare(g(a,"data-jobs"))||g(b,"data-visit").localeCompare(g(a,"data-visit"));'
+    + 'var da=g(a,"data-activity"),db2=g(b,"data-activity");'
+    + 'if(db2&&!da)return -1;if(da&&!db2)return 1;'
+    + 'return db2.localeCompare(da);'
     + '});'
     + 'cards.forEach(function(el){listEl.appendChild(el);});'
     + 'try{localStorage.setItem("bk_cust_sort",mode);}catch(_){}'
@@ -3735,6 +3741,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   var recentLeadId = jobs.length ? jobs[0].id : null;
 
   var alert = '';
+  if (req.query.msg === 'deleted')       alert = '<div class="alert alert-success">Customer deleted.</div>';
   if (req.query.msg === 'created')       alert = '<div class="alert alert-success">Customer created successfully.</div>';
   if (req.query.msg === 'saved')        alert = '<div class="alert alert-success">Saved.</div>';
   if (req.query.msg === 'veh_added')    alert = '<div class="alert alert-success">Vehicle added.</div>';
@@ -4150,6 +4157,18 @@ router.post('/customer/:id/address/add', requireAuth, express.urlencoded({ exten
 router.post('/customer/:id/address/:aid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   db.prepare('DELETE FROM customer_addresses WHERE id = ? AND customer_id = ?').run(req.params.aid, req.params.id);
   res.redirect('/admin/customer/' + req.params.id + '?msg=addr_removed');
+});
+
+// Delete a customer and all their child records. Leads are unlinked (customer_id
+// set to NULL) rather than deleted so job history is preserved on the Leads tab.
+router.post('/customer/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var id = parseInt(req.params.id);
+  if (!db.prepare('SELECT id FROM customers WHERE id = ?').get(id)) return res.redirect('/admin/customers');
+  db.prepare('UPDATE leads SET customer_id = NULL WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM customer_vehicles WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM customer_addresses WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM customers WHERE id = ?').run(id);
+  res.redirect('/admin/customers?msg=deleted');
 });
 
 // ─── Appointments ─────────────────────────────────────────────────────────────
