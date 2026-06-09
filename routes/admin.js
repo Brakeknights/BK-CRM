@@ -2831,7 +2831,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'dd.innerHTML=matches.map(function(c){'
     +     'return \'<div data-cid="\'+c.id+\'" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:0.88rem;">\''
     +       '+\'<div style="font-weight:600;color:#0a1f3d;">\'+qqEsc(c.label)+\'</div>\''
-    +       '+(c.em?\'<div style="color:#888;font-size:0.82rem;">\'+qqEsc(c.em)+\'</div>\':"")+'
+    +       '+(c.em?\'<div style="color:#888;font-size:0.82rem;">\'+qqEsc(c.em)+\'</div>\':"")'
     +       '+(c.veh?\'<div style="color:#6b7a8d;font-size:0.82rem;">\'+qqEsc(c.veh)+\'</div>\':"")+'
     +       '\'</div>\';'
     +   '}).join("");'
@@ -2880,6 +2880,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qSummaryLabel").textContent=rec?"Customer Receipt":"Customer Quote";'
     +   'document.getElementById("qTotalLabel").textContent=rec?"Total Paid":"Total";'
     +   'document.getElementById("qemHint").textContent=rec?"(to send receipt)":"(to send)";'
+    +   'if(rec){var cc=document.querySelector(\'.collapse[data-ckey="qq_customer"]\');if(cc)cc.classList.remove("collapsed");}'
     +   'qSaveState();'
     + '}'
 
