@@ -121,6 +121,16 @@ function fmtPhone(p) {
   return String(p).trim();
 }
 
+// Returns a clickable Google Maps anchor for an address string, or plain escaped
+// text if addr is falsy. Used wherever addresses appear in the admin UI.
+function mapsLink(addr, opts) {
+  if (!addr) return '';
+  opts = opts || {};
+  var style = opts.style || 'color:#1a6fc4;text-decoration:none;';
+  var url = 'https://maps.google.com/?q=' + encodeURIComponent(addr);
+  return '<a href="' + esc(url) + '" target="_blank" rel="noopener" style="' + style + '">' + esc(addr) + '</a>';
+}
+
 // Natural list join for the service line, e.g. "A, B, and C" (or "A, and B").
 function joinServices(s) {
   var a = String(s || '').split(', ').map(function(x) { return x.trim(); }).filter(Boolean);
@@ -264,6 +274,7 @@ function schedulingPanel(lead, quote, compact) {
     return '<div style="background:#eaf6ee;border:1px solid #bfe3cb;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
       + '<div style="font-weight:700;color:#1a7a3a;font-size:0.9rem;">&#10003; Appointment confirmed</div>'
       + '<div style="color:#444;font-size:0.85rem;margin-top:3px;">' + esc(fmtPrefDate(quote.pref_date)) + ' at ' + esc(quote.pref_time || '—') + '</div>'
+      + (quote.pref_location ? '<div style="font-size:0.83rem;margin-top:2px;">' + mapsLink(quote.pref_location, { style: 'color:#1a6fc4;text-decoration:none;' }) + '</div>' : '')
       + '</div>';
   }
   if (lead.status !== 'quote_accepted') return '';
@@ -277,7 +288,7 @@ function schedulingPanel(lead, quote, compact) {
   return '<div style="background:#e3f0ff;border:1px solid #b9d4f5;border-left:4px solid #4169e1;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
     + '<div style="font-weight:700;color:#0a1f3d;font-size:0.9rem;margin-bottom:8px;">Requested Appointment</div>'
     + '<div style="font-size:0.88rem;color:#1a2a3a;">' + esc(fmtPrefDate(quote.pref_date)) + ' at <strong>' + esc(quote.pref_time || 'time TBD') + '</strong></div>'
-    + (quote.pref_location ? '<div style="font-size:0.83rem;color:#666;margin-top:2px;">' + esc(quote.pref_location) + '</div>' : '')
+    + (quote.pref_location ? '<div style="font-size:0.83rem;margin-top:2px;">' + mapsLink(quote.pref_location, { style: 'color:#1a6fc4;text-decoration:none;' }) + '</div>' : '')
     + (quote.scheduling_notes ? '<div style="font-size:0.82rem;color:#666;font-style:italic;margin-top:4px;">' + esc(quote.scheduling_notes) + '</div>' : '')
     + '<div style="display:flex;gap:8px;margin-top:12px;">'
     + '<a href="/admin/quote/' + lead.id + '/approve-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#1a7a3a;color:#fff;border:none;">&#10003; Approve Time</a>'
@@ -1298,7 +1309,10 @@ router.get('/', requireAuth, function(req, res) {
           ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
           : null;
         var backVal = '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '');
-        var cust = l.customer_id ? db.prepare('SELECT tags FROM customers WHERE id = ?').get(l.customer_id) : null;
+        var cust = l.customer_id ? db.prepare('SELECT tags, home_address FROM customers WHERE id = ?').get(l.customer_id) : null;
+        // Service address: prefer the accepted quote's pref_location; fall back to
+        // the customer's home address so we always have somewhere to drive to.
+        var addrDisplay = (sched && sched.pref_location) ? sched.pref_location : (cust && cust.home_address ? cust.home_address : null);
         return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;border-left:3px solid ' + (STATUS_COLOR[l.status] || STATUS_COLOR.new) + ';' + (l.archived ? 'opacity:.72;' : '') + '">'
           + '<div class="row-sb">'
           + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
@@ -1307,6 +1321,7 @@ router.get('/', requireAuth, function(req, res) {
           + (cust && cust.tags ? customerTagBadges(cust.tags) : '')
           + '<div class="lead-service">' + esc(l.service || 'Service not specified') + '</div>'
           + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
+          + (addrDisplay ? '<div class="lead-meta" style="margin-top:2px;">' + mapsLink(addrDisplay, { style: 'color:#1a6fc4;font-size:0.83rem;text-decoration:none;' }) + '</div>' : '')
           + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
           + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
           + '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>'
@@ -3449,7 +3464,7 @@ router.get('/customers', requireAuth, function(req, res) {
     + 'style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;" autocomplete="off">'
     + '<select id="custSortSelect" style="flex:0 0 auto;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;color:#0a1f3d;">'
     + '<option value="activity">Recent activity</option>'
-    + '<option value="visit">Recent visits</option>'
+    + '<option value="visit">Most jobs</option>'
     + '<option value="fn">First name (A–Z)</option>'
     + '<option value="ln">Last name (A–Z)</option>'
     + '<option value="newest">Newest added</option>'
@@ -3471,8 +3486,9 @@ router.get('/customers', requireAuth, function(req, res) {
             + ' data-ln="' + esc((c.last_name || '').toLowerCase()) + '"'
             + ' data-created="' + esc(c.created_at || '') + '"'
             + ' data-activity="' + esc(s.lastLeadDate || '') + '"'
-            + ' data-visit="' + esc(s.lastJobDate || '') + '"';
-          return '<div class="card cust-card"' + dataAttrs + ' onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
+            + ' data-visit="' + esc(s.lastJobDate || '') + '"'
+            + ' data-jobs="' + String(s.completedCount || 0).padStart(6, '0') + '"';
+          return '<div class="card cust-card"' + dataAttrs + ' onclick="if(!event.target.closest(\'a,button,form\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
             + '<div class="row-sb">'
             + '<div class="lead-name">' + esc(name) + '</div>'
             + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.completedCount + ' job' + (s.completedCount === 1 ? '' : 's') + '</span>'
@@ -3487,6 +3503,9 @@ router.get('/customers', requireAuth, function(req, res) {
             + '<span>Last activity ' + shortDate(s.lastLeadDate) + '</span>'
             + (s.lastJobDate ? '<span>Last job ' + shortDate(s.lastJobDate) + '</span>' : '')
             + '</div>'
+            + '<form method="POST" action="/admin/customer/' + c.id + '/delete" style="margin-top:10px;" onsubmit="return confirm(\'Delete this customer? Their leads will be kept but unlinked.\');">'
+            + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">' + ic('trash') + 'Delete customer</button>'
+            + '</form>'
             + '</div>';
         }).join('');
 
@@ -3531,8 +3550,10 @@ router.get('/customers', requireAuth, function(req, res) {
     + 'if(mode==="ln")return g(a,"data-ln").localeCompare(g(b,"data-ln"))||g(a,"data-fn").localeCompare(g(b,"data-fn"));'
     + 'if(mode==="newest")return g(b,"data-created").localeCompare(g(a,"data-created"));'
     + 'if(mode==="oldest")return g(a,"data-created").localeCompare(g(b,"data-created"));'
-    + 'if(mode==="visit")return g(b,"data-visit").localeCompare(g(a,"data-visit"));'
-    + 'return g(b,"data-activity").localeCompare(g(a,"data-activity"));'
+    + 'if(mode==="visit")return g(b,"data-jobs").localeCompare(g(a,"data-jobs"))||g(b,"data-visit").localeCompare(g(a,"data-visit"));'
+    + 'var da=g(a,"data-activity"),db2=g(b,"data-activity");'
+    + 'if(db2&&!da)return -1;if(da&&!db2)return 1;'
+    + 'return db2.localeCompare(da);'
     + '});'
     + 'cards.forEach(function(el){listEl.appendChild(el);});'
     + 'try{localStorage.setItem("bk_cust_sort",mode);}catch(_){}'
@@ -3720,6 +3741,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   var recentLeadId = jobs.length ? jobs[0].id : null;
 
   var alert = '';
+  if (req.query.msg === 'deleted')       alert = '<div class="alert alert-success">Customer deleted.</div>';
   if (req.query.msg === 'created')       alert = '<div class="alert alert-success">Customer created successfully.</div>';
   if (req.query.msg === 'saved')        alert = '<div class="alert alert-success">Saved.</div>';
   if (req.query.msg === 'veh_added')    alert = '<div class="alert alert-success">Vehicle added.</div>';
@@ -3735,6 +3757,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<div class="info-grid">'
     + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
     + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
+    + (c.home_address ? '<span class="info-key">Home address</span><span class="info-val">' + mapsLink(c.home_address) + '</span>' : '')
     + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
     + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
     + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
@@ -3760,7 +3783,8 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Last name</label><input type="text" name="last_name" value="' + esc(c.last_name || '') + '"></div>'
     + '</div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" value="' + esc(c.email || '') + '" placeholder="customer@email.com"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
+    + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Home address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>';
 
   // Tags card (collapsible) — removable pills + free-text add + preset quick picks
@@ -3986,12 +4010,13 @@ router.get('/customer/:id', requireAuth, function(req, res) {
 router.post('/customer/:id/edit', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
   if (!c) return res.redirect('/admin/customers');
-  var firstName = (req.body.first_name || '').trim();
-  var lastName  = (req.body.last_name  || '').trim();
-  var email     = (req.body.email      || '').trim() || null;
-  var phone     = (req.body.phone      || '').trim() || null;
-  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?')
-    .run(firstName, lastName, email, phone, c.id);
+  var firstName   = (req.body.first_name   || '').trim();
+  var lastName    = (req.body.last_name    || '').trim();
+  var email       = (req.body.email        || '').trim() || null;
+  var phone       = (req.body.phone        || '').trim() || null;
+  var homeAddress = (req.body.home_address || '').trim() || null;
+  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ?, home_address = ? WHERE id = ?')
+    .run(firstName, lastName, email, phone, homeAddress, c.id);
   res.redirect('/admin/customer/' + c.id + '?msg=contact_saved');
 });
 
@@ -4000,12 +4025,13 @@ router.post('/customer/:id/save', requireAuth, express.urlencoded({ extended: fa
   var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
   if (!c) return res.redirect('/admin/customers');
 
-  var firstName = (req.body.first_name || '').trim();
-  var lastName  = (req.body.last_name  || '').trim();
-  var email     = (req.body.email      || '').trim() || null;
-  var phone     = (req.body.phone      || '').trim() || null;
-  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ? WHERE id = ?')
-    .run(firstName, lastName, email, phone, c.id);
+  var firstName   = (req.body.first_name   || '').trim();
+  var lastName    = (req.body.last_name    || '').trim();
+  var email       = (req.body.email        || '').trim() || null;
+  var phone       = (req.body.phone        || '').trim() || null;
+  var homeAddress = (req.body.home_address || '').trim() || null;
+  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ?, home_address = ? WHERE id = ?')
+    .run(firstName, lastName, email, phone, homeAddress, c.id);
 
   var vYear  = (req.body.veh_year  || '').trim() || null;
   var vMake  = (req.body.veh_make  || '').trim() || null;
@@ -4096,7 +4122,7 @@ router.post('/customer/:id/vehicle/:vid/delete', requireAuth, express.urlencoded
 // Falls back to parsing the latest lead's free-text vehicle string when no
 // structured customer_vehicles row exists.
 router.get('/customer/:id/autofill', requireAuth, function(req, res) {
-  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  var c = db.prepare('SELECT id, home_address FROM customers WHERE id = ?').get(req.params.id);
   if (!c) return res.json({ ok: false });
   var veh = db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
   if (!veh) {
@@ -4112,7 +4138,8 @@ router.get('/customer/:id/autofill', requireAuth, function(req, res) {
   res.json({
     ok: true,
     vehicle: veh ? { year: veh.year || '', make: veh.make || '', model: veh.model || '' } : null,
-    address: addr ? addr.address : ''
+    address: addr ? addr.address : '',
+    home_address: c.home_address || ''
   });
 });
 
@@ -4130,6 +4157,18 @@ router.post('/customer/:id/address/add', requireAuth, express.urlencoded({ exten
 router.post('/customer/:id/address/:aid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   db.prepare('DELETE FROM customer_addresses WHERE id = ? AND customer_id = ?').run(req.params.aid, req.params.id);
   res.redirect('/admin/customer/' + req.params.id + '?msg=addr_removed');
+});
+
+// Delete a customer and all their child records. Leads are unlinked (customer_id
+// set to NULL) rather than deleted so job history is preserved on the Leads tab.
+router.post('/customer/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var id = parseInt(req.params.id);
+  if (!db.prepare('SELECT id FROM customers WHERE id = ?').get(id)) return res.redirect('/admin/customers');
+  db.prepare('UPDATE leads SET customer_id = NULL WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM customer_vehicles WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM customer_addresses WHERE customer_id = ?').run(id);
+  db.prepare('DELETE FROM customers WHERE id = ?').run(id);
+  res.redirect('/admin/customers?msg=deleted');
 });
 
 // ─── Appointments ─────────────────────────────────────────────────────────────
@@ -4179,7 +4218,7 @@ router.get('/appointments', requireAuth, function(req, res) {
       + '</div>'
       + '<div style="font-size:0.9rem;color:#444;margin-top:5px;">' + esc(a.q_service || 'Service TBD') + '</div>'
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
-      + (a.pref_location ? '<div style="font-size:0.82rem;color:#666;margin-top:2px;">' + esc(a.pref_location) + '</div>' : '')
+      + (a.pref_location ? '<div style="font-size:0.82rem;margin-top:2px;">' + mapsLink(a.pref_location, { style: 'color:#1a6fc4;font-size:0.82rem;text-decoration:none;' }) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(a.total) + '</div>'
       + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
       + '<a href="/admin/quote/' + a.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('clipboard') + 'Open Lead</a>'

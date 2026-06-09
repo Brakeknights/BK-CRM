@@ -2,10 +2,12 @@
 // and the background auto-sync cron (server.js).
 //
 // processSquareCustomer upserts one Square customer into the CRM, deduping by
-// email then phone so re-runs never create duplicates. syncAllSquareCustomers
-// paginates the whole Square account and imports any new contacts; it runs
-// server-side (no HTTP proxy timeout), so it can page through everything in one
-// pass, unlike the client-driven manual import.
+// Square customer ID first, then email, then phone. The Square ID check is the
+// critical guard that prevents the auto-sync cron from creating a new duplicate
+// record on every run for customers who have no email or phone on file.
+// syncAllSquareCustomers paginates the whole Square account and imports any new
+// contacts; it runs server-side (no HTTP proxy timeout), so it can page through
+// everything in one pass, unlike the client-driven manual import.
 
 const db = require('./db');
 const customers = require('./customers');
@@ -20,7 +22,16 @@ function processSquareCustomer(sc) {
 
   if (!sqFirst && !sqLast && !sqEmail && !sqPhone) return 'skipped';
 
-  var existing = customers.findCustomer(sqEmail, sqPhone);
+  // Check by Square customer ID first — this is the stable unique key and
+  // prevents the cron from creating a new record on every run for customers
+  // who have no email or phone in Square.
+  var existing = sc.id
+    ? db.prepare('SELECT * FROM customers WHERE square_customer_id = ?').get(sc.id)
+    : null;
+
+  // Fall back to email / phone matching if no Square ID hit.
+  if (!existing) existing = customers.findCustomer(sqEmail, sqPhone);
+
   if (existing) {
     var sets = [], vals = [];
     if (!existing.square_customer_id && sc.id)  { sets.push('square_customer_id = ?'); vals.push(sc.id); }
