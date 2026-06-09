@@ -1257,14 +1257,14 @@ router.get('/', requireAuth, function(req, res) {
   var leads;
   if (search) {
     leads = db.prepare(
-      "SELECT * FROM leads WHERE status != 'receipt' AND archived = 0 AND (first_name || ' ' || last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR vehicle LIKE ? OR service LIKE ?) ORDER BY id DESC"
+      "SELECT * FROM leads WHERE status != 'receipt' AND archived = 0 AND (first_name || ' ' || last_name LIKE ? OR phone LIKE ? OR email LIKE ? OR vehicle LIKE ? OR service LIKE ?) ORDER BY COALESCE(status_updated_at, created_at) DESC"
     ).all(sp, sp, sp, sp, sp);
   } else if (status === 'archived') {
     leads = db.prepare('SELECT * FROM leads WHERE archived = 1 ORDER BY archived_at DESC, id DESC').all();
   } else if (status === 'all') {
-    leads = db.prepare("SELECT * FROM leads WHERE archived = 0 AND status != 'receipt' ORDER BY id DESC").all();
+    leads = db.prepare("SELECT * FROM leads WHERE archived = 0 AND status != 'receipt' ORDER BY COALESCE(status_updated_at, created_at) DESC").all();
   } else {
-    leads = db.prepare('SELECT * FROM leads WHERE status = ? AND archived = 0 ORDER BY id DESC').all(status);
+    leads = db.prepare("SELECT * FROM leads WHERE status = ? AND archived = 0 ORDER BY COALESCE(status_updated_at, created_at) DESC").all(status);
   }
 
   var counts = db.prepare("SELECT status, COUNT(*) as n FROM leads WHERE archived = 0 AND status != 'receipt' GROUP BY status").all()
