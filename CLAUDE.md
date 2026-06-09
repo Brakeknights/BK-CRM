@@ -178,10 +178,10 @@ Update this section at the end of each session to stay caught up next time.
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - **DB path fix:** `NODE_ENV=production` set in Hostinger hPanel for both dev and master — database now stored outside the git directory and survives all deploys ✅
-- **VAPID keys:** Must be set in Hostinger hPanel for both dev and master before push notifications work: `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Generate once with `node -e "const wp=require('web-push'); const k=wp.generateVAPIDKeys(); console.log(k);"` and set both envs.
+- **VAPID keys:** Set in Hostinger hPanel for both dev and master. Push notifications confirmed working ✅
 - **Square import:** Run at brakeknights.com/admin/customers/import-square to pull all production Square customers into the CRM. Sandbox (dev) has test customers only.
 - Next steps:
-  1. Set VAPID keys in Hostinger hPanel to activate push notifications
+  1. ~~Set VAPID keys~~ — done, push notifications confirmed working ✅
   3. Phase 8: automated quotes (requires pricing table finalized by vehicle type)
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
