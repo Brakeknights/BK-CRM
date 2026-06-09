@@ -153,7 +153,9 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 - **Build order:** 1) customers table + migration, 2) auto-link on lead create, 3) customer list page, 4) customer profile page, 5) admin dashboard home (recent activity, pipeline summary).
 - **Not in Phase 7:** SMS, Square Appointments auto-booking, pricing matrix, white-label.
 
-**Phase 8:** Automated quotes — instant quote emails based on vehicle type and service selected (requires pricing table to be finalized first).
+**Phase 8E/8F (complete ✅):** Browser push notifications — bell icon in admin appbar, service worker (`/sw.js`), VAPID key configuration, `push_subscriptions` table, `sendNewLeadPush()` fires on every new contact form submission. VAPID keys set in Hostinger for dev + master. Confirmed working in production.
+
+**Phase 8 (planned):** Automated quotes — instant quote emails based on vehicle type and service selected. Requires: (1) pricing table reviewed and finalized, (2) contact form vehicle field structured as year/make/model instead of free text, (3) `vehicle_tier_mappings` and `pricing_overrides` tables already built as foundation in `db.js`.
 
 **Phase 9:** White-label packaging — multi-tenant architecture, per-brand configuration, reseller infrastructure for other service businesses.
 
@@ -165,10 +167,11 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/brakeknights-crm-continuation-3r8n6m` — CRM improvements batch (pushed to dev, not yet on master)
-- `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅ — **ahead of master (needs PR)**
+- Last working branch: `claude/brakeknights-crm-continuation-3r8n6m` — CRM improvements batch (merged to master via PR #21 ✅)
+- `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
+- dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
 - Pre-push hook in place — blocks direct pushes to master ✅
@@ -177,11 +180,10 @@ Update this section at the end of each session to stay caught up next time.
 - Square SDK installed, `square.js` module live, verify endpoint confirmed working on production ✅
 - Square auto-booking code-complete but blocked by Square Appointments subscription tier (403 on bookings.create until paid plan active) ✅
 - **DB path fix:** `NODE_ENV=production` set in Hostinger hPanel for both dev and master — database now stored outside the git directory and survives all deploys ✅
-- **VAPID keys:** Must be set in Hostinger hPanel for both dev and master before push notifications work: `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`. Generate once with `node -e "const wp=require('web-push'); const k=wp.generateVAPIDKeys(); console.log(k);"` and set both envs.
+- **VAPID keys:** Set in Hostinger hPanel for both dev and master. Push notifications confirmed working ✅
 - **Square import:** Run at brakeknights.com/admin/customers/import-square to pull all production Square customers into the CRM. Sandbox (dev) has test customers only.
 - Next steps:
-  1. Verify CRM improvements on dev.brakeknights.com, then "go master" to deploy
-  2. Set VAPID keys in Hostinger hPanel to activate push notifications
+  1. ~~Set VAPID keys~~ — done, push notifications confirmed working ✅
   3. Phase 8: automated quotes (requires pricing table finalized by vehicle type)
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
@@ -259,7 +261,7 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Square import live on brakeknights.com: all production Square customers imported into CRM.
 
 ### Previously Completed This Session
-- [x] Phase 8E/8F: Browser push notifications for new leads (bell icon toggle, service worker, VAPID keys); new-lead sidebar badge showing unactioned lead count. Merged to master via PR #18.
+- [x] Phase 8E/8F: Browser push notifications for new leads (bell icon toggle, service worker, VAPID keys); new-lead sidebar badge showing unactioned lead count. Merged to master via PR #18. VAPID keys set in Hostinger for dev + master. Push notifications confirmed working in production ✅
 - [x] CRM: Create New Customer form/button on Customers tab (/admin/customer/new)
 - [x] CRM: Full Appointments tab at /admin/appointments with scheduling, customer search/create, service/pricing, confirmation email
 - [x] Eastern Time timestamps: all admin timestamps now display in America/New_York timezone
