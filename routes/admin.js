@@ -601,6 +601,92 @@ function collapsible(key, title, inner, open) {
   return collapseOpen(key, title, open) + inner + COLLAPSE_CLOSE;
 }
 
+// ─── Shared vehicle Year/Make/Model picker ───────────────────────────────────
+// Every admin vehicle input uses this cascading dropdown trio so the data is
+// always structured (no free-typed makes/models) and Phase 8 tier lookup has
+// clean values. Make list mirrors the public contact form; models load on demand
+// from the free NHTSA API as year + make are chosen.
+var ADMIN_VEHICLE_MAKES = ['Acura','Alfa Romeo','Audi','Bentley','BMW','Buick','Cadillac',
+  'Chevrolet','Chrysler','Dodge','Ferrari','Ford','Genesis','GMC','Honda',
+  'Hyundai','Infiniti','Jeep','Kia','Lamborghini','Land Rover','Lexus',
+  'Lincoln','Maserati','Mazda','Mercedes-Benz','Mitsubishi','Nissan',
+  'Porsche','Ram','Rolls-Royce','Subaru','Tesla','Toyota','Volkswagen','Volvo'];
+
+function adminYearOptions(sel) {
+  var cur = new Date().getFullYear() + 1;
+  var o = '<option value="">Year</option>';
+  for (var y = cur; y >= 1985; y--) {
+    o += '<option value="' + y + '"' + (String(sel) === String(y) ? ' selected' : '') + '>' + y + '</option>';
+  }
+  return o;
+}
+function adminMakeOptions(sel) {
+  return '<option value="">Make</option>' + ADMIN_VEHICLE_MAKES.map(function(m) {
+    return '<option value="' + esc(m) + '"' + (sel === m ? ' selected' : '') + '>' + esc(m) + '</option>';
+  }).join('');
+}
+
+// Renders a Year / Make / Model cascading dropdown trio. `prefix` namespaces the
+// element ids so multiple pickers coexist on one page. `names` sets the form field
+// names (defaults veh_year/veh_make/veh_model). `vals` optionally pre-selects
+// {year,make,model} for edit or customer auto-fill; a preset model stays selectable
+// until the NHTSA list loads.
+function vehicleCascadeHtml(prefix, names, vals) {
+  names = names || {}; vals = vals || {};
+  var nYear = names.year || 'veh_year', nMake = names.make || 'veh_make', nModel = names.model || 'veh_model';
+  var modelOpt = '<option value="">Model</option>';
+  if (vals.model) modelOpt += '<option value="' + esc(vals.model) + '" selected>' + esc(vals.model) + '</option>';
+  return '<div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;" data-veh-cascade="' + esc(prefix) + '">'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label>'
+    + '<select name="' + nYear + '" id="' + prefix + '-year">' + adminYearOptions(vals.year) + '</select></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label>'
+    + '<select name="' + nMake + '" id="' + prefix + '-make">' + adminMakeOptions(vals.make) + '</select></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label>'
+    + '<select name="' + nModel + '" id="' + prefix + '-model"' + (vals.model ? ' data-preset="' + esc(vals.model) + '"' : '') + '>' + modelOpt + '</select></div>'
+    + '</div>';
+}
+
+// One-time client script that wires every cascade on the page. Include once per
+// page that renders a vehicleCascadeHtml block.
+var VEHICLE_CASCADE_JS = '<script>'
+  + '(function(){'
+  + 'function loadModels(prefix){'
+  +   'var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
+  +   'if(!y||!mk||!mo)return;'
+  +   'var year=y.value,make=mk.value;'
+  +   'if(!year||!make){mo.innerHTML="<option value=\\"\\">Model</option>";return;}'
+  +   'var preset=mo.getAttribute("data-preset")||"";'
+  +   'mo.innerHTML="<option value=\\"\\">Loading…</option>";'
+  +   'var url="https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/"+encodeURIComponent(make)+"/modelyear/"+year+"?format=json";'
+  +   'fetch(url).then(function(r){return r.json();}).then(function(d){'
+  +     'var models=(d.Results||[]).map(function(m){return m.Model_Name;}).filter(Boolean).sort();'
+  +     'var html="<option value=\\"\\">Model</option>";'
+  +     'models.forEach(function(m){html+="<option value=\\""+m+"\\""+(m===preset?" selected":"")+">"+m+"</option>";});'
+  +     'if(preset&&models.indexOf(preset)<0)html+="<option value=\\""+preset+"\\" selected>"+preset+"</option>";'
+  +     'mo.innerHTML=html;'
+  +   '}).catch(function(){var html="<option value=\\"\\">Model</option>";if(preset)html+="<option value=\\""+preset+"\\" selected>"+preset+"</option>";mo.innerHTML=html;});'
+  + '}'
+  + 'window.bkVehInit=function(){'
+  +   'document.querySelectorAll("[data-veh-cascade]").forEach(function(box){'
+  +     'var prefix=box.getAttribute("data-veh-cascade");'
+  +     'var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make");'
+  +     'if(!y||!mk||y.getAttribute("data-wired"))return;'
+  +     'y.setAttribute("data-wired","1");'
+  +     'y.addEventListener("change",function(){loadModels(prefix);});'
+  +     'mk.addEventListener("change",function(){loadModels(prefix);});'
+  +     'if(y.value&&mk.value)loadModels(prefix);'
+  +   '});'
+  + '};'
+  + 'window.bkVehFill=function(prefix,v){'
+  +   'v=v||{};var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
+  +   'if(y)y.value=v.year||"";if(mk)mk.value=v.make||"";'
+  +   'if(mo){if(v.model){mo.setAttribute("data-preset",v.model);}else{mo.removeAttribute("data-preset");mo.innerHTML="<option value=\\"\\">Model</option>";}}'
+  +   'if(y&&mk&&y.value&&mk.value)loadModels(prefix);'
+  + '};'
+  + 'if(document.readyState!=="loading")window.bkVehInit();else document.addEventListener("DOMContentLoaded",window.bkVehInit);'
+  + '})();'
+  + '</script>';
+
 function page(title, body, req) {
   var authed = req.session && req.session.adminAuthed;
   var head = '<!DOCTYPE html><html lang="en"><head>'
@@ -3424,12 +3510,8 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
     + '<div class="card">'
-    + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional — year + make required if any field filled)</span></div>'
-    + '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label><input type="text" name="veh_year" maxlength="4" placeholder="2018"></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label><input type="text" name="veh_make" placeholder="Honda"></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label><input type="text" name="veh_model" placeholder="Accord"></div>'
-    + '</div>'
+    + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
+    + vehicleCascadeHtml('custnew-veh')
     + '<div class="form-group" style="margin-bottom:0;"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
     + '</div>'
     + '<div class="card">'
@@ -3438,7 +3520,8 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group" style="margin-bottom:0;"><label>Internal Notes</label><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times..."></textarea></div>'
     + '</div>'
     + '<button type="submit" class="btn btn-navy" style="margin-top:4px;">Create Customer</button>'
-    + '</form>';
+    + '</form>'
+    + VEHICLE_CASCADE_JS;
 
   res.send(page('New Customer', body, req));
 });
@@ -3462,12 +3545,12 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
   var vehMake  = (req.body.veh_make  || '').trim() || null;
   var vehModel = (req.body.veh_model || '').trim() || null;
   var vehVin   = (req.body.veh_vin   || '').trim() || null;
-  if (vehYear || vehMake || vehModel || vehVin) {
-    if (vehYear && vehMake) {
-      db.prepare(
-        'INSERT INTO customer_vehicles (customer_id, year, make, model, vin) VALUES (?,?,?,?,?)'
-      ).run(newId, vehYear, vehMake, vehModel || null, vehVin || null);
-    }
+  // Save whatever vehicle detail was entered. Previously this silently dropped the
+  // vehicle unless BOTH year and make were filled, which lost owner-entered data.
+  if (vehMake || vehModel || vehVin) {
+    db.prepare(
+      'INSERT INTO customer_vehicles (customer_id, year, make, model, vin) VALUES (?,?,?,?,?)'
+    ).run(newId, vehYear, vehMake, vehModel || null, vehVin || null);
   }
 
   res.redirect('/admin/customer/' + newId + '?msg=created');
@@ -3618,20 +3701,6 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
   if (req.query.msg === 'contact_saved') alert = '<div class="alert alert-success">Contact info updated.</div>';
 
-  // Year/make option strings for vehicle dropdown
-  var profileCurYear = new Date().getFullYear();
-  var yearOpts = '<option value="">Year</option>';
-  for (var pyr = profileCurYear + 1; pyr >= 1985; pyr--) {
-    yearOpts += '<option value="' + pyr + '">' + pyr + '</option>';
-  }
-  var VEHICLE_MAKES = ['Acura','Alfa Romeo','Audi','Bentley','BMW','Buick','Cadillac',
-    'Chevrolet','Chrysler','Dodge','Ferrari','Ford','Genesis','GMC','Honda',
-    'Hyundai','Infiniti','Jeep','Kia','Lamborghini','Land Rover','Lexus',
-    'Lincoln','Maserati','Mazda','Mercedes-Benz','Mitsubishi','Nissan',
-    'Porsche','Ram','Rolls-Royce','Subaru','Tesla','Toyota','Volkswagen','Volvo'];
-  var makeOpts = '<option value="">Make</option>'
-    + VEHICLE_MAKES.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
-
   // Header — always visible: name, contact display, action buttons
   var header = '<div class="card">'
     + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
@@ -3722,11 +3791,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + vehList
     + '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
     + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add a vehicle</div>'
-    + '<div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label><select name="veh_year">' + yearOpts + '</select></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label><select name="veh_make">' + makeOpts + '</select></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label><input type="text" name="veh_model" placeholder="Accord"></div>'
-    + '</div>'
+    + vehicleCascadeHtml('custprof-veh')
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
     + '<div class="form-group" style="margin-bottom:0;"><label>Trim</label><input type="text" name="veh_trim" placeholder="EX-L (optional)"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>VIN</label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
@@ -3884,7 +3949,8 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + jobsCard
     + fupCard
     + statsCard
-    + profileScript;
+    + profileScript
+    + VEHICLE_CASCADE_JS;
 
   res.send(page(name, body, req));
 });
@@ -3918,7 +3984,7 @@ router.post('/customer/:id/save', requireAuth, express.urlencoded({ extended: fa
   var vModel = (req.body.veh_model || '').trim() || null;
   var vTrim  = (req.body.veh_trim  || '').trim() || null;
   var vVin   = (req.body.veh_vin   || '').trim() || null;
-  if (vYear || vMake || vModel) {
+  if (vMake || vModel || vVin) {
     db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, trim, vin) VALUES (?,?,?,?,?,?)')
       .run(c.id, vYear, vMake, vModel, vTrim, vVin);
   }
