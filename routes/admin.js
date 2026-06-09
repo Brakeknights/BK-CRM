@@ -3426,9 +3426,17 @@ router.get('/customers', requireAuth, function(req, res) {
 
   var total = rows.length;
 
-  var searchBar = '<div style="margin-bottom:14px;display:flex;gap:8px;">'
+  var searchBar = '<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;">'
     + '<input type="text" id="custSearchInput" placeholder="Search by name, phone, or email..." '
-    + 'style="flex:1;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;" autocomplete="off">'
+    + 'style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;" autocomplete="off">'
+    + '<select id="custSortSelect" style="flex:0 0 auto;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;color:#0a1f3d;">'
+    + '<option value="activity">Recent activity</option>'
+    + '<option value="visit">Recent visits</option>'
+    + '<option value="fn">First name (A–Z)</option>'
+    + '<option value="ln">Last name (A–Z)</option>'
+    + '<option value="newest">Newest added</option>'
+    + '<option value="oldest">Oldest added</option>'
+    + '</select>'
     + '</div>';
 
   var emptyMsg = 'No customers yet. They are created automatically as leads come in.';
@@ -3440,7 +3448,13 @@ router.get('/customers', requireAuth, function(req, res) {
           var c = item.c, s = item.s;
           var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
           var searchText = (name + ' ' + (c.phone || '') + ' ' + (c.email || '')).toLowerCase();
-          return '<div class="card cust-card" data-search="' + esc(searchText) + '" onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
+          var dataAttrs = ' data-search="' + esc(searchText) + '"'
+            + ' data-fn="' + esc((c.first_name || '').toLowerCase()) + '"'
+            + ' data-ln="' + esc((c.last_name || '').toLowerCase()) + '"'
+            + ' data-created="' + esc(c.created_at || '') + '"'
+            + ' data-activity="' + esc(s.lastLeadDate || '') + '"'
+            + ' data-visit="' + esc(s.lastJobDate || '') + '"';
+          return '<div class="card cust-card"' + dataAttrs + ' onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
             + '<div class="row-sb">'
             + '<div class="lead-name">' + esc(name) + '</div>'
             + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.completedCount + ' job' + (s.completedCount === 1 ? '' : 's') + '</span>'
@@ -3486,6 +3500,30 @@ router.get('/customers', requireAuth, function(req, res) {
     + 'if(count)count.textContent=q?(shown+" of ' + total + '"):"' + total + ' total";'
     + 'if(empty)empty.style.display=(shown===0&&q)?"block":"none";'
     + '});'
+    // Client-side sort: reorder the cards in place without a reload.
+    + 'var sortSel=document.getElementById("custSortSelect");'
+    + 'var listEl=document.getElementById("custList");'
+    + 'function applySort(){'
+    + 'if(!sortSel||!listEl)return;'
+    + 'var mode=sortSel.value;'
+    + 'var cards=Array.prototype.slice.call(document.querySelectorAll(".cust-card"));'
+    + 'function g(el,k){return el.getAttribute(k)||"";}'
+    + 'cards.sort(function(a,b){'
+    + 'if(mode==="fn")return g(a,"data-fn").localeCompare(g(b,"data-fn"))||g(a,"data-ln").localeCompare(g(b,"data-ln"));'
+    + 'if(mode==="ln")return g(a,"data-ln").localeCompare(g(b,"data-ln"))||g(a,"data-fn").localeCompare(g(b,"data-fn"));'
+    + 'if(mode==="newest")return g(b,"data-created").localeCompare(g(a,"data-created"));'
+    + 'if(mode==="oldest")return g(a,"data-created").localeCompare(g(b,"data-created"));'
+    + 'if(mode==="visit")return g(b,"data-visit").localeCompare(g(a,"data-visit"));'
+    + 'return g(b,"data-activity").localeCompare(g(a,"data-activity"));'
+    + '});'
+    + 'cards.forEach(function(el){listEl.appendChild(el);});'
+    + 'try{localStorage.setItem("bk_cust_sort",mode);}catch(_){}'
+    + '}'
+    + 'if(sortSel){'
+    + 'try{var saved=localStorage.getItem("bk_cust_sort");if(saved)sortSel.value=saved;}catch(_){}'
+    + 'sortSel.addEventListener("change",applySort);'
+    + 'applySort();'
+    + '}'
     + '})();</script>',
     req
   ));
