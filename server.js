@@ -26,7 +26,11 @@ function sendPush(title, body, url) {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
   var subs = db.prepare('SELECT * FROM push_subscriptions').all();
   if (!subs.length) return;
-  var payload = JSON.stringify({ title: title, body: body, url: url || '/admin' });
+  // Tag dev notifications so they're distinguishable from live ones on the phone.
+  // Push subscriptions are per-domain, so a dev-subscribed device only ever gets
+  // dev pushes anyway, but the prefix makes it obvious at a glance.
+  var pushTitle = (process.env.NODE_ENV === 'production') ? title : '[DEV] ' + title;
+  var payload = JSON.stringify({ title: pushTitle, body: body, url: url || '/admin' });
   subs.forEach(function(row) {
     var sub = { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } };
     webpush.sendNotification(sub, payload).catch(function(err) {
