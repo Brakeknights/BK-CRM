@@ -1916,6 +1916,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
     await transporter.sendMail({
       from:    '"Brake Knights" <greetings@brakeknights.com>',
       to:      lead.email,
+      cc:      'greetings@brakeknights.com',
       replyTo: 'greetings@brakeknights.com',
       subject: isRevisedQuote
         ? 'Your Updated Brake Service Quote — Brake Knights'
@@ -3325,6 +3326,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       await tx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      email,
+        cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
         subject: qqRevised
           ? 'Your Updated Brake Service Quote — Brake Knights'
