@@ -1609,6 +1609,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<button type="button" class="svc-clear-btn" onclick="clearServices()">&#10005; Clear selection</button>'
     + '<div class="svc-tags" id="svcTags"></div>'
     + '<div id="customQuoteHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
+    + '<div class="form-group" style="margin:14px 0 6px;">'
+    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
+    + '<input type="text" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
+    + '</div>'
     + '</div>'
 
     + '<div class="form-group"><label>Tier</label>'
@@ -1842,7 +1846,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.redirect('/admin');
 
-  var service       = req.body.service       || '';
+  var service       = (req.body.service || '').trim();
+  var customSvc     = (req.body.customService || '').trim();
+  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
   var tier          = req.body.tier          || 'standard';
   var parts         = parseFloat(req.body.parts)         || 0;
   var labor         = parseFloat(req.body.labor)         || 0;
@@ -2077,6 +2083,10 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + rServiceCheckboxes
     + '<button type="button" class="svc-clear-btn" onclick="rClearServices()">&#10005; Clear selection</button>'
     + '<div class="svc-tags" id="rsvcTags"></div>'
+    + '<div class="form-group" style="margin:14px 0 6px;">'
+    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
+    + '<input type="text" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
+    + '</div>'
     + '</div>'
     + '<div class="form-group"><label>Tier <span style="color:#bbb;font-weight:400;">(sets auto-filled pricing)</span></label>'
     + '<div class="tier-toggle">'
@@ -2253,6 +2263,8 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   if (!lead) return res.redirect('/admin');
 
   var service      = (req.body.service || '').trim();
+  var customSvc    = (req.body.customService || '').trim();
+  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
   var vehicle      = (req.body.vehicle || '').trim();
   var serviceDate  = (req.body.serviceDate || '').trim() || easternToday();
   var address      = (req.body.serviceAddress || '').trim();
@@ -3003,7 +3015,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var fn=document.getElementById("qfn").value.trim();'
     +   'var ln=document.getElementById("qln").value.trim();'
     +   'var em=document.getElementById("qem").value.trim();'
-    +   'var svcs=qCheckedServices();'
+    +   'var svcs=qCheckedServices();var qcsv=(document.getElementById("qCustomSvc")||{}).value||"";if(qcsv.trim())svcs=svcs.concat(qcsv.trim().split(",").map(function(s){return s.trim();}).filter(Boolean));'
     +   'var total=document.getElementById("qtotalAmt").textContent;'
     +   'var rec=qmode==="receipt";'
     +   'var toLine=(fn||ln?(fn+" "+ln).trim()+" ":"")+(em?"&lt;"+em+"&gt;":"<em style=\'color:#e07000\'>(no email entered)</em>");'
@@ -3215,6 +3227,8 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   if (isSend && !email) return res.redirect('/admin/quick?err=email');
 
   var service      = (req.body.service || '').trim();
+  var customSvc    = (req.body.customService || '').trim();
+  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
   var tier         = req.body.tier === 'premium' ? 'premium' : 'standard';
   var parts        = parseFloat(req.body.parts)        || 0;
   var labor        = parseFloat(req.body.labor)        || 0;
@@ -4419,6 +4433,10 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + serviceCheckboxes
     + '<button type="button" class="svc-clear-btn" onclick="apptClearServices()">&#10005; Clear selection</button>'
     + '<div class="svc-tags" id="apptSvcTags"></div>'
+    + '<div class="form-group" style="margin:14px 0 6px;">'
+    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
+    + '<input type="text" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
+    + '</div>'
     + '</div>'
 
     + '<div class="card">'
@@ -4591,7 +4609,10 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
     (req.body.veh_make  || '').trim(),
     (req.body.veh_model || '').trim()
   ].filter(Boolean).join(' ').trim() || null;
-  var service    = (req.body.service    || '').trim() || null;
+  var service    = (req.body.service || '').trim();
+  var customSvc  = (req.body.customService || '').trim();
+  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
+  service = service || null;
   var tier       = (req.body.tier       || 'standard').trim();
   var price_parts  = req.body.price_parts;
   var price_labor  = req.body.price_labor;
