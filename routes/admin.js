@@ -1599,7 +1599,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Lead history
     + '<div data-section="lead-history">'
     + (function() {
-        var history = db.prepare('SELECT * FROM lead_history WHERE lead_id = ? ORDER BY id ASC').all(lead.id);
+        var history = db.prepare('SELECT * FROM lead_history WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
         if (history.length === 0) return '';
         var rows = history.map(function(h) {
           return '<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #f4f4f4;">'
