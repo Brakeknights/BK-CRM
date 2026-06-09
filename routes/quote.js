@@ -337,6 +337,11 @@ router.get('/:id/:token', function(req, res) {
       + '</div>'));
   }
 
+  // Customer cancelled their appointment via the self-service button.
+  if (q.status === 'cancelled') {
+    return res.send(shell('Appointment Cancelled', cancelledConfirmation(q)));
+  }
+
   // Already accepted — show the confirmation state instead of the form.
   if (q.accepted_at) {
     return res.send(shell('Quote Accepted', acceptedConfirmation(q)));
@@ -549,6 +554,93 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
   res.send(shell('Quote Accepted', acceptedConfirmation(fresh)));
 });
 
+// ─── Customer self-service: reschedule ────────────────────────────────────────
+router.post('/:id/:token/reschedule', express.urlencoded({ extended: false }), async function(req, res) {
+  var q = loadQuote(req.params.id, req.params.token);
+  if (!q) return res.status(404).send(shell('Quote Not Found', '<div class="card"><h1>Quote not found</h1></div>'));
+
+  var prefDate = (req.body.prefDate || '').trim();
+  var prefTime = (req.body.prefTime || '').trim();
+  var note     = (req.body.rescheduleNote || '').trim();
+  if (!prefDate || !prefTime) {
+    return res.send(shell('Quote Accepted', acceptedConfirmation(q)));
+  }
+
+  // Update the requested time and send it back to the owner's review queue.
+  var schedNote = note ? ('Reschedule request: ' + note) : 'Customer requested a new time';
+  db.prepare(
+    "UPDATE quotes SET pref_date=?, pref_time=?, scheduling_notes=?, status='accepted' WHERE id=?"
+  ).run(prefDate, prefTime, schedNote, q.id);
+  db.prepare("UPDATE leads SET status='quote_accepted', status_updated_at=datetime('now') WHERE id=?").run(q.lead_id);
+  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(
+    q.lead_id, 'Customer requested reschedule', formatPrefDate(prefDate) + (prefTime ? ' at ' + prefTime : '') + (note ? ' — ' + note : '')
+  );
+
+  if (process.env.SMTP_PASS) {
+    try {
+      var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+      var fresh = loadQuote(req.params.id, req.params.token);
+      await transporter().sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      'greetings@brakeknights.com',
+        replyTo: q.lead_email || 'greetings@brakeknights.com',
+        subject: 'Reschedule request: ' + q.first_name + ' ' + q.last_name,
+        html:    ownerAcceptedEmail(fresh, baseUrl)
+      });
+    } catch (err) { console.error('Reschedule email error:', err.message); }
+  }
+
+  res.send(shell('New Time Requested',
+    '<div class="card" style="text-align:center;">'
+    + '<div class="check">&#10003;</div>'
+    + '<h1>New time requested</h1>'
+    + '<p>Thanks, ' + esc(q.first_name) + '. We&rsquo;ve received your new preferred time: <strong>' + esc(formatPrefDate(prefDate)) + (prefTime ? ' at ' + esc(prefTime) : '') + '</strong>. We&rsquo;ll review it and confirm shortly.</p>'
+    + '<p class="muted" style="margin-top:14px;">Questions? Call or text <a href="tel:+17039774475" style="color:#0a1f3d;font-weight:700;">703-977-4475</a>.</p>'
+    + '</div>'));
+});
+
+// ─── Customer self-service: cancel ────────────────────────────────────────────
+router.post('/:id/:token/cancel', express.urlencoded({ extended: false }), async function(req, res) {
+  var q = loadQuote(req.params.id, req.params.token);
+  if (!q) return res.status(404).send(shell('Quote Not Found', '<div class="card"><h1>Quote not found</h1></div>'));
+
+  var reason = (req.body.cancelReason || '').trim();
+  // Mark the quote cancelled and return the lead to the open-quote pipeline stage.
+  db.prepare("UPDATE quotes SET status='cancelled' WHERE id=?").run(q.id);
+  db.prepare("UPDATE leads SET status='quoted', status_updated_at=datetime('now') WHERE id=?").run(q.lead_id);
+  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(
+    q.lead_id, 'Customer cancelled appointment', reason || null
+  );
+
+  if (process.env.SMTP_PASS) {
+    try {
+      var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+      var adminUrl = baseUrl + '/admin/quote/' + q.lead_id;
+      var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;border:1px solid #ddd;border-radius:8px;overflow:hidden;">'
+        + '<div style="background:#c0392b;padding:16px 20px;"><h2 style="color:#fff;margin:0;font-size:1.15rem;">Appointment Cancelled by Customer</h2></div>'
+        + '<div style="padding:20px;">'
+        + '<p style="margin:0 0 12px;color:#444;"><strong>' + esc(q.first_name + ' ' + q.last_name) + '</strong> cancelled their appointment.</p>'
+        + '<table style="width:100%;border-collapse:collapse;font-size:0.92rem;color:#444;">'
+        + '<tr><td style="padding:4px 0;color:#888;width:110px;">Service</td><td style="padding:4px 0;">' + esc(q.service || '—') + '</td></tr>'
+        + '<tr><td style="padding:4px 0;color:#888;">Was set for</td><td style="padding:4px 0;">' + esc(formatPrefDate(q.pref_date)) + (q.pref_time ? ' at ' + esc(q.pref_time) : '') + '</td></tr>'
+        + (reason ? '<tr><td style="padding:4px 0;color:#888;vertical-align:top;">Reason</td><td style="padding:4px 0;">' + esc(reason) + '</td></tr>' : '')
+        + '</table>'
+        + '<p style="margin:14px 0 0;color:#666;font-size:0.9rem;">The lead is back in your pipeline as an open quote.</p>'
+        + '<div style="margin-top:16px;text-align:center;"><a href="' + adminUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.92rem;text-decoration:none;padding:11px 26px;border-radius:8px;">Open in Admin &rarr;</a></div>'
+        + '</div></div>';
+      await transporter().sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      'greetings@brakeknights.com',
+        replyTo: q.lead_email || 'greetings@brakeknights.com',
+        subject: 'Appointment CANCELLED: ' + q.first_name + ' ' + q.last_name,
+        html:    html
+      });
+    } catch (err) { console.error('Cancel email error:', err.message); }
+  }
+
+  res.send(shell('Appointment Cancelled', cancelledConfirmation(q)));
+});
+
 // ─── Confirmation views / emails ──────────────────────────────────────────────
 
 function acceptedConfirmation(q) {
@@ -566,7 +658,56 @@ function acceptedConfirmation(q) {
     + '<div class="qline"><span>Preferred time</span><span>' + esc(q.pref_time || '—') + '</span></div>'
     + '<div class="qline"><span>Location</span><span style="text-align:right;max-width:60%;">' + esc(q.pref_location || '—') + '</span></div>'
     + '</div>'
-    + '<div class="callbar"><span class="muted">Need to change something? Call or text </span><a href="tel:+17039774475">703-977-4475</a></div>';
+    + manageAppointmentCard(q)
+    + '<div class="callbar"><span class="muted">Prefer to talk? Call or text </span><a href="tel:+17039774475">703-977-4475</a></div>';
+}
+
+// Self-service reschedule / cancel controls shown on the accepted-quote page.
+// Token-protected (the customer already holds the accept token), no login needed.
+function manageAppointmentCard(q) {
+  var base = '/quote/' + q.id + '/' + q.accept_token;
+  return '<div class="card">'
+    + '<h2>Need to change your appointment?</h2>'
+    + '<p class="muted" style="margin:-4px 0 14px;">Request a different time or cancel, no call needed. We&rsquo;ll get your update right away.</p>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;">'
+    + '<button type="button" class="btn btn-blue" style="flex:1;min-width:150px;" onclick="bkShowResched()">Request a New Time</button>'
+    + '<button type="button" class="btn" style="flex:1;min-width:150px;background:#fff;border:1.5px solid #e0c0c0;color:#c0392b;" onclick="bkShowCancel()">Cancel Appointment</button>'
+    + '</div>'
+
+    // Reschedule form (hidden until requested)
+    + '<form method="POST" action="' + base + '/reschedule" id="bkReschedForm" style="display:none;margin-top:18px;border-top:1px solid #eef0f4;padding-top:16px;">'
+    + '<div class="form-group"><label>New preferred date</label>'
+    + '<input type="date" name="prefDate" id="bkReschedDate" required></div>'
+    + '<div class="form-group"><label>New preferred time</label>'
+    + '<select name="prefTime" required>' + buildTimeOptions() + '</select></div>'
+    + '<div class="form-group"><label>Anything we should know? <span style="color:#aab;font-weight:400;">(optional)</span></label>'
+    + '<textarea name="rescheduleNote" placeholder="Reason for the change, second-choice time, etc."></textarea></div>'
+    + '<button type="submit" class="btn btn-blue">Send New Time Request</button>'
+    + '</form>'
+
+    // Cancel confirmation (hidden until requested)
+    + '<form method="POST" action="' + base + '/cancel" id="bkCancelForm" style="display:none;margin-top:18px;border-top:1px solid #eef0f4;padding-top:16px;">'
+    + '<p style="color:#0a1f3d;font-weight:600;margin-bottom:8px;">Cancel this appointment?</p>'
+    + '<p class="muted" style="margin-bottom:12px;">Your quoted price stays valid. You can rebook any time by replying to us or calling.</p>'
+    + '<div class="form-group"><label>Reason <span style="color:#aab;font-weight:400;">(optional)</span></label>'
+    + '<textarea name="cancelReason" placeholder="Let us know why, if you like."></textarea></div>'
+    + '<button type="submit" class="btn" style="background:#c0392b;color:#fff;">Yes, Cancel My Appointment</button>'
+    + '</form>'
+
+    + '<script>'
+    + 'function bkShowResched(){var f=document.getElementById("bkReschedForm");var c=document.getElementById("bkCancelForm");c.style.display="none";f.style.display=f.style.display==="none"?"block":"none";var d=document.getElementById("bkReschedDate");if(d){var t=new Date();t.setDate(t.getDate()+1);d.min=t.toISOString().slice(0,10);}}'
+    + 'function bkShowCancel(){var f=document.getElementById("bkReschedForm");var c=document.getElementById("bkCancelForm");f.style.display="none";c.style.display=c.style.display==="none"?"block":"none";}'
+    + '</script>'
+    + '</div>';
+}
+
+function cancelledConfirmation(q) {
+  return '<div class="card" style="text-align:center;">'
+    + '<div class="check" style="background:#fdecea;color:#c0392b;">&#10005;</div>'
+    + '<h1>Appointment cancelled</h1>'
+    + '<p>Your appointment has been cancelled, ' + esc(q.first_name) + '. Your quoted price stays valid, so you can rebook any time.</p>'
+    + '<p class="muted" style="margin-top:14px;">Want to rebook or have questions? Call or text <a href="tel:+17039774475" style="color:#0a1f3d;font-weight:700;">703-977-4475</a>.</p>'
+    + '</div>';
 }
 
 function ownerAcceptedEmail(q, baseUrl) {

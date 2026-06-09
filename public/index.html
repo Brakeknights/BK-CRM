@@ -360,6 +360,9 @@
               </select>
             </div>
             <input type="hidden" id="vehicle" name="vehicle">
+            <input type="hidden" id="vehicle-year-val" name="vehicleYear">
+            <input type="hidden" id="vehicle-make-val" name="vehicleMake">
+            <input type="hidden" id="vehicle-model-val" name="vehicleModel">
             <div id="tesla-block-msg" style="display:none;color:#ff8080;font-size:0.85rem;margin-top:8px;font-weight:600;line-height:1.4;">We currently don't service Tesla vehicles. Please contact a Tesla-authorized service center for EV brake work.</div>
           </div>
 
@@ -980,6 +983,9 @@
     const mk = document.getElementById('vehicle-make').value;
     const mo = document.getElementById('vehicle-model').value;
     document.getElementById('vehicle').value = [y, mk, mo].filter(Boolean).join(' ');
+    document.getElementById('vehicle-year-val').value = y || '';
+    document.getElementById('vehicle-make-val').value = mk || '';
+    document.getElementById('vehicle-model-val').value = mo || '';
   }
   // ───────────────���────────────────────────────────────────────────────────
 
@@ -1034,6 +1040,9 @@
       phone:            document.getElementById('phone')?.value,
       email:            document.getElementById('email')?.value,
       vehicle:          vehicleVal,
+      vehicleYear:      document.getElementById('vehicle-year-val')?.value,
+      vehicleMake:      document.getElementById('vehicle-make-val')?.value,
+      vehicleModel:     document.getElementById('vehicle-model-val')?.value,
       service:          document.getElementById('service')?.value,
       preferredContact: document.getElementById('preferred-contact')?.value,
       message:          document.getElementById('message')?.value,
