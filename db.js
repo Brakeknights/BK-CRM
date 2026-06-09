@@ -180,6 +180,10 @@ addLeadCol('vin',                'TEXT');
 addLeadCol('internal_notes',     'TEXT');
 addLeadCol('customer_id',        'INTEGER REFERENCES customers(id)');
 
+// ─── Customer home address ─────────────────────────────────────────────────────
+const custCols = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
+if (!custCols.includes('home_address')) db.exec("ALTER TABLE customers ADD COLUMN home_address TEXT");
+
 // ─── Phase 8E: push subscriptions for new-lead browser notifications ─────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS push_subscriptions (
