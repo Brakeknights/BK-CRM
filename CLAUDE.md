@@ -167,12 +167,11 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/laughing-babbage-2dowpy` — active; custom service fields + home address + Maps links in progress
-- Last merged to master: PR #24 — custom service field platform-wide + Quick Quote receipt fix ✅
+- Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #25 ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
-- dev ahead of master: home address + Maps links (not yet pushed to dev)
+- dev and master are in sync.
 - `brakeknights-crm` skill installed at `.claude/skills/brakeknights-crm/SKILL.md` — load at the start of every CRM session for full project context ✅
 - **Master deploy workflow: Claude creates PR (dev → master), user clicks Merge on GitHub. No direct pushes to master ever.** ✅
 - Pre-push hook in place — blocks direct pushes to master ✅
@@ -243,6 +242,8 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] PR #25: Home address on customer profile (stored, editable, shown as clickable Maps link in header); clickable Maps links on lead cards, scheduling panel, and appointments tab (falls back to customer home address when no service address); custom service field on quote builder, receipt builder, and appointment form; fix duplicate customers from Square sync (Square ID lookup first); customer list sort fixes (active customers first, "Most jobs" by count); delete button on customer list cards.
+- [x] PR #24: Custom service field platform-wide (quote builder, receipt builder, appointments); Quick Quote receipt mode fix (custom service was dropped from email and preview).
 - [x] Phase 8 CRM batch merged to master via PR #23: structured vehicle fields on contact forms, NHTSA cascading vehicle dropdowns (new customer/profile/appointment forms), appointment auto-fill from customer profile, Quick Quote receipt mode JS fix + customer section auto-expand, customer sort dropdown (6 options, localStorage), collapsible pricing rows, Square auto-sync cron (60s boot delay, every 6h), customer self-service reschedule + cancel on quote confirm page.
 - [x] Updated-quote logic now per-lead: "Updated Quote" email fires only when THIS lead already had a quote sent. Repeat customer on a new lead always gets "New Quote."
 - [x] Quote update visible in admin: Lead History logs "Quote updated" with timestamp + service + total; Quote History table shows amber "Updated" badge when a lead has more than one quote.
