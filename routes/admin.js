@@ -1863,7 +1863,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
   var service       = (req.body.service || '').trim();
   var customSvc     = (req.body.customService || '').trim();
-  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
+  if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
   var tier          = req.body.tier          || 'standard';
   var parts         = parseFloat(req.body.parts)         || 0;
   var labor         = parseFloat(req.body.labor)         || 0;
@@ -2279,7 +2279,7 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
 
   var service      = (req.body.service || '').trim();
   var customSvc    = (req.body.customService || '').trim();
-  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
+  if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
   var vehicle      = (req.body.vehicle || '').trim();
   var serviceDate  = (req.body.serviceDate || '').trim() || easternToday();
   var address      = (req.body.serviceAddress || '').trim();
@@ -3243,7 +3243,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
 
   var service      = (req.body.service || '').trim();
   var customSvc    = (req.body.customService || '').trim();
-  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
+  if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
   var tier         = req.body.tier === 'premium' ? 'premium' : 'standard';
   var parts        = parseFloat(req.body.parts)        || 0;
   var labor        = parseFloat(req.body.labor)        || 0;
@@ -4650,7 +4650,7 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
   ].filter(Boolean).join(' ').trim() || null;
   var service    = (req.body.service || '').trim();
   var customSvc  = (req.body.customService || '').trim();
-  if (customSvc) service = service ? service + ', ' + customSvc : customSvc;
+  if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
   service = service || null;
   var tier       = (req.body.tier       || 'standard').trim();
   var price_parts  = req.body.price_parts;

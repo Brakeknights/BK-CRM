@@ -20,7 +20,11 @@ function processSquareCustomer(sc) {
   var sqFirst = (sc.givenName    || '').trim();
   var sqLast  = (sc.familyName   || '').trim();
 
-  if (!sqFirst && !sqLast && !sqEmail && !sqPhone) return 'skipped';
+  // Skip if no contact info at all — without email or phone we can't dedup
+  // reliably across syncs or contact the customer from the CRM. Name-only
+  // entries (e.g. "Zeeshan Khan" with nothing else) get skipped here so
+  // deleting them from the CRM sticks rather than re-appearing on the next run.
+  if (!sqEmail && !sqPhone) return 'skipped';
 
   // Check by Square customer ID first — this is the stable unique key and
   // prevents the cron from creating a new record on every run for customers
