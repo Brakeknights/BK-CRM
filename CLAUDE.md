@@ -167,7 +167,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/brakeknights-crm-continuation-3r8n6m` — CRM improvements batch (merged to master via PR #21 ✅)
+- Last working branch: `claude/laughing-babbage-2dowpy` — Phase 8 CRM batch + quote/notification fixes (merged to master via PR #23 ✅)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
@@ -242,14 +242,20 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] Phase 8 CRM batch merged to master via PR #23: structured vehicle fields on contact forms, NHTSA cascading vehicle dropdowns (new customer/profile/appointment forms), appointment auto-fill from customer profile, Quick Quote receipt mode JS fix + customer section auto-expand, customer sort dropdown (6 options, localStorage), collapsible pricing rows, Square auto-sync cron (60s boot delay, every 6h), customer self-service reschedule + cancel on quote confirm page.
+- [x] Updated-quote logic now per-lead: "Updated Quote" email fires only when THIS lead already had a quote sent. Repeat customer on a new lead always gets "New Quote."
+- [x] Quote update visible in admin: Lead History logs "Quote updated" with timestamp + service + total; Quote History table shows amber "Updated" badge when a lead has more than one quote.
+- [x] Push notifications: dev notifications prefixed `[DEV]` so distinguishable from live on phone. Note: push subscriptions are per-domain — enable bell on brakeknights.com/admin for live notifications.
+- [x] Receipt Sent leads tab: added to Leads list so completed leads can be found/edited/deleted without digging through customer profiles (still hidden from All view + pipeline counts).
+
+### Previously Completed This Session
 - [x] Quick receipt for off-pipeline jobs: customer search typeahead added to Quick Quote receipt mode — search by name/phone/email, select to auto-fill all fields (name, phone, email, vehicle, address). New customer auto-created in CRM on submit.
-- [x] Completed leads hidden from leads tab: status `receipt_sent` (receipt sent) leads no longer appear in the pipeline list or counts. Only accessible via customer profile. Leads tab = active pipeline only.
+- [x] Completed leads hidden from leads tab: status `receipt_sent` (receipt sent) leads no longer appear in the pipeline list or counts. Only accessible via customer profile or new Receipt Sent tab. Leads tab = active pipeline only.
 - [x] Customer profile editing: Edit Info button on customer profile — edit first name, last name, email, and phone inline. Saves with green confirmation banner.
 - [x] All lead cards clickable: every card across the entire dashboard (appointments, follow-ups, dashboard recent activity) now opens the lead on tap/click anywhere on the card.
 - [x] Appointments: Reschedule button — toggles an inline date + time form per card (pre-filled with current values). Save updates the appointment and shows a confirmation banner.
 - [x] Appointments: Cancel Appt button — confirm dialog, clears the appointment, returns lead to Approved status in the pipeline. Shows amber banner on redirect.
 - [x] Screenshot script fix: auto-logs in for any /admin path — screenshots now show actual admin content instead of the login page.
-- [x] All changes on dev (pushed to dev.brakeknights.com). Not yet on master.
 
 ### Previously Completed This Session
 - [x] Appointments calendar: monthly grid with dot indicators, day-tap filtering, prev/next month navigation. Live on master via PR #20.
