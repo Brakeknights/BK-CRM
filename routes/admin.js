@@ -3602,38 +3602,9 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
 // Hostinger's proxy timeout (the cause of the earlier 503), and progress is fully
 // visible. The server keeps no hidden state; dedup makes re-runs safe.
 
-// Upserts one Square customer into the CRM. Returns 'imported', 'linked', or
-// 'skipped'. Matches an existing customer by email then phone and backfills any
-// missing contact fields rather than creating a duplicate.
-function processSquareCustomer(sc) {
-  var sqEmail = (sc.emailAddress || '').trim() || null;
-  var sqPhone = (sc.phoneNumber  || '').trim() || null;
-  var sqFirst = (sc.givenName    || '').trim();
-  var sqLast  = (sc.familyName   || '').trim();
-
-  if (!sqFirst && !sqLast && !sqEmail && !sqPhone) return 'skipped';
-
-  var existing = customers.findCustomer(sqEmail, sqPhone);
-  if (existing) {
-    var sets = [], vals = [];
-    if (!existing.square_customer_id && sc.id)  { sets.push('square_customer_id = ?'); vals.push(sc.id); }
-    if (!existing.email && sqEmail)              { sets.push('email = ?');              vals.push(sqEmail); }
-    if (!existing.phone && sqPhone)              { sets.push('phone = ?');              vals.push(sqPhone); }
-    if (!existing.first_name && sqFirst)         { sets.push('first_name = ?');         vals.push(sqFirst); }
-    if (!existing.last_name  && sqLast)          { sets.push('last_name = ?');          vals.push(sqLast); }
-    if (sets.length) {
-      vals.push(existing.id);
-      var stmt = db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?');
-      stmt.run.apply(stmt, vals);
-    }
-    return 'linked';
-  }
-  customers.createCustomer({
-    first_name: sqFirst, last_name: sqLast, email: sqEmail, phone: sqPhone,
-    square_customer_id: sc.id || null
-  });
-  return 'imported';
-}
+// Upserts one Square customer into the CRM (dedup by email then phone). Shared
+// with the background auto-sync cron via square-sync.js.
+var processSquareCustomer = require('../square-sync').processSquareCustomer;
 
 // Imports a single page of Square customers and returns the next cursor. Uses the
 // search endpoint (JSON body) rather than list (query params): list serializes

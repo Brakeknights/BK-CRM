@@ -4,6 +4,7 @@ const session = require('express-session');
 const nodemailer = require('nodemailer');
 const webpush = require('web-push');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
+const { syncAllSquareCustomers } = require('./square-sync');
 const { toEasternRfc3339 } = require('./datetime');
 const db = require('./db');
 const customers = require('./customers');
@@ -19,17 +20,13 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   );
 }
 
-function sendNewLeadPush(lead) {
+// Sends a browser push to every registered admin device. Generic so both new
+// leads and Square sync alerts can reuse it.
+function sendPush(title, body, url) {
   if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
   var subs = db.prepare('SELECT * FROM push_subscriptions').all();
   if (!subs.length) return;
-  var name = lead.first_name + ' ' + lead.last_name;
-  var body = [lead.service, lead.vehicle].filter(Boolean).join(' — ') || lead.phone;
-  var payload = JSON.stringify({
-    title: 'New Lead: ' + name,
-    body: body,
-    url: '/admin?status=new'
-  });
+  var payload = JSON.stringify({ title: title, body: body, url: url || '/admin' });
   subs.forEach(function(row) {
     var sub = { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } };
     webpush.sendNotification(sub, payload).catch(function(err) {
@@ -40,6 +37,12 @@ function sendNewLeadPush(lead) {
       }
     });
   });
+}
+
+function sendNewLeadPush(lead) {
+  var name = lead.first_name + ' ' + lead.last_name;
+  var body = [lead.service, lead.vehicle].filter(Boolean).join(' — ') || lead.phone;
+  sendPush('New Lead: ' + name, body, '/admin?status=new');
 }
 
 const app = express();
@@ -618,3 +621,25 @@ setInterval(function() {
     }
   });
 }, 6 * 60 * 60 * 1000); // check every 6 hours
+
+// ─── Square auto-sync ─────────────────────────────────────────────────────────
+// Pulls new customers added directly in Square (not through BK Admin) into the
+// CRM automatically, so the owner never has to remember to run the manual import.
+// Dedup makes it safe to run repeatedly. When new contacts are imported, a browser
+// push notification fires. Runs shortly after boot, then every 6 hours.
+function runSquareAutoSync() {
+  syncAllSquareCustomers()
+    .then(function(r) {
+      if (r.imported > 0) {
+        console.log('[square-sync] imported ' + r.imported + ' new customer(s) from Square (linked ' + r.linked + ', skipped ' + r.skipped + ')');
+        sendPush(
+          r.imported + ' new customer' + (r.imported === 1 ? '' : 's') + ' from Square',
+          'Added to your CRM automatically. Tap to view.',
+          '/admin/customers'
+        );
+      }
+    })
+    .catch(function(err) { console.error('[square-sync] error:', err.message); });
+}
+setTimeout(runSquareAutoSync, 60 * 1000);            // first run ~1 min after boot
+setInterval(runSquareAutoSync, 6 * 60 * 60 * 1000);  // then every 6 hours
