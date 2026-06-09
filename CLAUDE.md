@@ -167,7 +167,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #25 ✅
+- Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #26 ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
@@ -242,6 +242,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] PR #26: Fix duplicate services on receipts/quotes (dedup customService before appending); fix Square sync re-importing deleted name-only customers (skip Square customers with no email AND no phone).
 - [x] PR #25: Home address on customer profile (stored, editable, shown as clickable Maps link in header); clickable Maps links on lead cards, scheduling panel, and appointments tab (falls back to customer home address when no service address); custom service field on quote builder, receipt builder, and appointment form; fix duplicate customers from Square sync (Square ID lookup first); customer list sort fixes (active customers first, "Most jobs" by count); delete button on customer list cards.
 - [x] PR #24: Custom service field platform-wide (quote builder, receipt builder, appointments); Quick Quote receipt mode fix (custom service was dropped from email and preview).
 - [x] Phase 8 CRM batch merged to master via PR #23: structured vehicle fields on contact forms, NHTSA cascading vehicle dropdowns (new customer/profile/appointment forms), appointment auto-fill from customer profile, Quick Quote receipt mode JS fix + customer section auto-expand, customer sort dropdown (6 options, localStorage), collapsible pricing rows, Square auto-sync cron (60s boot delay, every 6h), customer self-service reschedule + cancel on quote confirm page.
