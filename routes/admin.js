@@ -601,6 +601,92 @@ function collapsible(key, title, inner, open) {
   return collapseOpen(key, title, open) + inner + COLLAPSE_CLOSE;
 }
 
+// ─── Shared vehicle Year/Make/Model picker ───────────────────────────────────
+// Every admin vehicle input uses this cascading dropdown trio so the data is
+// always structured (no free-typed makes/models) and Phase 8 tier lookup has
+// clean values. Make list mirrors the public contact form; models load on demand
+// from the free NHTSA API as year + make are chosen.
+var ADMIN_VEHICLE_MAKES = ['Acura','Alfa Romeo','Audi','Bentley','BMW','Buick','Cadillac',
+  'Chevrolet','Chrysler','Dodge','Ferrari','Ford','Genesis','GMC','Honda',
+  'Hyundai','Infiniti','Jeep','Kia','Lamborghini','Land Rover','Lexus',
+  'Lincoln','Maserati','Mazda','Mercedes-Benz','Mitsubishi','Nissan',
+  'Porsche','Ram','Rolls-Royce','Subaru','Tesla','Toyota','Volkswagen','Volvo'];
+
+function adminYearOptions(sel) {
+  var cur = new Date().getFullYear() + 1;
+  var o = '<option value="">Year</option>';
+  for (var y = cur; y >= 1985; y--) {
+    o += '<option value="' + y + '"' + (String(sel) === String(y) ? ' selected' : '') + '>' + y + '</option>';
+  }
+  return o;
+}
+function adminMakeOptions(sel) {
+  return '<option value="">Make</option>' + ADMIN_VEHICLE_MAKES.map(function(m) {
+    return '<option value="' + esc(m) + '"' + (sel === m ? ' selected' : '') + '>' + esc(m) + '</option>';
+  }).join('');
+}
+
+// Renders a Year / Make / Model cascading dropdown trio. `prefix` namespaces the
+// element ids so multiple pickers coexist on one page. `names` sets the form field
+// names (defaults veh_year/veh_make/veh_model). `vals` optionally pre-selects
+// {year,make,model} for edit or customer auto-fill; a preset model stays selectable
+// until the NHTSA list loads.
+function vehicleCascadeHtml(prefix, names, vals) {
+  names = names || {}; vals = vals || {};
+  var nYear = names.year || 'veh_year', nMake = names.make || 'veh_make', nModel = names.model || 'veh_model';
+  var modelOpt = '<option value="">Model</option>';
+  if (vals.model) modelOpt += '<option value="' + esc(vals.model) + '" selected>' + esc(vals.model) + '</option>';
+  return '<div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;" data-veh-cascade="' + esc(prefix) + '">'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label>'
+    + '<select name="' + nYear + '" id="' + prefix + '-year">' + adminYearOptions(vals.year) + '</select></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label>'
+    + '<select name="' + nMake + '" id="' + prefix + '-make">' + adminMakeOptions(vals.make) + '</select></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label>'
+    + '<select name="' + nModel + '" id="' + prefix + '-model"' + (vals.model ? ' data-preset="' + esc(vals.model) + '"' : '') + '>' + modelOpt + '</select></div>'
+    + '</div>';
+}
+
+// One-time client script that wires every cascade on the page. Include once per
+// page that renders a vehicleCascadeHtml block.
+var VEHICLE_CASCADE_JS = '<script>'
+  + '(function(){'
+  + 'function loadModels(prefix){'
+  +   'var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
+  +   'if(!y||!mk||!mo)return;'
+  +   'var year=y.value,make=mk.value;'
+  +   'if(!year||!make){mo.innerHTML="<option value=\\"\\">Model</option>";return;}'
+  +   'var preset=mo.getAttribute("data-preset")||"";'
+  +   'mo.innerHTML="<option value=\\"\\">Loading…</option>";'
+  +   'var url="https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/"+encodeURIComponent(make)+"/modelyear/"+year+"?format=json";'
+  +   'fetch(url).then(function(r){return r.json();}).then(function(d){'
+  +     'var models=(d.Results||[]).map(function(m){return m.Model_Name;}).filter(Boolean).sort();'
+  +     'var html="<option value=\\"\\">Model</option>";'
+  +     'models.forEach(function(m){html+="<option value=\\""+m+"\\""+(m===preset?" selected":"")+">"+m+"</option>";});'
+  +     'if(preset&&models.indexOf(preset)<0)html+="<option value=\\""+preset+"\\" selected>"+preset+"</option>";'
+  +     'mo.innerHTML=html;'
+  +   '}).catch(function(){var html="<option value=\\"\\">Model</option>";if(preset)html+="<option value=\\""+preset+"\\" selected>"+preset+"</option>";mo.innerHTML=html;});'
+  + '}'
+  + 'window.bkVehInit=function(){'
+  +   'document.querySelectorAll("[data-veh-cascade]").forEach(function(box){'
+  +     'var prefix=box.getAttribute("data-veh-cascade");'
+  +     'var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make");'
+  +     'if(!y||!mk||y.getAttribute("data-wired"))return;'
+  +     'y.setAttribute("data-wired","1");'
+  +     'y.addEventListener("change",function(){loadModels(prefix);});'
+  +     'mk.addEventListener("change",function(){loadModels(prefix);});'
+  +     'if(y.value&&mk.value)loadModels(prefix);'
+  +   '});'
+  + '};'
+  + 'window.bkVehFill=function(prefix,v){'
+  +   'v=v||{};var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
+  +   'if(y)y.value=v.year||"";if(mk)mk.value=v.make||"";'
+  +   'if(mo){if(v.model){mo.setAttribute("data-preset",v.model);}else{mo.removeAttribute("data-preset");mo.innerHTML="<option value=\\"\\">Model</option>";}}'
+  +   'if(y&&mk&&y.value&&mk.value)loadModels(prefix);'
+  + '};'
+  + 'if(document.readyState!=="loading")window.bkVehInit();else document.addEventListener("DOMContentLoaded",window.bkVehInit);'
+  + '})();'
+  + '</script>';
+
 function page(title, body, req) {
   var authed = req.session && req.session.adminAuthed;
   var head = '<!DOCTYPE html><html lang="en"><head>'
@@ -2745,7 +2831,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'dd.innerHTML=matches.map(function(c){'
     +     'return \'<div data-cid="\'+c.id+\'" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;font-size:0.88rem;">\''
     +       '+\'<div style="font-weight:600;color:#0a1f3d;">\'+qqEsc(c.label)+\'</div>\''
-    +       '+(c.em?\'<div style="color:#888;font-size:0.82rem;">\'+qqEsc(c.em)+\'</div>\':"")+'
+    +       '+(c.em?\'<div style="color:#888;font-size:0.82rem;">\'+qqEsc(c.em)+\'</div>\':"")'
     +       '+(c.veh?\'<div style="color:#6b7a8d;font-size:0.82rem;">\'+qqEsc(c.veh)+\'</div>\':"")+'
     +       '\'</div>\';'
     +   '}).join("");'
@@ -2794,6 +2880,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qSummaryLabel").textContent=rec?"Customer Receipt":"Customer Quote";'
     +   'document.getElementById("qTotalLabel").textContent=rec?"Total Paid":"Total";'
     +   'document.getElementById("qemHint").textContent=rec?"(to send receipt)":"(to send)";'
+    +   'if(rec){var cc=document.querySelector(\'.collapse[data-ckey="qq_customer"]\');if(cc)cc.classList.remove("collapsed");}'
     +   'qSaveState();'
     + '}'
 
@@ -3339,9 +3426,17 @@ router.get('/customers', requireAuth, function(req, res) {
 
   var total = rows.length;
 
-  var searchBar = '<div style="margin-bottom:14px;display:flex;gap:8px;">'
+  var searchBar = '<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;">'
     + '<input type="text" id="custSearchInput" placeholder="Search by name, phone, or email..." '
-    + 'style="flex:1;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;" autocomplete="off">'
+    + 'style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;" autocomplete="off">'
+    + '<select id="custSortSelect" style="flex:0 0 auto;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;color:#0a1f3d;">'
+    + '<option value="activity">Recent activity</option>'
+    + '<option value="visit">Recent visits</option>'
+    + '<option value="fn">First name (A–Z)</option>'
+    + '<option value="ln">Last name (A–Z)</option>'
+    + '<option value="newest">Newest added</option>'
+    + '<option value="oldest">Oldest added</option>'
+    + '</select>'
     + '</div>';
 
   var emptyMsg = 'No customers yet. They are created automatically as leads come in.';
@@ -3353,7 +3448,13 @@ router.get('/customers', requireAuth, function(req, res) {
           var c = item.c, s = item.s;
           var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
           var searchText = (name + ' ' + (c.phone || '') + ' ' + (c.email || '')).toLowerCase();
-          return '<div class="card cust-card" data-search="' + esc(searchText) + '" onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
+          var dataAttrs = ' data-search="' + esc(searchText) + '"'
+            + ' data-fn="' + esc((c.first_name || '').toLowerCase()) + '"'
+            + ' data-ln="' + esc((c.last_name || '').toLowerCase()) + '"'
+            + ' data-created="' + esc(c.created_at || '') + '"'
+            + ' data-activity="' + esc(s.lastLeadDate || '') + '"'
+            + ' data-visit="' + esc(s.lastJobDate || '') + '"';
+          return '<div class="card cust-card"' + dataAttrs + ' onclick="if(!event.target.closest(\'a,button\')){window.location=\'/admin/customer/' + c.id + '\';}" style="cursor:pointer;border-left:3px solid var(--cta);">'
             + '<div class="row-sb">'
             + '<div class="lead-name">' + esc(name) + '</div>'
             + '<span style="font-size:0.78rem;color:#888;white-space:nowrap;">' + s.completedCount + ' job' + (s.completedCount === 1 ? '' : 's') + '</span>'
@@ -3399,6 +3500,30 @@ router.get('/customers', requireAuth, function(req, res) {
     + 'if(count)count.textContent=q?(shown+" of ' + total + '"):"' + total + ' total";'
     + 'if(empty)empty.style.display=(shown===0&&q)?"block":"none";'
     + '});'
+    // Client-side sort: reorder the cards in place without a reload.
+    + 'var sortSel=document.getElementById("custSortSelect");'
+    + 'var listEl=document.getElementById("custList");'
+    + 'function applySort(){'
+    + 'if(!sortSel||!listEl)return;'
+    + 'var mode=sortSel.value;'
+    + 'var cards=Array.prototype.slice.call(document.querySelectorAll(".cust-card"));'
+    + 'function g(el,k){return el.getAttribute(k)||"";}'
+    + 'cards.sort(function(a,b){'
+    + 'if(mode==="fn")return g(a,"data-fn").localeCompare(g(b,"data-fn"))||g(a,"data-ln").localeCompare(g(b,"data-ln"));'
+    + 'if(mode==="ln")return g(a,"data-ln").localeCompare(g(b,"data-ln"))||g(a,"data-fn").localeCompare(g(b,"data-fn"));'
+    + 'if(mode==="newest")return g(b,"data-created").localeCompare(g(a,"data-created"));'
+    + 'if(mode==="oldest")return g(a,"data-created").localeCompare(g(b,"data-created"));'
+    + 'if(mode==="visit")return g(b,"data-visit").localeCompare(g(a,"data-visit"));'
+    + 'return g(b,"data-activity").localeCompare(g(a,"data-activity"));'
+    + '});'
+    + 'cards.forEach(function(el){listEl.appendChild(el);});'
+    + 'try{localStorage.setItem("bk_cust_sort",mode);}catch(_){}'
+    + '}'
+    + 'if(sortSel){'
+    + 'try{var saved=localStorage.getItem("bk_cust_sort");if(saved)sortSel.value=saved;}catch(_){}'
+    + 'sortSel.addEventListener("change",applySort);'
+    + 'applySort();'
+    + '}'
     + '})();</script>',
     req
   ));
@@ -3424,12 +3549,8 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
     + '<div class="card">'
-    + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional — year + make required if any field filled)</span></div>'
-    + '<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label><input type="text" name="veh_year" maxlength="4" placeholder="2018"></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label><input type="text" name="veh_make" placeholder="Honda"></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label><input type="text" name="veh_model" placeholder="Accord"></div>'
-    + '</div>'
+    + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
+    + vehicleCascadeHtml('custnew-veh')
     + '<div class="form-group" style="margin-bottom:0;"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
     + '</div>'
     + '<div class="card">'
@@ -3438,7 +3559,8 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group" style="margin-bottom:0;"><label>Internal Notes</label><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times..."></textarea></div>'
     + '</div>'
     + '<button type="submit" class="btn btn-navy" style="margin-top:4px;">Create Customer</button>'
-    + '</form>';
+    + '</form>'
+    + VEHICLE_CASCADE_JS;
 
   res.send(page('New Customer', body, req));
 });
@@ -3462,12 +3584,12 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
   var vehMake  = (req.body.veh_make  || '').trim() || null;
   var vehModel = (req.body.veh_model || '').trim() || null;
   var vehVin   = (req.body.veh_vin   || '').trim() || null;
-  if (vehYear || vehMake || vehModel || vehVin) {
-    if (vehYear && vehMake) {
-      db.prepare(
-        'INSERT INTO customer_vehicles (customer_id, year, make, model, vin) VALUES (?,?,?,?,?)'
-      ).run(newId, vehYear, vehMake, vehModel || null, vehVin || null);
-    }
+  // Save whatever vehicle detail was entered. Previously this silently dropped the
+  // vehicle unless BOTH year and make were filled, which lost owner-entered data.
+  if (vehMake || vehModel || vehVin) {
+    db.prepare(
+      'INSERT INTO customer_vehicles (customer_id, year, make, model, vin) VALUES (?,?,?,?,?)'
+    ).run(newId, vehYear, vehMake, vehModel || null, vehVin || null);
   }
 
   res.redirect('/admin/customer/' + newId + '?msg=created');
@@ -3480,38 +3602,9 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
 // Hostinger's proxy timeout (the cause of the earlier 503), and progress is fully
 // visible. The server keeps no hidden state; dedup makes re-runs safe.
 
-// Upserts one Square customer into the CRM. Returns 'imported', 'linked', or
-// 'skipped'. Matches an existing customer by email then phone and backfills any
-// missing contact fields rather than creating a duplicate.
-function processSquareCustomer(sc) {
-  var sqEmail = (sc.emailAddress || '').trim() || null;
-  var sqPhone = (sc.phoneNumber  || '').trim() || null;
-  var sqFirst = (sc.givenName    || '').trim();
-  var sqLast  = (sc.familyName   || '').trim();
-
-  if (!sqFirst && !sqLast && !sqEmail && !sqPhone) return 'skipped';
-
-  var existing = customers.findCustomer(sqEmail, sqPhone);
-  if (existing) {
-    var sets = [], vals = [];
-    if (!existing.square_customer_id && sc.id)  { sets.push('square_customer_id = ?'); vals.push(sc.id); }
-    if (!existing.email && sqEmail)              { sets.push('email = ?');              vals.push(sqEmail); }
-    if (!existing.phone && sqPhone)              { sets.push('phone = ?');              vals.push(sqPhone); }
-    if (!existing.first_name && sqFirst)         { sets.push('first_name = ?');         vals.push(sqFirst); }
-    if (!existing.last_name  && sqLast)          { sets.push('last_name = ?');          vals.push(sqLast); }
-    if (sets.length) {
-      vals.push(existing.id);
-      var stmt = db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?');
-      stmt.run.apply(stmt, vals);
-    }
-    return 'linked';
-  }
-  customers.createCustomer({
-    first_name: sqFirst, last_name: sqLast, email: sqEmail, phone: sqPhone,
-    square_customer_id: sc.id || null
-  });
-  return 'imported';
-}
+// Upserts one Square customer into the CRM (dedup by email then phone). Shared
+// with the background auto-sync cron via square-sync.js.
+var processSquareCustomer = require('../square-sync').processSquareCustomer;
 
 // Imports a single page of Square customers and returns the next cursor. Uses the
 // search endpoint (JSON body) rather than list (query params): list serializes
@@ -3618,20 +3711,6 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
   if (req.query.msg === 'contact_saved') alert = '<div class="alert alert-success">Contact info updated.</div>';
 
-  // Year/make option strings for vehicle dropdown
-  var profileCurYear = new Date().getFullYear();
-  var yearOpts = '<option value="">Year</option>';
-  for (var pyr = profileCurYear + 1; pyr >= 1985; pyr--) {
-    yearOpts += '<option value="' + pyr + '">' + pyr + '</option>';
-  }
-  var VEHICLE_MAKES = ['Acura','Alfa Romeo','Audi','Bentley','BMW','Buick','Cadillac',
-    'Chevrolet','Chrysler','Dodge','Ferrari','Ford','Genesis','GMC','Honda',
-    'Hyundai','Infiniti','Jeep','Kia','Lamborghini','Land Rover','Lexus',
-    'Lincoln','Maserati','Mazda','Mercedes-Benz','Mitsubishi','Nissan',
-    'Porsche','Ram','Rolls-Royce','Subaru','Tesla','Toyota','Volkswagen','Volvo'];
-  var makeOpts = '<option value="">Make</option>'
-    + VEHICLE_MAKES.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
-
   // Header — always visible: name, contact display, action buttons
   var header = '<div class="card">'
     + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
@@ -3722,11 +3801,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + vehList
     + '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
     + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add a vehicle</div>'
-    + '<div style="display:grid;grid-template-columns:90px 1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Year</label><select name="veh_year">' + yearOpts + '</select></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label><select name="veh_make">' + makeOpts + '</select></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label><input type="text" name="veh_model" placeholder="Accord"></div>'
-    + '</div>'
+    + vehicleCascadeHtml('custprof-veh')
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
     + '<div class="form-group" style="margin-bottom:0;"><label>Trim</label><input type="text" name="veh_trim" placeholder="EX-L (optional)"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>VIN</label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
@@ -3884,7 +3959,8 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + jobsCard
     + fupCard
     + statsCard
-    + profileScript;
+    + profileScript
+    + VEHICLE_CASCADE_JS;
 
   res.send(page(name, body, req));
 });
@@ -3918,7 +3994,7 @@ router.post('/customer/:id/save', requireAuth, express.urlencoded({ extended: fa
   var vModel = (req.body.veh_model || '').trim() || null;
   var vTrim  = (req.body.veh_trim  || '').trim() || null;
   var vVin   = (req.body.veh_vin   || '').trim() || null;
-  if (vYear || vMake || vModel) {
+  if (vMake || vModel || vVin) {
     db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, trim, vin) VALUES (?,?,?,?,?,?)')
       .run(c.id, vYear, vMake, vModel, vTrim, vVin);
   }
@@ -3995,6 +4071,31 @@ router.post('/customer/:id/vehicle/add', requireAuth, express.urlencoded({ exten
 router.post('/customer/:id/vehicle/:vid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   db.prepare('DELETE FROM customer_vehicles WHERE id = ? AND customer_id = ?').run(req.params.vid, req.params.id);
   res.redirect('/admin/customer/' + req.params.id + '?msg=veh_removed#vehicles');
+});
+
+// Auto-fill source for scheduling forms: returns the customer's most recent saved
+// vehicle and saved address so the appointment form can populate them on select.
+// Falls back to parsing the latest lead's free-text vehicle string when no
+// structured customer_vehicles row exists.
+router.get('/customer/:id/autofill', requireAuth, function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.json({ ok: false });
+  var veh = db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
+  if (!veh) {
+    var lastLead = db.prepare("SELECT vehicle FROM leads WHERE customer_id = ? AND vehicle IS NOT NULL AND vehicle != '' ORDER BY id DESC LIMIT 1").get(c.id);
+    if (lastLead && lastLead.vehicle) {
+      var parts = lastLead.vehicle.trim().split(/\s+/);
+      var year = /^(19|20)\d{2}$/.test(parts[0]) ? parts.shift() : '';
+      var make = parts.shift() || '';
+      veh = { year: year, make: make, model: parts.join(' ') };
+    }
+  }
+  var addr = db.prepare('SELECT address FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
+  res.json({
+    ok: true,
+    vehicle: veh ? { year: veh.year || '', make: veh.make || '', model: veh.model || '' } : null,
+    address: addr ? addr.address : ''
+  });
 });
 
 router.post('/customer/:id/address/add', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
@@ -4300,8 +4401,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Vehicle</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle (year, make, model)</label>'
-    + '<input type="text" name="vehicle" placeholder="e.g. 2018 Honda Accord"></div>'
+    + vehicleCascadeHtml('appt-veh')
     + '</div>'
 
     + '<div class="card">'
@@ -4398,6 +4498,11 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'chip.style.display="flex";'
     +     'chipLbl.textContent=label;'
     +     'newFields.style.display="none";'
+    +     'fetch("/admin/customer/"+id+"/autofill").then(function(r){return r.json();}).then(function(d){'
+    +       'if(!d||!d.ok)return;'
+    +       'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
+    +       'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
+    +     '}).catch(function(){});'
     +   '}'
     +   'function clearCust(){'
     +     'hidId.value="";'
@@ -4405,9 +4510,16 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'chip.style.display="none";'
     +     'chipLbl.textContent="";'
     +     'newFields.style.display="block";'
+    +     'if(window.bkVehFill)window.bkVehFill("appt-veh",{});'
+    +     'var a=document.getElementById("apptAddr");if(a)a.value="";'
     +     'inp.focus();'
     +   '}'
     +   'clearBtn.addEventListener("click",clearCust);'
+    +   'if(hidId.value){fetch("/admin/customer/"+hidId.value+"/autofill").then(function(r){return r.json();}).then(function(d){'
+    +     'if(!d||!d.ok)return;'
+    +     'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
+    +     'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
+    +   '}).catch(function(){});}'
     +   'inp.addEventListener("input",function(){'
     +     'var q=inp.value.trim().toLowerCase();'
     +     'if(!q){drop.style.display="none";return;}'
@@ -4462,6 +4574,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '}'
     + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
     + '</script>'
+    + VEHICLE_CASCADE_JS
     + mapsScript;
 
   res.send(page('New Appointment', body, req));
@@ -4469,7 +4582,11 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
 router.post('/appointments/new', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var customerId = (req.body.customer_id || '').trim();
-  var vehicle    = (req.body.vehicle    || '').trim() || null;
+  var vehicle    = [
+    (req.body.veh_year  || '').trim(),
+    (req.body.veh_make  || '').trim(),
+    (req.body.veh_model || '').trim()
+  ].filter(Boolean).join(' ').trim() || null;
   var service    = (req.body.service    || '').trim() || null;
   var tier       = (req.body.tier       || 'standard').trim();
   var price_parts  = req.body.price_parts;
@@ -4496,6 +4613,21 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
   } else {
     cust = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
     if (!cust) return res.redirect('/admin/appointments/new?err=name');
+  }
+
+  // Save the structured vehicle to the customer's profile if it's new, so it's
+  // reusable on future appointments and feeds Phase 8 tier lookup.
+  var vYear  = (req.body.veh_year  || '').trim() || null;
+  var vMake  = (req.body.veh_make  || '').trim() || null;
+  var vModel = (req.body.veh_model || '').trim() || null;
+  if (vMake || vModel) {
+    var dupe = db.prepare(
+      'SELECT id FROM customer_vehicles WHERE customer_id = ? AND IFNULL(year,\'\')=? AND IFNULL(make,\'\')=? AND IFNULL(model,\'\')=?'
+    ).get(cust.id, vYear || '', vMake || '', vModel || '');
+    if (!dupe) {
+      db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model) VALUES (?,?,?,?)')
+        .run(cust.id, vYear, vMake, vModel);
+    }
   }
 
   var leadResult = db.prepare(
@@ -4951,15 +5083,28 @@ router.get('/settings/pricing', requireAuth, function(req, res) {
   }
 
   // ── Service Prices tab ─────────────────────────────────────────────────────
+  // Chevron SVG for collapsible service headers.
+  var p8Chev = '<svg class="p8-svc-chev" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" style="width:18px;height:18px;flex-shrink:0;transition:transform .15s;"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>';
+
+  // Wraps a service in a collapsible card: header (name + summary + chevron) always
+  // visible, body (editable inputs) hidden until the header is tapped.
+  function svcShell(idx, name, summaryHtml, bodyHtml) {
+    return '<div class="card p8-svc-card" data-svc-idx="' + idx + '" style="margin-bottom:8px;padding:0;overflow:hidden;">'
+      + '<button type="button" class="p8-svc-head" onclick="p8ToggleSvc(this)" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;">'
+      + '<span style="font-weight:600;color:#0a1f3d;font-size:0.95rem;">' + esc(name) + '</span>'
+      + '<span style="display:flex;align-items:center;gap:10px;">'
+      + '<span class="p8-svc-summary" id="p8-summary-' + idx + '" style="font-size:0.78rem;color:#94a3b8;white-space:nowrap;">' + summaryHtml + '</span>'
+      + p8Chev
+      + '</span></button>'
+      + '<div class="p8-svc-body" style="display:none;padding:0 16px 16px;">' + bodyHtml + '</div>'
+      + '</div>';
+  }
+
   var svcCards = services.map(function(svc, idx) {
     if (svc.custom_quote) {
-      return '<div class="card" style="margin-bottom:10px;">'
-        + '<div style="display:flex;align-items:center;justify-content:space-between;">'
-        + '<div style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</div>'
-        + '<span style="background:rgba(37,99,168,0.12);color:#1a4a7a;font-size:0.72rem;font-weight:700;padding:2px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;">Custom Quote</span>'
-        + '</div>'
-        + '<div style="color:#94a3b8;font-size:0.82rem;margin-top:6px;">No preset pricing. Owner enters price manually on each job.</div>'
-        + '</div>';
+      return svcShell(idx, svc.service_name,
+        '<span style="background:rgba(37,99,168,0.12);color:#1a4a7a;font-weight:700;padding:2px 9px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em;font-size:0.7rem;">Custom Quote</span>',
+        '<div style="color:#94a3b8;font-size:0.82rem;">No preset pricing. Owner enters price manually on each job.</div>');
     }
 
     function priceCol(tierKey, isStd) {
@@ -4987,19 +5132,25 @@ router.get('/settings/pricing', requireAuth, function(req, res) {
         + '</div>';
     }
 
-    return '<div class="card" style="margin-bottom:10px;" data-svc-idx="' + idx + '">'
-      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">'
-      + '<div style="font-weight:600;color:#0a1f3d;">' + esc(svc.service_name) + '</div>'
-      + '<div style="display:flex;align-items:center;gap:8px;">'
+    var stdTotal = +svc.std_parts + +svc.std_labor + +svc.std_supplies + (+svc.std_parts + +svc.std_supplies) * PRICING.taxRate;
+    var premTotal = +svc.prem_parts + +svc.prem_labor + +svc.prem_supplies + (+svc.prem_parts + +svc.prem_supplies) * PRICING.taxRate;
+    var summary = svc.has_premium
+      ? 'Std $' + money(stdTotal) + ' &middot; Prem $' + money(premTotal)
+      : '$' + money(stdTotal);
+
+    var bodyHtml = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:12px;">'
+      + '<span style="font-size:0.75rem;color:#94a3b8;">Duration</span>'
       + '<input type="number" min="0" step="5" class="p8-price-input" data-idx="' + idx + '" data-tier="meta" data-field="minutes" value="' + (+svc.minutes || 60) + '" style="width:54px;padding:4px 6px;border:1px solid var(--gray-200);border-radius:5px;font-size:0.82rem;text-align:right;" title="Duration (minutes)">'
       + '<span style="font-size:0.78rem;color:#94a3b8;">min</span>'
-      + '</div></div>'
+      + '</div>'
       + '<div style="display:flex;gap:16px;flex-wrap:wrap;">'
       + priceCol('std', true)
       + (svc.has_premium
           ? priceCol('prem', false)
           : '<div style="flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;"><span style="color:#94a3b8;font-size:0.82rem;font-style:italic;">Single tier only</span></div>')
-      + '</div></div>';
+      + '</div>';
+
+    return svcShell(idx, svc.service_name, summary, bodyHtml);
   }).join('');
 
   var pricesTab = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
@@ -5125,7 +5276,23 @@ router.get('/settings/pricing', requireAuth, function(req, res) {
     + '  }'
     + '  recalcTier(\'std\',\'p8-std-total-\'+idx);'
     + '  recalcTier(\'prem\',\'p8-prem-total-\'+idx);'
+    + '  var sumEl=document.getElementById(\'p8-summary-\'+idx);'
+    + '  if(sumEl){'
+    + '    function tot(tk){var p=gv(tk,\'parts\'),l=gv(tk,\'labor\'),s=gv(tk,\'supplies\');return p+l+s+(p+s)*P8_TAX;}'
+    + '    function fmt(n){return n.toLocaleString(\'en-US\',{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + '    var hasPrem=!!document.querySelector(\'.p8-price-input[data-idx="\'+idx+\'"][data-tier="prem"]\');'
+    + '    sumEl.innerHTML=hasPrem?(\'Std $\'+fmt(tot(\'std\'))+\' &middot; Prem $\'+fmt(tot(\'prem\'))):(\'$\'+fmt(tot(\'std\')));'
+    + '  }'
     + '});'
+
+    + 'function p8ToggleSvc(btn){'
+    + '  var card=btn.closest(\'.p8-svc-card\');if(!card)return;'
+    + '  var body=card.querySelector(\'.p8-svc-body\');'
+    + '  var chev=card.querySelector(\'.p8-svc-chev\');'
+    + '  var open=body.style.display!=="none";'
+    + '  body.style.display=open?"none":"block";'
+    + '  if(chev)chev.style.transform=open?"":"rotate(180deg)";'
+    + '}'
 
     + 'function saveAllPrices(){'
     + '  var rows=P8_SVCS.map(function(name,idx){'
