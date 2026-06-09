@@ -1568,7 +1568,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
               var sentDate = pq.sent_at ? new Date(pq.sent_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit', timeZone: 'America/New_York' }) : '—';
               var tierLabel = pq.tier === 'premium' ? 'Premium' : 'Standard';
               return '<tr style="border-bottom:1px solid #f0f0f0;' + (isLatest ? 'font-weight:600;' : 'color:#666;') + '">'
-                + '<td style="padding:7px 8px 7px 0;white-space:nowrap;">' + sentDate + (isLatest ? ' <span style="font-size:0.72rem;background:#e3f0ff;color:#1a6fc4;padding:1px 6px;border-radius:10px;font-weight:700;">Latest</span>' : '') + '</td>'
+                + '<td style="padding:7px 8px 7px 0;white-space:nowrap;">' + sentDate
+                  + (isLatest ? ' <span style="font-size:0.72rem;background:#e3f0ff;color:#1a6fc4;padding:1px 6px;border-radius:10px;font-weight:700;">Latest</span>' : '')
+                  + (isLatest && allQuotes.length > 1 ? ' <span style="font-size:0.72rem;background:#fdeccb;color:#9a6a16;padding:1px 6px;border-radius:10px;font-weight:700;">Updated</span>' : '')
+                  + '</td>'
                 + '<td style="padding:7px 8px;">' + esc(pq.service || '—') + '</td>'
                 + '<td style="padding:7px 8px;">' + tierLabel + '</td>'
                 + '<td style="padding:7px 0 7px 8px;text-align:right;">$' + money(pq.total) + '</td>'
@@ -1867,7 +1870,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, acceptToken, lead.email ? 'sent' : 'saved');
 
   db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
-  logHistory(lead.id, 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
+  logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
 
   if (!lead.email) return res.redirect('/admin?msg=saved');
 
