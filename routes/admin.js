@@ -4063,6 +4063,31 @@ router.post('/customer/:id/vehicle/:vid/delete', requireAuth, express.urlencoded
   res.redirect('/admin/customer/' + req.params.id + '?msg=veh_removed#vehicles');
 });
 
+// Auto-fill source for scheduling forms: returns the customer's most recent saved
+// vehicle and saved address so the appointment form can populate them on select.
+// Falls back to parsing the latest lead's free-text vehicle string when no
+// structured customer_vehicles row exists.
+router.get('/customer/:id/autofill', requireAuth, function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.json({ ok: false });
+  var veh = db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
+  if (!veh) {
+    var lastLead = db.prepare("SELECT vehicle FROM leads WHERE customer_id = ? AND vehicle IS NOT NULL AND vehicle != '' ORDER BY id DESC LIMIT 1").get(c.id);
+    if (lastLead && lastLead.vehicle) {
+      var parts = lastLead.vehicle.trim().split(/\s+/);
+      var year = /^(19|20)\d{2}$/.test(parts[0]) ? parts.shift() : '';
+      var make = parts.shift() || '';
+      veh = { year: year, make: make, model: parts.join(' ') };
+    }
+  }
+  var addr = db.prepare('SELECT address FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
+  res.json({
+    ok: true,
+    vehicle: veh ? { year: veh.year || '', make: veh.make || '', model: veh.model || '' } : null,
+    address: addr ? addr.address : ''
+  });
+});
+
 router.post('/customer/:id/address/add', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
   if (!c) return res.redirect('/admin/customers');
@@ -4366,8 +4391,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Vehicle</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle (year, make, model)</label>'
-    + '<input type="text" name="vehicle" placeholder="e.g. 2018 Honda Accord"></div>'
+    + vehicleCascadeHtml('appt-veh')
     + '</div>'
 
     + '<div class="card">'
@@ -4464,6 +4488,11 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'chip.style.display="flex";'
     +     'chipLbl.textContent=label;'
     +     'newFields.style.display="none";'
+    +     'fetch("/admin/customer/"+id+"/autofill").then(function(r){return r.json();}).then(function(d){'
+    +       'if(!d||!d.ok)return;'
+    +       'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
+    +       'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
+    +     '}).catch(function(){});'
     +   '}'
     +   'function clearCust(){'
     +     'hidId.value="";'
@@ -4471,9 +4500,16 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'chip.style.display="none";'
     +     'chipLbl.textContent="";'
     +     'newFields.style.display="block";'
+    +     'if(window.bkVehFill)window.bkVehFill("appt-veh",{});'
+    +     'var a=document.getElementById("apptAddr");if(a)a.value="";'
     +     'inp.focus();'
     +   '}'
     +   'clearBtn.addEventListener("click",clearCust);'
+    +   'if(hidId.value){fetch("/admin/customer/"+hidId.value+"/autofill").then(function(r){return r.json();}).then(function(d){'
+    +     'if(!d||!d.ok)return;'
+    +     'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
+    +     'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
+    +   '}).catch(function(){});}'
     +   'inp.addEventListener("input",function(){'
     +     'var q=inp.value.trim().toLowerCase();'
     +     'if(!q){drop.style.display="none";return;}'
@@ -4528,6 +4564,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '}'
     + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
     + '</script>'
+    + VEHICLE_CASCADE_JS
     + mapsScript;
 
   res.send(page('New Appointment', body, req));
@@ -4535,7 +4572,11 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
 router.post('/appointments/new', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var customerId = (req.body.customer_id || '').trim();
-  var vehicle    = (req.body.vehicle    || '').trim() || null;
+  var vehicle    = [
+    (req.body.veh_year  || '').trim(),
+    (req.body.veh_make  || '').trim(),
+    (req.body.veh_model || '').trim()
+  ].filter(Boolean).join(' ').trim() || null;
   var service    = (req.body.service    || '').trim() || null;
   var tier       = (req.body.tier       || 'standard').trim();
   var price_parts  = req.body.price_parts;
@@ -4562,6 +4603,21 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
   } else {
     cust = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
     if (!cust) return res.redirect('/admin/appointments/new?err=name');
+  }
+
+  // Save the structured vehicle to the customer's profile if it's new, so it's
+  // reusable on future appointments and feeds Phase 8 tier lookup.
+  var vYear  = (req.body.veh_year  || '').trim() || null;
+  var vMake  = (req.body.veh_make  || '').trim() || null;
+  var vModel = (req.body.veh_model || '').trim() || null;
+  if (vMake || vModel) {
+    var dupe = db.prepare(
+      'SELECT id FROM customer_vehicles WHERE customer_id = ? AND IFNULL(year,\'\')=? AND IFNULL(make,\'\')=? AND IFNULL(model,\'\')=?'
+    ).get(cust.id, vYear || '', vMake || '', vModel || '');
+    if (!dupe) {
+      db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model) VALUES (?,?,?,?)')
+        .run(cust.id, vYear, vMake, vModel);
+    }
   }
 
   var leadResult = db.prepare(
