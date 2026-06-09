@@ -430,7 +430,7 @@ router.get('/:id/:token', function(req, res) {
     +       'if(!isSun&&!isPast)cls+=" avail";'
     +       'if(isSel)cls+=" sel";'
     +       'if(isToday&&!isPast)cls+=" today";'
-    +       'var click=(!isSun&&!isPast)?\' onclick="bkPickDate(\\\'"+iso+"\\\')"\':\'\';'
+    +       'var click=(!isSun&&!isPast)?" onclick=\\"bkPickDate(\'"+iso+"\')\\"":"";'
     +       'html+=\'<div class="\'+cls+\'"\'+click+\'>\'+d+\'</div>\';'
     +     '}'
     +     'html+=\'</div>\';'
