@@ -153,7 +153,9 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 - **Build order:** 1) customers table + migration, 2) auto-link on lead create, 3) customer list page, 4) customer profile page, 5) admin dashboard home (recent activity, pipeline summary).
 - **Not in Phase 7:** SMS, Square Appointments auto-booking, pricing matrix, white-label.
 
-**Phase 8:** Automated quotes — instant quote emails based on vehicle type and service selected (requires pricing table to be finalized first).
+**Phase 8E/8F (complete ✅):** Browser push notifications — bell icon in admin appbar, service worker (`/sw.js`), VAPID key configuration, `push_subscriptions` table, `sendNewLeadPush()` fires on every new contact form submission. VAPID keys set in Hostinger for dev + master. Confirmed working in production.
+
+**Phase 8 (planned):** Automated quotes — instant quote emails based on vehicle type and service selected. Requires: (1) pricing table reviewed and finalized, (2) contact form vehicle field structured as year/make/model instead of free text, (3) `vehicle_tier_mappings` and `pricing_overrides` tables already built as foundation in `db.js`.
 
 **Phase 9:** White-label packaging — multi-tenant architecture, per-brand configuration, reseller infrastructure for other service businesses.
 
@@ -259,7 +261,7 @@ Update this section at the end of each session to stay caught up next time.
 - [x] Square import live on brakeknights.com: all production Square customers imported into CRM.
 
 ### Previously Completed This Session
-- [x] Phase 8E/8F: Browser push notifications for new leads (bell icon toggle, service worker, VAPID keys); new-lead sidebar badge showing unactioned lead count. Merged to master via PR #18.
+- [x] Phase 8E/8F: Browser push notifications for new leads (bell icon toggle, service worker, VAPID keys); new-lead sidebar badge showing unactioned lead count. Merged to master via PR #18. VAPID keys set in Hostinger for dev + master. Push notifications confirmed working in production ✅
 - [x] CRM: Create New Customer form/button on Customers tab (/admin/customer/new)
 - [x] CRM: Full Appointments tab at /admin/appointments with scheduling, customer search/create, service/pricing, confirmation email
 - [x] Eastern Time timestamps: all admin timestamps now display in America/New_York timezone
