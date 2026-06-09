@@ -443,7 +443,7 @@ router.get('/:id/:token', function(req, res) {
     +       'var isOff=isSat&&t!=="Anytime"&&timeMins(t)>SAT_CUTOFF_MINS;'
     +       'var isSel=t===selTime;'
     +       'var cls="bk-tb"+(isSel?" sel":"")+(isOff?" off":"");'
-    +       'var click=isOff?"":\' onclick="bkPickTime(\\\'"+t+"\\\')"\';\''
+    +       'var click=isOff?"":" onclick=\\"bkPickTime(\'"+t+"\')\\"";'
     +       'return \'<button type="button" class="\'+cls+\'"\'+click+\'>\'+t+\'</button>\';'
     +     '}).join("");'
     +     'document.getElementById("bkTimeGrid").innerHTML=html;'
