@@ -616,7 +616,7 @@ function collapsible(key, title, inner, open) {
 // Every admin vehicle input uses this cascading dropdown trio so the data is
 // always structured (no free-typed makes/models) and Phase 8 tier lookup has
 // clean values. Make list mirrors the public contact form; models load on demand
-// from the free NHTSA API as year + make are chosen.
+// from our curated bundled dataset (/assets/vehicle-models.json) when a make is chosen.
 var ADMIN_VEHICLE_MAKES = ['Acura','Alfa Romeo','Audi','Bentley','BMW','Buick','Cadillac',
   'Chevrolet','Chrysler','Dodge','Ferrari','Ford','Genesis','GMC','Honda',
   'Hyundai','Infiniti','Jeep','Kia','Lamborghini','Land Rover','Lexus',
@@ -658,41 +658,46 @@ function vehicleCascadeHtml(prefix, names, vals) {
 }
 
 // One-time client script that wires every cascade on the page. Include once per
-// page that renders a vehicleCascadeHtml block.
+// page that renders a vehicleCascadeHtml block. Models come from our curated
+// bundled dataset (/data/vehicle-models.json), fetched once and cached, so the
+// list is consumer models only (no NHTSA chassis/body codes or sub-companies).
 var VEHICLE_CASCADE_JS = '<script>'
   + '(function(){'
+  + 'var dataPromise=null;'
+  + 'function getData(){'
+  +   'if(!dataPromise){dataPromise=fetch("/assets/vehicle-models.json").then(function(r){return r.json();}).then(function(d){return (d&&d.makes)||{};}).catch(function(){return {};});}'
+  +   'return dataPromise;'
+  + '}'
   + 'function loadModels(prefix){'
-  +   'var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
-  +   'if(!y||!mk||!mo)return;'
-  +   'var year=y.value,make=mk.value;'
-  +   'if(!year||!make){mo.innerHTML="<option value=\\"\\">Model</option>";return;}'
+  +   'var mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
+  +   'if(!mk||!mo)return;'
+  +   'var make=mk.value;'
   +   'var preset=mo.getAttribute("data-preset")||"";'
+  +   'if(!make){mo.innerHTML="<option value=\\"\\">Model</option>";return;}'
   +   'mo.innerHTML="<option value=\\"\\">Loading…</option>";'
-  +   'var url="https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/"+encodeURIComponent(make)+"/modelyear/"+year+"?format=json";'
-  +   'fetch(url).then(function(r){return r.json();}).then(function(d){'
-  +     'var models=(d.Results||[]).map(function(m){return m.Model_Name;}).filter(Boolean).sort();'
+  +   'getData().then(function(makes){'
+  +     'var models=(makes[make]||[]).slice();'
   +     'var html="<option value=\\"\\">Model</option>";'
   +     'models.forEach(function(m){html+="<option value=\\""+m+"\\""+(m===preset?" selected":"")+">"+m+"</option>";});'
   +     'if(preset&&models.indexOf(preset)<0)html+="<option value=\\""+preset+"\\" selected>"+preset+"</option>";'
   +     'mo.innerHTML=html;'
-  +   '}).catch(function(){var html="<option value=\\"\\">Model</option>";if(preset)html+="<option value=\\""+preset+"\\" selected>"+preset+"</option>";mo.innerHTML=html;});'
+  +   '});'
   + '}'
   + 'window.bkVehInit=function(){'
   +   'document.querySelectorAll("[data-veh-cascade]").forEach(function(box){'
   +     'var prefix=box.getAttribute("data-veh-cascade");'
   +     'var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make");'
-  +     'if(!y||!mk||y.getAttribute("data-wired"))return;'
-  +     'y.setAttribute("data-wired","1");'
-  +     'y.addEventListener("change",function(){loadModels(prefix);});'
+  +     'if(!mk||mk.getAttribute("data-wired"))return;'
+  +     'mk.setAttribute("data-wired","1");'
   +     'mk.addEventListener("change",function(){loadModels(prefix);});'
-  +     'if(y.value&&mk.value)loadModels(prefix);'
+  +     'if(mk.value)loadModels(prefix);'
   +   '});'
   + '};'
   + 'window.bkVehFill=function(prefix,v){'
   +   'v=v||{};var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
   +   'if(y)y.value=v.year||"";if(mk)mk.value=v.make||"";'
   +   'if(mo){if(v.model){mo.setAttribute("data-preset",v.model);}else{mo.removeAttribute("data-preset");mo.innerHTML="<option value=\\"\\">Model</option>";}}'
-  +   'if(y&&mk&&y.value&&mk.value)loadModels(prefix);'
+  +   'if(mk&&mk.value)loadModels(prefix);'
   + '};'
   + 'if(document.readyState!=="loading")window.bkVehInit();else document.addEventListener("DOMContentLoaded",window.bkVehInit);'
   + '})();'
