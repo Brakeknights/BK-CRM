@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
 const db = require('../db');
+const { sendStagePush } = require('../push');
 const { toEasternRfc3339 } = require('../datetime');
 const pricing = require('../pricing');
 
@@ -252,6 +253,7 @@ router.get('/alt/:quoteId/:token', async function(req, res) {
 
   db.prepare("UPDATE leads SET status='quote_accepted', status_updated_at=datetime('now') WHERE id=?").run(quote.lead_id);
   db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(quote.lead_id, 'Customer selected alternative time', when);
+  sendStagePush({ id: quote.lead_id, first_name: quote.first_name, last_name: quote.last_name, service: quote.service }, 'quote_accepted');
 
   // Notify admin.
   if (process.env.SMTP_PASS) {
@@ -517,6 +519,7 @@ router.post('/:id/:token/accept', express.urlencoded({ extended: false }), async
 
   // Move the lead to Quote Accepted so the owner reviews the scheduling request.
   db.prepare("UPDATE leads SET status = ?, status_updated_at = datetime('now') WHERE id = ?").run('quote_accepted', q.lead_id);
+  sendStagePush({ id: q.lead_id, first_name: q.first_name, last_name: q.last_name, service: q.service }, 'quote_accepted');
 
   // Reload so the confirmation reflects the saved values.
   var fresh = loadQuote(req.params.id, req.params.token);
@@ -575,6 +578,7 @@ router.post('/:id/:token/reschedule', express.urlencoded({ extended: false }), a
   db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(
     q.lead_id, 'Customer requested reschedule', formatPrefDate(prefDate) + (prefTime ? ' at ' + prefTime : '') + (note ? ' — ' + note : '')
   );
+  sendStagePush({ id: q.lead_id, first_name: q.first_name, last_name: q.last_name, service: q.service }, 'quote_accepted');
 
   if (process.env.SMTP_PASS) {
     try {
@@ -611,6 +615,7 @@ router.post('/:id/:token/cancel', express.urlencoded({ extended: false }), async
   db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(
     q.lead_id, 'Customer cancelled appointment', reason || null
   );
+  sendStagePush({ id: q.lead_id, first_name: q.first_name, last_name: q.last_name, service: q.service }, 'quoted');
 
   if (process.env.SMTP_PASS) {
     try {

@@ -4,6 +4,7 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const db = require('../db');
 const customers = require('../customers');
+const { sendStagePush } = require('../push');
 const PRICING = require('../pricing');
 const { client: squareClient } = require('../square');
 const { toEasternRfc3339 } = require('../datetime');
@@ -945,6 +946,7 @@ router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: fals
     var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
     db.prepare("UPDATE leads SET status = ?, status_updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
     logHistory(lead.id, 'Status changed to ' + (statusLabels[status] || status));
+    sendStagePush(lead, status);
     notifyStageChange(req, lead, status).catch(function(err) { console.error('Stage notification error:', err.message); });
   }
   var back = req.body.back || '/admin';
@@ -1062,6 +1064,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
 
   db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ', ' + quote.pref_location : ''));
+  if (lead.status !== 'booked') sendStagePush(lead, 'booked');
 
   // Square calendar booking
   try {
@@ -1897,6 +1900,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
   db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
+  if (lead.status !== 'quoted') sendStagePush(lead, 'quoted');
 
   if (!lead.email) return res.redirect('/admin?msg=saved');
 
@@ -2344,14 +2348,17 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
       db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
       db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
       logHistory(lead.id, 'Receipt sent to customer', receiptDetail);
+      sendStagePush(lead, 'receipt');
       return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_sent');
     } catch (err) {
       console.error('Receipt email error:', err.message);
       logHistory(lead.id, 'Receipt saved (email failed)', receiptDetail);
+      sendStagePush(lead, 'completed');
       return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_err');
     }
   }
   logHistory(lead.id, 'Receipt saved (not emailed)', receiptDetail);
+  sendStagePush(lead, 'completed');
   res.redirect('/admin/quote/' + lead.id + '?msg=receipt_saved');
 });
 
@@ -3393,6 +3400,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
       db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(leadId);
       logHistory(leadId, 'Receipt sent to customer', receiptDetail);
+      sendStagePush(lead, 'receipt');
       return res.redirect('/admin/quote/' + leadId + '?msg=receipt_sent');
     } catch (err) {
       console.error('Quick receipt email error:', err.message);
@@ -4371,13 +4379,14 @@ router.post('/appointments/:lead_id/reschedule', requireAuth, express.urlencoded
 });
 
 router.post('/appointments/:lead_id/cancel', requireAuth, function(req, res) {
-  var lead = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.lead_id);
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.lead_id);
   if (!lead) return res.redirect('/admin/appointments');
   db.prepare("UPDATE quotes SET pref_date = NULL, pref_time = NULL WHERE lead_id = ? AND status = 'approved'")
     .run(lead.id);
   db.prepare("UPDATE leads SET status = 'approved', status_updated_at = datetime('now') WHERE id = ?")
     .run(lead.id);
   logHistory(lead.id, 'Appointment cancelled', 'Lead returned to pipeline');
+  sendStagePush(lead, 'approved');
   res.redirect('/admin/appointments?msg=cancelled');
 });
 
