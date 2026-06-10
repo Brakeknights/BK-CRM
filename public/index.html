@@ -915,7 +915,7 @@
 </footer>
 
 <script>
-  // ── Cascading vehicle dropdowns (NHTSA API) ──────────────────────────────
+  // ── Cascading vehicle dropdowns (curated /assets/vehicle-models.json) ────
   const BK_MAKES = [
     'Acura','Alfa Romeo','Audi','BMW','Buick','Cadillac','Chevrolet',
     'Chrysler','Dodge','Ferrari','Ford','Genesis','GMC','Honda',
@@ -943,8 +943,15 @@
     document.getElementById('vehicle').value = '';
     document.getElementById('tesla-block-msg').style.display = 'none';
   }
+  let bkModelData = null;
+  function bkGetModelData() {
+    if (!bkModelData) {
+      bkModelData = fetch('/assets/vehicle-models.json')
+        .then(r => r.json()).then(d => (d && d.makes) || {}).catch(() => ({}));
+    }
+    return bkModelData;
+  }
   function bkLoadModels() {
-    const year     = document.getElementById('vehicle-year').value;
     const make     = document.getElementById('vehicle-make').value;
     const modelSel = document.getElementById('vehicle-model');
     document.getElementById('vehicle').value = '';
@@ -957,18 +964,9 @@
     }
     modelSel.innerHTML = '<option value="" disabled selected>Loading...</option>';
     modelSel.disabled = true;
-    const url = 'https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMakeYear/make/' + encodeURIComponent(make) + '/modelyear/' + year + '?format=json';
-    fetch(url)
-      .then(r => r.json())
-      .then(data => {
-        let models = (data.Results || []).map(m => m.Model_Name).filter(Boolean).sort();
-        if (!models.length) {
-          return fetch('https://vpic.nhtsa.dot.gov/api/vehicles/GetModelsForMake/' + encodeURIComponent(make) + '?format=json')
-            .then(r => r.json()).then(d => (d.Results || []).map(m => m.Model_Name).filter(Boolean).sort());
-        }
-        return models;
-      })
-      .then(models => {
+    bkGetModelData()
+      .then(makes => {
+        const models = (makes[make] || []).slice();
         modelSel.innerHTML = '<option value="" disabled selected>Model</option>';
         models.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; modelSel.appendChild(o); });
         modelSel.disabled = false;
