@@ -654,7 +654,10 @@ function vehicleCascadeHtml(prefix, names, vals) {
     + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label>'
     + '<select name="' + nMake + '" id="' + prefix + '-make">' + adminMakeOptions(vals.make) + '</select></div>'
     + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label>'
-    + '<select name="' + nModel + '" id="' + prefix + '-model"' + (vals.model ? ' data-preset="' + esc(vals.model) + '"' : '') + '>' + modelOpt + '</select></div>'
+    + '<select id="' + prefix + '-model"' + (vals.model ? ' data-preset="' + esc(vals.model) + '"' : '') + '>' + modelOpt + '</select>'
+    + '<input type="text" id="' + prefix + '-model-other" placeholder="Type model…" autocomplete="off" style="display:none;margin-top:6px;">'
+    + '<input type="hidden" name="' + nModel + '" id="' + prefix + '-model-hid" value="' + esc(vals.model || '') + '">'
+    + '</div>'
     + '</div>';
 }
 
@@ -669,19 +672,30 @@ var VEHICLE_CASCADE_JS = '<script>'
   +   'if(!dataPromise){dataPromise=fetch("/assets/vehicle-models.json").then(function(r){return r.json();}).then(function(d){return (d&&d.makes)||{};}).catch(function(){return {};});}'
   +   'return dataPromise;'
   + '}'
+  + 'function syncHidden(prefix){'
+  +   'var mo=document.getElementById(prefix+"-model"),hid=document.getElementById(prefix+"-model-hid"),ot=document.getElementById(prefix+"-model-other");'
+  +   'if(!mo||!hid)return;'
+  +   'if(mo.value==="__other__"){'
+  +     'if(ot){ot.style.display="";ot.focus();}hid.value=ot?ot.value:"";'
+  +   '}else{'
+  +     'hid.value=mo.value;if(ot){ot.style.display="none";ot.value="";}'
+  +   '}'
+  + '}'
   + 'function loadModels(prefix){'
   +   'var mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
   +   'if(!mk||!mo)return;'
   +   'var make=mk.value;'
   +   'var preset=mo.getAttribute("data-preset")||"";'
-  +   'if(!make){mo.innerHTML="<option value=\\"\\">Model</option>";return;}'
+  +   'if(!make){mo.innerHTML="<option value=\\"\\">Model</option>";syncHidden(prefix);return;}'
   +   'mo.innerHTML="<option value=\\"\\">Loading…</option>";'
   +   'getData().then(function(makes){'
   +     'var models=(makes[make]||[]).slice();'
   +     'var html="<option value=\\"\\">Model</option>";'
   +     'models.forEach(function(m){html+="<option value=\\""+m+"\\""+(m===preset?" selected":"")+">"+m+"</option>";});'
   +     'if(preset&&models.indexOf(preset)<0)html+="<option value=\\""+preset+"\\" selected>"+preset+"</option>";'
+  +     'html+="<option value=\\"__other__\\">Other…</option>";'
   +     'mo.innerHTML=html;'
+  +     'syncHidden(prefix);'
   +   '});'
   + '}'
   + 'window.bkVehInit=function(){'
@@ -691,13 +705,17 @@ var VEHICLE_CASCADE_JS = '<script>'
   +     'if(!mk||mk.getAttribute("data-wired"))return;'
   +     'mk.setAttribute("data-wired","1");'
   +     'mk.addEventListener("change",function(){loadModels(prefix);});'
+  +     'var mo=document.getElementById(prefix+"-model"),ot=document.getElementById(prefix+"-model-other");'
+  +     'if(mo)mo.addEventListener("change",function(){syncHidden(prefix);});'
+  +     'if(ot)ot.addEventListener("input",function(){var hid=document.getElementById(prefix+"-model-hid");if(hid)hid.value=ot.value;});'
   +     'if(mk.value)loadModels(prefix);'
   +   '});'
   + '};'
   + 'window.bkVehFill=function(prefix,v){'
-  +   'v=v||{};var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
+  +   'v=v||{};var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model"),hid=document.getElementById(prefix+"-model-hid");'
   +   'if(y)y.value=v.year||"";if(mk)mk.value=v.make||"";'
   +   'if(mo){if(v.model){mo.setAttribute("data-preset",v.model);}else{mo.removeAttribute("data-preset");mo.innerHTML="<option value=\\"\\">Model</option>";}}'
+  +   'if(hid)hid.value=v.model||"";'
   +   'if(mk&&mk.value)loadModels(prefix);'
   + '};'
   + 'if(document.readyState!=="loading")window.bkVehInit();else document.addEventListener("DOMContentLoaded",window.bkVehInit);'
@@ -4144,7 +4162,7 @@ router.post('/customer/:id/vehicle/:vid/delete', requireAuth, express.urlencoded
 // Falls back to parsing the latest lead's free-text vehicle string when no
 // structured customer_vehicles row exists.
 router.get('/customer/:id/autofill', requireAuth, function(req, res) {
-  var c = db.prepare('SELECT id, home_address FROM customers WHERE id = ?').get(req.params.id);
+  var c = db.prepare('SELECT id, email, home_address FROM customers WHERE id = ?').get(req.params.id);
   if (!c) return res.json({ ok: false });
   var veh = db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
   if (!veh) {
@@ -4159,6 +4177,7 @@ router.get('/customer/:id/autofill', requireAuth, function(req, res) {
   var addr = db.prepare('SELECT address FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
   res.json({
     ok: true,
+    email: c.email || '',
     vehicle: veh ? { year: veh.year || '', make: veh.make || '', model: veh.model || '' } : null,
     address: addr ? addr.address : '',
     home_address: c.home_address || ''
@@ -4498,7 +4517,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(apptPricing);
   var taxRate = PRICING.taxRate;
 
-  var allCustomers = db.prepare('SELECT id, first_name, last_name, phone FROM customers ORDER BY last_name, first_name').all();
+  var allCustomers = db.prepare('SELECT id, first_name, last_name, phone, email FROM customers ORDER BY last_name, first_name').all();
 
   var preselectedCustomerId = (req.query.customer_id || '').trim();
   var preselectedCustomer = preselectedCustomerId
@@ -4508,10 +4527,10 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     ? ((preselectedCustomer.first_name + ' ' + preselectedCustomer.last_name).trim() + (preselectedCustomer.phone ? ' (' + fmtPhone(preselectedCustomer.phone) + ')' : ''))
     : '';
 
-  // Embed minimal customer data for client-side typeahead (id, display name, phone digits for search).
+  // Embed minimal customer data for client-side typeahead (id, display name, email, phone digits for search).
   var custJson = JSON.stringify(allCustomers.map(function(c) {
     var name = (c.first_name + ' ' + c.last_name).trim();
-    return { id: c.id, label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''), search: (name + ' ' + (c.phone || '')).toLowerCase() };
+    return { id: c.id, label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''), email: c.email || '', search: (name + ' ' + (c.phone || '')).toLowerCase() };
   }));
 
   var serviceCheckboxes = '<div class="svc-check-list">'
@@ -4539,6 +4558,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
     + '<input type="hidden" name="customer_id" id="apptCustId" value="' + esc(preselectedCustomerId) + '">'
+    + '<input type="hidden" id="apptCustEmail" value="' + esc((preselectedCustomer && preselectedCustomer.email) || '') + '">'
     + '<div class="form-group" style="margin-bottom:0;">'
     + '<label>Search existing customer</label>'
     + '<div style="position:relative;">'
@@ -4627,6 +4647,8 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<input type="checkbox" name="send_email" value="1" style="width:18px;height:18px;"> Send confirmation email to customer</label>'
     + '</div>'
 
+    + '<button type="button" id="apptPreviewBtn" class="btn btn-outline" style="margin-bottom:8px;" onclick="apptPreview()">Preview Email</button>'
+    + '<div id="apptPreviewBox" style="display:none;margin-bottom:12px;"></div>'
     + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="margin-bottom:24px;">Create Appointment</button>'
     + '</form>'
     + '<script>(function(){'
@@ -4661,6 +4683,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     '});'
     +     'drop.style.display="block";'
     +   '}'
+    +   'var hidEmail=document.getElementById("apptCustEmail");'
     +   'function selectCust(id,label){'
     +     'hidId.value=id;'
     +     'inp.value="";'
@@ -4668,14 +4691,18 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'chip.style.display="flex";'
     +     'chipLbl.textContent=label;'
     +     'newFields.style.display="none";'
+    +     'var c=CUST_LIST.find(function(x){return String(x.id)===String(id);});'
+    +     'if(hidEmail)hidEmail.value=(c&&c.email)||"";'
     +     'fetch("/admin/customer/"+id+"/autofill").then(function(r){return r.json();}).then(function(d){'
     +       'if(!d||!d.ok)return;'
     +       'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
     +       'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
+    +       'if(hidEmail&&d.email)hidEmail.value=d.email;'
     +     '}).catch(function(){});'
     +   '}'
     +   'function clearCust(){'
     +     'hidId.value="";'
+    +     'if(hidEmail)hidEmail.value="";'
     +     'inp.value="";'
     +     'chip.style.display="none";'
     +     'chipLbl.textContent="";'
@@ -4689,6 +4716,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'if(!d||!d.ok)return;'
     +     'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
     +     'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
+    +     'if(hidEmail&&d.email)hidEmail.value=d.email;'
     +   '}).catch(function(){});}'
     +   'inp.addEventListener("input",function(){'
     +     'var q=inp.value.trim().toLowerCase();'
@@ -4725,7 +4753,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + 'function apptAutofill(){'
     +   'var names=apptCheckedServices();'
     +   'document.getElementById("apptSvcHidden").value=names.join(", ");'
-    +   'if(names.length===0){apptCalc();return;}'
+    +   'if(names.length===0){document.getElementById("apptParts").value="0.00";document.getElementById("apptLabor").value="0.00";document.getElementById("apptSupplies").value="0.00";apptCalc();return;}'
     +   'var parts=0,labor=0,ss=0;'
     +   'names.forEach(function(s){var sv=APPT_PRICING[s];if(!sv)return;var p=sv[apptTier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
     +   'document.getElementById("apptParts").value=parts.toFixed(2);'
@@ -4743,6 +4771,40 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'document.getElementById("apptTotal").textContent="$"+Number(total).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});'
     + '}'
     + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
+    + 'function apptPreview(){'
+    +   'var box=document.getElementById("apptPreviewBox"),btn=document.getElementById("apptPreviewBtn");'
+    +   'if(box.style.display!=="none"&&box.innerHTML){box.style.display="none";box.innerHTML="";btn.textContent="Preview Email";return;}'
+    +   'var custId=(document.getElementById("apptCustId")||{}).value||"";'
+    +   'var toName,toEmail;'
+    +   'if(custId){'
+    +     'var chipLbl=document.getElementById("custPickerLabel");'
+    +     'toName=chipLbl?chipLbl.textContent.replace(/\\s*\\(\\d[\\d\\s\\-\\.]*\\)\\s*$/,"").trim():"(selected customer)";'
+    +     'toEmail=(document.getElementById("apptCustEmail")||{}).value||"email on file";'
+    +   '}else{'
+    +     'var fn=(document.getElementById("apptCustFirst")||{}).value||"";'
+    +     'var ln=(document.getElementById("apptCustLast")||{}).value||"";'
+    +     'toName=(fn+" "+ln).trim()||"(no name entered)";'
+    +     'toEmail=(document.querySelector("[name=cust_email]")||{}).value||"";'
+    +   '}'
+    +   'var svcs=apptCheckedServices();'
+    +   'var customSvc=(document.querySelector("[name=customService]")||{}).value||"";'
+    +   'if(customSvc.trim())svcs=svcs.concat(customSvc.trim().split(",").map(function(s){return s.trim();}).filter(Boolean));'
+    +   'var date=(document.getElementById("apptDate")||{}).value||"";'
+    +   'var time=(document.querySelector("[name=pref_time]")||{}).value||"";'
+    +   'var addr=(document.getElementById("apptAddr")||{}).value||"";'
+    +   'var total=(document.getElementById("apptTotal")||{}).textContent||"$0.00";'
+    +   'var toLine=toName+(toEmail?"&nbsp;&lt;"+toEmail+"&gt;":"");'
+    +   'var rows="<table style=\'width:100%;border-collapse:collapse;font-size:0.88rem;\'>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;white-space:nowrap;vertical-align:top;\'>To</td><td style=\'padding:5px 0;\'>"+toLine+"</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Subject</td><td style=\'padding:5px 0;\'>Your Brake Service Appointment Is Confirmed — Brake Knights</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+(svcs.length?svcs.join(", "):"<em style=\'color:#e07000\'>(none selected)</em>")+"</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
+    +   'if(date)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Date &amp; Time</td><td style=\'padding:5px 0;\'>"+date+(time?" at "+time:"")+"</td></tr>";'
+    +   'if(addr)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Address</td><td style=\'padding:5px 0;\'>"+addr+"</td></tr>";'
+    +   'rows+="</table>";'
+    +   'box.innerHTML="<div class=\'preview-box\'><h4>Confirmation Email Preview</h4>"+rows+"</div>";'
+    +   'box.style.display="block";btn.textContent="Hide Preview";'
+    + '}'
     + '</script>'
     + VEHICLE_CASCADE_JS
     + mapsScript;
