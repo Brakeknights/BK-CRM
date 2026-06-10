@@ -2075,7 +2075,18 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     || {};
 
   var service   = quote.service || lead.service || '';
-  var vehicle   = lead.vehicle || '';
+  // Try structured vehicle from customer_vehicles; fall back to parsing lead.vehicle string.
+  var rcVehData = lead.customer_id
+    ? (db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(lead.customer_id) || null)
+    : null;
+  if (!rcVehData && lead.vehicle) {
+    var _vp = lead.vehicle.trim().split(/\s+/);
+    var _yr = /^(19|20)\d{2}$/.test(_vp[0]) ? _vp.shift() : '';
+    var _mk = _vp.length > 1 ? _vp.shift() : (_vp[0] || '');
+    var _mo = _vp.length > 0 ? _vp.join(' ') : '';
+    rcVehData = { year: _yr, make: _mk, model: _mo };
+  }
+  rcVehData = rcVehData || {};
   // Prefer the chosen quote's location; otherwise pull the most recent service
   // address from any of this lead's quotes (phone-booked jobs may have it on a
   // different quote than the one we prefilled from).
@@ -2141,8 +2152,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<button type="button" class="tier-btn' + (receiptTier === 'standard' ? ' active' : '') + '" id="rBtnStd" onclick="rSetTier(\'standard\')">Standard</button>'
     + '<button type="button" class="tier-btn' + (receiptTier === 'premium'  ? ' active' : '') + '" id="rBtnPrem" onclick="rSetTier(\'premium\')">Premium</button>'
     + '</div></div>'
-    + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model)</span></label>'
-    + '<input type="text" name="vehicle" value="' + esc(vehicle) + '" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '<div class="form-group"><label>Vehicle</label>'
+    + vehicleCascadeHtml('rc-veh', {}, { year: rcVehData.year || '', make: rcVehData.make || '', model: rcVehData.model || '' })
+    + '</div>'
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>Date of service</label>'
     + '<input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
@@ -2298,6 +2310,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'box.style.display="block";document.getElementById("rPrevBtn").textContent="Hide Preview";'
     + '}'
     + '</script>'
+    + VEHICLE_CASCADE_JS
     + (process.env.GOOGLE_MAPS_API_KEY
         ? '<script>function initBkRecAddr(){var el=document.getElementById("receiptAddr");if(!el||!window.google||!google.maps||!google.maps.places)return;var ac=new google.maps.places.Autocomplete(el,{fields:["formatted_address"],componentRestrictions:{country:"us"},types:["address"]});ac.addListener("place_changed",function(){if(ac.getPlace())el.value=ac.getPlace().formatted_address||el.value;});}<\/script>'
           + '<script src="https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(process.env.GOOGLE_MAPS_API_KEY) + '&libraries=places&loading=async&callback=initBkRecAddr" async><\/script>'
@@ -2313,7 +2326,7 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var service      = (req.body.service || '').trim();
   var customSvc    = (req.body.customService || '').trim();
   if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
-  var vehicle      = (req.body.vehicle || '').trim();
+  var vehicle      = [req.body.veh_year, req.body.veh_make, req.body.veh_model].map(function(v){return (v||'').trim();}).filter(Boolean).join(' ');
   var serviceDate  = (req.body.serviceDate || '').trim() || easternToday();
   var address      = (req.body.serviceAddress || '').trim();
   var partsLabor   = parseFloat(req.body.partsLabor)   || 0;
@@ -2674,23 +2687,25 @@ router.get('/quick', requireAuth, function(req, res) {
   // Customer data for the receipt-mode customer search typeahead.
   var qqCustomers = db.prepare(
     'SELECT c.id, c.first_name, c.last_name, c.email, c.phone,'
-    + ' COALESCE('
-    + "  (SELECT TRIM(COALESCE(cv.year,'') || ' ' || COALESCE(cv.make,'') || ' ' || COALESCE(cv.model,''))"
-    + '   FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1),'
-    + "  (SELECT l.vehicle FROM leads l WHERE l.customer_id = c.id AND l.vehicle IS NOT NULL AND l.vehicle != '' ORDER BY l.id DESC LIMIT 1)"
-    + ' ) AS last_vehicle,'
+    + ' (SELECT cv.year  FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1) AS last_veh_year,'
+    + ' (SELECT cv.make  FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1) AS last_veh_make,'
+    + ' (SELECT cv.model FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1) AS last_veh_model,'
     + ' (SELECT ca.address FROM customer_addresses ca WHERE ca.customer_id = c.id ORDER BY ca.id DESC LIMIT 1) AS last_address'
     + ' FROM customers c ORDER BY c.last_name, c.first_name'
   ).all();
   var qqCustJson = JSON.stringify(qqCustomers.map(function(c) {
     var name = ((c.first_name || '') + ' ' + (c.last_name || '')).trim();
+    var vehParts = [c.last_veh_year, c.last_veh_make, c.last_veh_model].filter(Boolean);
     return {
       id: c.id,
       fn: c.first_name || '',
       ln: c.last_name || '',
       em: c.email || '',
       ph: c.phone || '',
-      veh: (c.last_vehicle || '').trim(),
+      veh_year:  c.last_veh_year  || '',
+      veh_make:  c.last_veh_make  || '',
+      veh_model: c.last_veh_model || '',
+      veh: vehParts.join(' '),
       addr: c.last_address || '',
       label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''),
       search: (name + ' ' + (c.phone || '') + ' ' + (c.email || '')).toLowerCase()
@@ -2786,8 +2801,9 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Email <span id="qemHint" style="color:#bbb;font-weight:400;">(to send)</span></label><input type="email" name="email" id="qem" placeholder="customer@email.com"></div>'
     + '<div class="form-group"><label>Phone <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="tel" name="phone" id="qph" placeholder="703-555-0123"></div>'
     + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model, optional)</span></label>'
-    + '<input type="text" name="vehicle" id="qveh" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle <span style="color:#bbb;font-weight:400;">(optional)</span></label>'
+    + vehicleCascadeHtml('qq-veh')
+    + '</div>'
     + COLLAPSE_CLOSE
 
     // Services + tier
@@ -2916,7 +2932,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qln").value=c.ln;'
     +   'document.getElementById("qem").value=c.em;'
     +   'document.getElementById("qph").value=c.ph;'
-    +   'var vehEl=document.getElementById("qveh");if(vehEl&&c.veh)vehEl.value=c.veh;'
+    +   'if(window.bkVehFill)window.bkVehFill("qq-veh",{year:c.veh_year||"",make:c.veh_make||"",model:c.veh_model||""});'
     +   'var addrEl=document.querySelector("[name=serviceAddress]");if(addrEl&&c.addr&&!addrEl.value)addrEl.value=c.addr;'
     +   'var name=(c.fn+" "+c.ln).trim();'
     +   'var chip=document.getElementById("qqCustChip");'
@@ -3096,7 +3112,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'qClearServices();'
     +   'document.getElementById("qfn").value="";document.getElementById("qln").value="";'
     +   'document.getElementById("qem").value="";document.getElementById("qph").value="";'
-    +   'var veh=document.getElementById("qveh");if(veh)veh.value="";'
+    +   'if(window.bkVehFill)window.bkVehFill("qq-veh",{});'
     +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
     +   'document.getElementById("qCustomSvcHint").style.display="none";'
     +   'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";'
@@ -3134,7 +3150,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'ln:document.getElementById("qln").value,'
     +       'em:document.getElementById("qem").value,'
     +       'ph:document.getElementById("qph").value,'
-    +       'veh:(document.getElementById("qveh")||{}).value||"",'
+    +       'veh_year:document.getElementById("qq-veh-year")?(document.getElementById("qq-veh-year").value||""):"",veh_make:document.getElementById("qq-veh-make")?(document.getElementById("qq-veh-make").value||""):"",veh_model:document.getElementById("qq-veh-model-hid")?(document.getElementById("qq-veh-model-hid").value||""):"",veh:"",'
     +       'svcs:qCheckedServices(),'
     +       'customSvc:qCustomSvcVal(),'
     +       'parts:document.getElementById("qparts").value,'
@@ -3161,7 +3177,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(s.ln)document.getElementById("qln").value=s.ln;'
     +     'if(s.em)document.getElementById("qem").value=s.em;'
     +     'if(s.ph)document.getElementById("qph").value=s.ph;'
-    +     'if(s.veh&&document.getElementById("qveh"))document.getElementById("qveh").value=s.veh;'
+    +     'if(window.bkVehFill&&(s.veh_year||s.veh_make||s.veh_model))window.bkVehFill("qq-veh",{year:s.veh_year||"",make:s.veh_make||"",model:s.veh_model||""});'
     +     'if(s.svcs&&s.svcs.length)document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});'
     +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
     +     'if(s.parts!==undefined)document.getElementById("qparts").value=s.parts;'
@@ -3210,7 +3226,8 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'qRenderTags();qPayToggle();'
     + 'qRestoreState();'
     + 'qcalc();'
-    + '</script>';
+    + '</script>'
+    + VEHICLE_CASCADE_JS;
 
   res.send(page('Quick Quote', body, req));
 });
@@ -3244,7 +3261,10 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var lastName  = (req.body.lastName  || '').trim();
   var email     = (req.body.email     || '').trim() || null;
   var phone     = (req.body.phone     || '').trim();
-  var vehicle   = (req.body.vehicle   || '').trim() || null;
+  var vehYear   = (req.body.veh_year  || '').trim();
+  var vehMake   = (req.body.veh_make  || '').trim();
+  var vehModel  = (req.body.veh_model || '').trim();
+  var vehicle   = [vehYear, vehMake, vehModel].filter(Boolean).join(' ') || null;
 
   // Save Draft: persist form state to quick_drafts, no lead created, no validation.
   if (action === 'draft_save') {
@@ -3257,7 +3277,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     if (firstSvcD) draftLabel += ' - ' + firstSvcD.substring(0, 28);
     var draftData = {
       mode: mode, tier: req.body.tier === 'premium' ? 'premium' : 'standard',
-      fn: firstName, ln: lastName, em: email || '', ph: phone, veh: vehicle || '',
+      fn: firstName, ln: lastName, em: email || '', ph: phone, veh: '', veh_year: vehYear, veh_make: vehMake, veh_model: vehModel,
       svcs: presetSvcsD, customSvc: customSvcD,
       parts: req.body.parts || '0.00', labor: req.body.labor || '0.00',
       ss: req.body.shopSupplies || '0.00',
