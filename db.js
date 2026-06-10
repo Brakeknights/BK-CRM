@@ -140,6 +140,19 @@ db.exec(`
     sent        INTEGER NOT NULL DEFAULT 0,
     sent_at     TEXT
   );
+
+  -- Owner personal events / time blocks shown on the appointments calendar so the
+  -- owner can see what's taken when scheduling jobs. Visual only: not customer
+  -- facing, no emails, does not block booking.
+  CREATE TABLE IF NOT EXISTS personal_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    title       TEXT    NOT NULL,
+    event_date  TEXT    NOT NULL,
+    start_time  TEXT,
+    end_time    TEXT,
+    note        TEXT
+  );
 `);
 
 // ─── Migrations (idempotent — safe to run against existing dev/prod data) ──────

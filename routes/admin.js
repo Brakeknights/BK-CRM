@@ -4217,8 +4217,8 @@ router.get('/appointments', requireAuth, function(req, res) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
     var tOpts = '<option value="">-- Select time --</option>';
-    for (var mins = 8 * 60; mins <= 17 * 60; mins += 30) {
-      if (mins >= 12 * 60 && mins < 13 * 60) continue;
+    // Owner/staff appointment window: 8 AM to 7 PM, every 30 min (continuous).
+    for (var mins = 8 * 60; mins <= 19 * 60; mins += 30) {
       var h24 = Math.floor(mins / 60);
       var m = mins % 60;
       var ampm = h24 < 12 ? 'AM' : 'PM';
