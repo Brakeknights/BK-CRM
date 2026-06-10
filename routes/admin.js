@@ -1145,12 +1145,17 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         + '<p style="color:#888;font-size:0.8rem;margin:6px 0 0;">Google Calendar opens in your browser. The .ics works with Apple Calendar and Outlook.</p>'
         + '</div>'
         + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
+        + '<div style="text-align:center;margin:0 0 24px;">'
+        + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
+        + '<a href="' + baseUrl + '/quote/' + quote.id + '/' + quote.accept_token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'
+        + '<a href="' + baseUrl + '/quote/' + quote.id + '/' + quote.accept_token + '?action=cancel" style="display:inline-block;background:#fff;border:2px solid #c0392b;color:#c0392b;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Cancel Appointment</a>'
+        + '</div>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, subject: 'Your appointment is confirmed — Brake Knights', html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, cc: 'greetings@brakeknights.com', subject: 'Your appointment is confirmed — Brake Knights', html });
     } catch (err) { console.error('Approve schedule email error:', err.message); }
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=approved');
@@ -1249,7 +1254,7 @@ router.post('/quote/:id/deny-schedule', requireAuth, express.urlencoded({ extend
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, replyTo: 'greetings@brakeknights.com', subject: 'Scheduling update from Brake Knights', html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, cc: 'greetings@brakeknights.com', replyTo: 'greetings@brakeknights.com', subject: 'Scheduling update from Brake Knights', html });
     } catch (err) { console.error('Deny schedule email error:', err.message); }
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=denied');
@@ -2341,6 +2346,7 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
       await tx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      lead.email,
+        cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
         subject: 'Your Brake Knights Service Receipt',
         html:    buildReceiptEmail(lead, receipt, notes)
@@ -3393,6 +3399,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       await rtx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      email,
+        cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
         subject: 'Your Brake Knights Service Receipt',
         html:    buildReceiptEmail(lead, receipt, notes)
@@ -4188,6 +4195,20 @@ router.post('/customer/:id/delete', requireAuth, express.urlencoded({ extended: 
 
 // ─── Appointments ─────────────────────────────────────────────────────────────
 
+// Owner/staff appointment time options: 8 AM to 7 PM, every 30 minutes.
+// Wider than the customer-facing picker on purpose — the owner has full control.
+function ownerTimeOptions(sel) {
+  var o = '<option value="">-- Select time --</option>';
+  for (var mins = 8 * 60; mins <= 19 * 60; mins += 30) {
+    var h24 = Math.floor(mins / 60), m = mins % 60;
+    var ampm = h24 < 12 ? 'AM' : 'PM';
+    var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    var label = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+    o += '<option value="' + label + '"' + (sel === label ? ' selected' : '') + '>' + label + '</option>';
+  }
+  return o;
+}
+
 router.get('/appointments', requireAuth, function(req, res) {
   var today = easternToday();
 
@@ -4207,25 +4228,23 @@ router.get('/appointments', requireAuth, function(req, res) {
     + 'ORDER BY q.pref_date DESC, q.pref_time DESC LIMIT 30'
   ).all(today);
 
-  // Build date → count map for the calendar dots.
+  // Owner personal time blocks (visual only — not customer facing).
+  var events = db.prepare(
+    'SELECT * FROM personal_events WHERE event_date >= ? ORDER BY event_date ASC, start_time ASC'
+  ).all(today);
+
+  // Build date → count map for the calendar dots (blue = jobs, amber = personal).
   var dateMap = {};
   upcoming.concat(past).forEach(function(a) {
     if (a.pref_date) dateMap[a.pref_date] = (dateMap[a.pref_date] || 0) + 1;
   });
+  var peMap = {};
+  events.forEach(function(ev) { peMap[ev.event_date] = (peMap[ev.event_date] || 0) + 1; });
 
   function apptCard(a) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
-    var tOpts = '<option value="">-- Select time --</option>';
-    for (var mins = 8 * 60; mins <= 17 * 60; mins += 30) {
-      if (mins >= 12 * 60 && mins < 13 * 60) continue;
-      var h24 = Math.floor(mins / 60);
-      var m = mins % 60;
-      var ampm = h24 < 12 ? 'AM' : 'PM';
-      var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-      var tlabel = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
-      tOpts += '<option value="' + tlabel + '"' + (a.pref_time === tlabel ? ' selected' : '') + '>' + tlabel + '</option>';
-    }
+    var tOpts = ownerTimeOptions(a.pref_time);
     return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
@@ -4263,18 +4282,54 @@ router.get('/appointments', requireAuth, function(req, res) {
       + '</div>';
   }
 
-  var allCards = upcoming.map(apptCard).join('') + (past.length
+  // Personal time block card: amber accent, title + window, remove button.
+  function eventCard(ev) {
+    var timeStr = (ev.start_time || '') + (ev.end_time ? ' – ' + ev.end_time : '');
+    return '<div class="card appt-card" data-date="' + esc(ev.event_date) + '" style="border-left:4px solid #f0b429;background:#fffdf5;margin-bottom:10px;">'
+      + '<div class="row-sb">'
+      + '<div class="lead-name">' + esc(ev.title) + '</div>'
+      + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(ev.event_date)) + '</span>'
+      + '</div>'
+      + '<div style="font-size:0.85rem;color:#a07800;font-weight:600;margin-top:4px;">Blocked time' + (timeStr ? ' · ' + esc(timeStr) : '') + '</div>'
+      + (ev.note ? '<div style="font-size:0.85rem;color:#666;margin-top:4px;">' + esc(ev.note) + '</div>' : '')
+      + '<div style="margin-top:10px;">'
+      + '<form method="POST" action="/admin/appointments/block/' + ev.id + '/delete" style="display:inline;margin:0;" onsubmit="return confirm(\'Remove this time block?\');">'
+      + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;">Remove</button>'
+      + '</form>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // Interleave jobs and personal blocks by date + time so the day list reads
+  // top to bottom like a schedule.
+  function sortMins(t) {
+    var m = /(\d+):(\d+)\s*(AM|PM)/i.exec(t || '');
+    if (!m) return 9999;
+    var h = (+m[1] % 12) + (m[3].toUpperCase() === 'PM' ? 12 : 0);
+    return h * 60 + (+m[2]);
+  }
+  var upcomingItems = upcoming.map(function(a) {
+    return { date: a.pref_date, mins: sortMins(a.pref_time), html: apptCard(a) };
+  }).concat(events.map(function(ev) {
+    return { date: ev.event_date, mins: sortMins(ev.start_time), html: eventCard(ev) };
+  }));
+  upcomingItems.sort(function(x, y) {
+    return x.date < y.date ? -1 : x.date > y.date ? 1 : x.mins - y.mins;
+  });
+
+  var allCards = upcomingItems.map(function(i) { return i.html; }).join('') + (past.length
     ? '<div id="pastHeader" class="section-title" style="margin:20px 0 10px;">Recent Past</div>' + past.map(apptCard).join('')
     : '');
 
   var emptyAll = '<div id="apptEmpty" style="display:none;text-align:center;padding:32px;color:#888;">No appointments on this date.</div>';
 
-  var noUpcoming = upcoming.length === 0
+  var noUpcoming = (upcoming.length === 0 && events.length === 0)
     ? '<div class="card" style="text-align:center;padding:32px;color:#888;" id="apptNoUpcoming">No upcoming appointments. Create one with the button above.</div>'
     : '';
 
   var calScript = '<script>(function(){'
     + 'var DATE_MAP=' + JSON.stringify(dateMap) + ';'
+    + 'var PE_MAP=' + JSON.stringify(peMap) + ';'
     + 'var TODAY="' + today + '";'
     + 'var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];'
     + 'var DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];'
@@ -4299,11 +4354,17 @@ router.get('/appointments', requireAuth, function(req, res) {
     +     'var isToday=dateStr===TODAY;'
     +     'var isSel=dateStr===selDate;'
     +     'var hasAppt=!!DATE_MAP[dateStr];'
+    +     'var hasPE=!!PE_MAP[dateStr];'
     +     'var bg=isSel?"#0d1b2a":isToday?"#4169e1":"transparent";'
     +     'var fg=isSel||isToday?"#fff":"#0f172a";'
     +     'h+=\'<div onclick="apptDayClick(\\\'\'+dateStr+\'\\\')" style="text-align:center;padding:6px 2px;border-radius:8px;cursor:pointer;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:\'+bg+\';-webkit-tap-highlight-color:transparent;">\';'
     +     'h+=\'<span style="font-size:0.88rem;font-weight:\'+(isToday||isSel?"700":"400")+\';color:\'+fg+\'">\'+d+\'</span>\';'
-    +     'if(hasAppt)h+=\'<span style="display:block;width:5px;height:5px;border-radius:50%;background:\'+(isSel||isToday?"#fff":"#4169e1")+\';margin-top:2px;"></span>\';'
+    +     'if(hasAppt||hasPE){'
+    +       'h+=\'<span style="display:flex;gap:2px;margin-top:2px;">\';'
+    +       'if(hasAppt)h+=\'<span style="display:block;width:5px;height:5px;border-radius:50%;background:\'+(isSel||isToday?"#fff":"#4169e1")+\';"></span>\';'
+    +       'if(hasPE)h+=\'<span style="display:block;width:5px;height:5px;border-radius:50%;background:\'+(isSel||isToday?"#ffe08a":"#f0b429")+\';"></span>\';'
+    +       'h+=\'</span>\';'
+    +     '}'
     +     'h+=\'</div>\';'
     +   '}'
     +   'h+=\'</div>\';'
@@ -4346,12 +4407,37 @@ router.get('/appointments', requireAuth, function(req, res) {
   var apptMsg = '';
   if (req.query.msg === 'rescheduled') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment rescheduled.</div>';
   if (req.query.msg === 'cancelled') apptMsg = '<div class="alert" style="margin-bottom:14px;background:#fff8e1;border:1px solid #f0b429;color:#6b4c00;padding:10px 14px;border-radius:8px;">Appointment cancelled. Lead returned to pipeline.</div>';
+  if (req.query.msg === 'blocked') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Time blocked off.</div>';
+  if (req.query.msg === 'blockremoved') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Time block removed.</div>';
 
-  var body = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+  var inputStyle = 'width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;';
+  var blockFormHtml = '<div id="blockForm" class="card" style="display:none;margin-bottom:16px;border-left:4px solid #f0b429;">'
+    + '<div class="section-title" style="margin-bottom:10px;">Block Off Time</div>'
+    + '<form method="POST" action="/admin/appointments/block">'
+    + '<div class="form-group"><label>Title <span style="color:#c0392b;">*</span></label>'
+    + '<input type="text" name="title" required placeholder="e.g. Personal, Dentist, Lunch" style="' + inputStyle + '"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
+    + '<input type="date" name="event_date" required style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>Start</label>'
+    + '<select name="start_time" style="' + inputStyle + '">' + ownerTimeOptions('') + '</select></div>'
+    + '<div class="form-group"><label>End</label>'
+    + '<select name="end_time" style="' + inputStyle + '">' + ownerTimeOptions('') + '</select></div>'
+    + '</div>'
+    + '<div class="form-group"><label>Note <span style="color:#bbb;font-weight:400;">(optional)</span></label>'
+    + '<input type="text" name="note" style="' + inputStyle + '"></div>'
+    + '<button type="submit" class="btn btn-navy btn-sm" style="width:auto;">Save Time Block</button>'
+    + '</form></div>';
+
+  var body = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Appointments</h1>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<button type="button" class="btn btn-sm" style="width:auto;background:#fff8e1;color:#a07800;border:1px solid #f0b429;" onclick="var f=document.getElementById(\'blockForm\');f.style.display=f.style.display===\'none\'?\'block\':\'none\';">+ Block Time</button>'
     + '<a href="/admin/appointments/new" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + '+ New Appointment</a>'
     + '</div>'
+    + '</div>'
     + apptMsg
+    + blockFormHtml
     + calHtml
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
     + '<div class="section-title" style="margin:0;" id="apptFilterLabel">All appointments</div>'
@@ -4390,6 +4476,22 @@ router.post('/appointments/:lead_id/cancel', requireAuth, function(req, res) {
   res.redirect('/admin/appointments?msg=cancelled');
 });
 
+// ─── Personal time blocks (owner calendar events, visual only) ────────────────
+
+router.post('/appointments/block', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var title = (req.body.title || '').trim();
+  var date  = (req.body.event_date || '').trim();
+  if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.redirect('/admin/appointments');
+  db.prepare('INSERT INTO personal_events (title, event_date, start_time, end_time, note) VALUES (?,?,?,?,?)')
+    .run(title, date, (req.body.start_time || '').trim() || null, (req.body.end_time || '').trim() || null, (req.body.note || '').trim() || null);
+  res.redirect('/admin/appointments?msg=blocked');
+});
+
+router.post('/appointments/block/:id/delete', requireAuth, function(req, res) {
+  db.prepare('DELETE FROM personal_events WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/appointments?msg=blockremoved');
+});
+
 router.get('/appointments/new', requireAuth, function(req, res) {
   var apptPricing = getEffectivePricing();
   var serviceNames = Object.keys(apptPricing);
@@ -4419,16 +4521,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
     + '<input type="hidden" name="service" id="apptSvcHidden" value="">';
 
-  var timeOpts = '<option value="">-- Select time --</option>';
-  for (var mins = 8 * 60; mins <= 17 * 60; mins += 30) {
-    if (mins >= 12 * 60 && mins < 13 * 60) continue;
-    var h24 = Math.floor(mins / 60);
-    var m = mins % 60;
-    var ampm = h24 < 12 ? 'AM' : 'PM';
-    var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-    var label = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
-    timeOpts += '<option value="' + label + '">' + label + '</option>';
-  }
+  var timeOpts = ownerTimeOptions('');
 
   var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
   var mapsScript = mapsKey
@@ -4777,12 +4870,17 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
         + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">Apple / Outlook (.ics)</a>'
         + '</div>'
         + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair.</p>'
+        + '<div style="text-align:center;margin:0 0 24px;">'
+        + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
+        + '<a href="' + baseUrl + '/quote/' + quoteResult.lastInsertRowid + '/' + token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'
+        + '<a href="' + baseUrl + '/quote/' + quoteResult.lastInsertRowid + '/' + token + '?action=cancel" style="display:inline-block;background:#fff;border:2px solid #c0392b;color:#c0392b;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Cancel Appointment</a>'
+        + '</div>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: cust.email, subject: 'Your appointment is confirmed - Brake Knights', html: html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: cust.email, cc: 'greetings@brakeknights.com', subject: 'Your appointment is confirmed - Brake Knights', html: html });
     } catch (err) { console.error('Appointment confirmation email error:', err.message); }
   }
 

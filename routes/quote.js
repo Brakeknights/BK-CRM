@@ -103,6 +103,49 @@ function buildTimeOptions() {
   return opts;
 }
 
+// Parse a "9:30 AM" style label to minutes since midnight; -1 if unparsable.
+function slotMins(t) {
+  var m = /(\d+):(\d+)\s*(AM|PM)/i.exec(t || '');
+  if (!m) return -1;
+  var h = (+m[1] % 12) + (m[3].toUpperCase() === 'PM' ? 12 : 0);
+  return h * 60 + (+m[2]);
+}
+function slotLabel(mins) {
+  var h24 = Math.floor(mins / 60), m = mins % 60;
+  var ampm = h24 < 12 ? 'AM' : 'PM';
+  var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+}
+
+// Customer-picker availability: which slots are already taken on a date.
+// Each booked job occupies its start through its service duration plus a
+// 1-hour bumper; the requesting customer's own duration (plus bumper) must
+// also fit before the next booked job. These are scheduling defaults only —
+// the owner has full control at approval time and owner forms are unrestricted.
+// Owner personal time blocks are intentionally NOT included (visual only).
+function blockedSlotsForDate(dateIso, ownService, excludeLeadId) {
+  var jobs = db.prepare(
+    "SELECT q.pref_time, q.service FROM quotes q JOIN leads l ON l.id = q.lead_id "
+    + "WHERE l.status = 'booked' AND l.archived = 0 AND q.status = 'approved' "
+    + "AND q.pref_date = ? AND q.lead_id != ?"
+  ).all(dateIso, excludeLeadId || 0);
+  var BUFFER = 60;
+  var windows = [];
+  jobs.forEach(function(j) {
+    var start = slotMins(j.pref_time);
+    if (start < 0) return; // "Anytime" or unparsable — no fixed window to block
+    windows.push([start, start + (totalMinutes(j.service) || 60) + BUFFER]);
+  });
+  var ownDur = (totalMinutes(ownService) || 60) + BUFFER;
+  var blocked = [];
+  for (var mins = 9 * 60; mins <= 18 * 60; mins += 30) {
+    var slotEnd = mins + ownDur;
+    var conflict = windows.some(function(w) { return mins < w[1] && w[0] < slotEnd; });
+    if (conflict) blocked.push(slotLabel(mins));
+  }
+  return blocked;
+}
+
 // Format a stored ISO date (YYYY-MM-DD) as "Friday, June 5, 2026".
 // Falls back to the raw value if it isn't an ISO date.
 function formatPrefDate(val) {
@@ -326,6 +369,16 @@ router.get('/:id/:token/calendar.ics', function(req, res) {
   res.send(ics);
 });
 
+// Availability for the customer time picker. Token-protected; returns only
+// blocked time labels for the requested date, never any booking details.
+router.get('/:id/:token/availability', function(req, res) {
+  var q = loadQuote(req.params.id, req.params.token);
+  if (!q) return res.status(404).json({ blocked: [] });
+  var date = String(req.query.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.json({ blocked: [] });
+  res.json({ blocked: blockedSlotsForDate(date, q.service, q.lead_id) });
+});
+
 // ─── Accept page (GET) ────────────────────────────────────────────────────────
 
 router.get('/:id/:token', function(req, res) {
@@ -404,6 +457,8 @@ router.get('/:id/:token', function(req, res) {
     +   'var WDAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];'
     +   'var TIMES=["Anytime","9:00 AM","9:30 AM","10:00 AM","10:30 AM","11:00 AM","11:30 AM","12:00 PM","12:30 PM","1:00 PM","1:30 PM","2:00 PM","2:30 PM","3:00 PM","3:30 PM","4:00 PM","4:30 PM","5:00 PM","5:30 PM","6:00 PM"];'
     +   'var SAT_CUTOFF_MINS=15*60;'
+    +   'var BLOCKED=[];'
+    +   'var AVAIL_URL="/quote/' + q.id + '/' + q.accept_token + '/availability";'
 
     +   'var today=new Date();today.setHours(0,0,0,0);'
     +   'var calY=today.getFullYear(),calM=today.getMonth();'
@@ -447,7 +502,7 @@ router.get('/:id/:token', function(req, res) {
     +   'function renderTimes(){'
     +     'var isSat=selDate&&isoToDate(selDate).getDay()===6;'
     +     'var html=TIMES.map(function(t){'
-    +       'var isOff=isSat&&t!=="Anytime"&&timeMins(t)>SAT_CUTOFF_MINS;'
+    +       'var isOff=(isSat&&t!=="Anytime"&&timeMins(t)>SAT_CUTOFF_MINS)||(t!=="Anytime"&&BLOCKED.indexOf(t)>=0);'
     +       'var isSel=t===selTime;'
     +       'var cls="bk-tb"+(isSel?" sel":"")+(isOff?" off":"");'
     +       'var click=isOff?"":" onclick=\\"bkPickTime(\'"+t+"\')\\"";'
@@ -468,7 +523,19 @@ router.get('/:id/:token', function(req, res) {
     +       'document.getElementById("bkTimeVal").textContent="Select a time";'
     +       'document.getElementById("bkTimeVal").classList.add("placeholder");'
     +     '}'
+    +     'BLOCKED=[];'
     +     'renderCal();renderTimes();'
+    // Pull real availability for the picked day and grey out taken slots.
+    +     'fetch(AVAIL_URL+"?date="+iso).then(function(r){return r.json();}).then(function(d){'
+    +       'if(selDate!==iso)return;'
+    +       'BLOCKED=d.blocked||[];'
+    +       'if(selTime&&BLOCKED.indexOf(selTime)>=0){'
+    +         'selTime="";document.getElementById("bkPrefTime").value="";'
+    +         'document.getElementById("bkTimeVal").textContent="Select a time";'
+    +         'document.getElementById("bkTimeVal").classList.add("placeholder");'
+    +       '}'
+    +       'renderTimes();'
+    +     '}).catch(function(){});'
     +   '}'
 
     +   'function bkPickTime(t){'
@@ -684,7 +751,7 @@ function manageAppointmentCard(q) {
     + '<div class="form-group"><label>New preferred date</label>'
     + '<input type="date" name="prefDate" id="bkReschedDate" required></div>'
     + '<div class="form-group"><label>New preferred time</label>'
-    + '<select name="prefTime" required>' + buildTimeOptions() + '</select></div>'
+    + '<select name="prefTime" id="bkReschedTime" required>' + buildTimeOptions() + '</select></div>'
     + '<div class="form-group"><label>Anything we should know? <span style="color:#aab;font-weight:400;">(optional)</span></label>'
     + '<textarea name="rescheduleNote" placeholder="Reason for the change, second-choice time, etc."></textarea></div>'
     + '<button type="submit" class="btn btn-blue">Send New Time Request</button>'
@@ -702,6 +769,19 @@ function manageAppointmentCard(q) {
     + '<script>'
     + 'function bkShowResched(){var f=document.getElementById("bkReschedForm");var c=document.getElementById("bkCancelForm");c.style.display="none";f.style.display=f.style.display==="none"?"block":"none";var d=document.getElementById("bkReschedDate");if(d){var t=new Date();t.setDate(t.getDate()+1);d.min=t.toISOString().slice(0,10);}}'
     + 'function bkShowCancel(){var f=document.getElementById("bkReschedForm");var c=document.getElementById("bkCancelForm");f.style.display="none";c.style.display=c.style.display==="none"?"block":"none";}'
+    // Grey out taken slots when a reschedule date is picked (same availability
+    // rules as the accept page).
+    + '(function(){var d=document.getElementById("bkReschedDate"),s=document.getElementById("bkReschedTime");if(!d||!s)return;'
+    + 'd.addEventListener("change",function(){var iso=d.value;if(!iso)return;'
+    + 'fetch("' + base + '/availability?date="+iso).then(function(r){return r.json();}).then(function(j){'
+    + 'var bl=j.blocked||[];'
+    + 'for(var i=0;i<s.options.length;i++){var o=s.options[i];o.disabled=o.value!==""&&o.value!=="Anytime"&&bl.indexOf(o.value)>=0;}'
+    + 'if(s.value&&s.value!=="Anytime"&&bl.indexOf(s.value)>=0)s.value="";'
+    + '}).catch(function(){});});})();'
+    // Email Reschedule/Cancel buttons land here with ?action= to auto-open the form.
+    + '(function(){var a=new URLSearchParams(location.search).get("action");'
+    + 'if(a==="reschedule")bkShowResched();else if(a==="cancel")bkShowCancel();'
+    + 'if(a){var el=document.getElementById(a==="cancel"?"bkCancelForm":"bkReschedForm");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});}})();'
     + '</script>'
     + '</div>';
 }
