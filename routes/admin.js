@@ -1264,7 +1264,7 @@ router.get('/', requireAuth, function(req, res) {
   } else if (status === 'all') {
     leads = db.prepare("SELECT * FROM leads WHERE archived = 0 AND status != 'receipt' ORDER BY id DESC").all();
   } else {
-    leads = db.prepare('SELECT * FROM leads WHERE status = ? AND archived = 0 ORDER BY id DESC').all(status);
+    leads = db.prepare("SELECT * FROM leads WHERE status = ? AND archived = 0 ORDER BY id DESC").all(status);
   }
 
   var counts = db.prepare("SELECT status, COUNT(*) as n FROM leads WHERE archived = 0 AND status != 'receipt' GROUP BY status").all()
@@ -1599,7 +1599,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Lead history
     + '<div data-section="lead-history">'
     + (function() {
-        var history = db.prepare('SELECT * FROM lead_history WHERE lead_id = ? ORDER BY id ASC').all(lead.id);
+        var history = db.prepare('SELECT * FROM lead_history WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
         if (history.length === 0) return '';
         var rows = history.map(function(h) {
           return '<div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid #f4f4f4;">'
@@ -1916,6 +1916,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
     await transporter.sendMail({
       from:    '"Brake Knights" <greetings@brakeknights.com>',
       to:      lead.email,
+      cc:      'greetings@brakeknights.com',
       replyTo: 'greetings@brakeknights.com',
       subject: isRevisedQuote
         ? 'Your Updated Brake Service Quote — Brake Knights'
@@ -3325,6 +3326,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       await tx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      email,
+        cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
         subject: qqRevised
           ? 'Your Updated Brake Service Quote — Brake Knights'
