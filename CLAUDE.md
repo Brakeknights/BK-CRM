@@ -47,6 +47,9 @@ Claude creates the PR; the user merges it. No exceptions, no shortcuts.
 
 The pre-push hook and GitHub ruleset remain in place as protection, but the PR workflow is the only path to master going forward.
 
+### New Skill Reminder (Always)
+Skills only travel to a new session if they are committed to a branch that session checks out. A skill added on a feature branch or only on `dev` will NOT appear in fresh sessions started from `master`. So: **whenever a new skill is added (or an existing skill file is changed) under `.claude/skills/`, remind the owner to push it through to master** (feature branch to dev, then a dev to master PR) so it does not get left behind. Flag this proactively at the end of any session where a skill was created or edited, even if the owner did not ask.
+
 ## Overview
 Website and customer portal for Brakeknights (brakeknights.com).
 Built with Node.js/Express, deployed on Hostinger.
