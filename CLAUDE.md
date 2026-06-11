@@ -167,7 +167,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #26 ✅
+- Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #29 ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
@@ -232,7 +232,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
 - [ ] Add a good rotor-caliper photo to brake inspection page (tabled — image rotation issue on mobile)
-- [ ] Vehicle year/make/model cascading dropdowns on contact forms (replace free-text vehicle field) — use NHTSA free API (vpic.nhtsa.dot.gov) for model lookup, no data to maintain; tackle after Phase 3B/3C
+- [x] Vehicle year/make/model cascading dropdowns on contact forms and all admin vehicle entry points (Quick Quote, Receipt Builder, appointments, customer forms) — NHTSA API, "Other" fallback, required validation on public forms. Live on master via PR #29.
 - [ ] Finalize pricing table by vehicle type (required before Phase 8) — flat pricing today; Phase 8 needs per-vehicle-class matrix
 - [ ] Review/update existing service prices — owner flagged that "some service prices need updating". Walk through the pricing table tier by tier and update any that changed. (IN PROGRESS)
 - [ ] CRM improvement: tag submission source (homepage vs contact page) in Square customer note
@@ -242,6 +242,9 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Set up email forwarding: greetings@brakeknights.com → personal Gmail for instant push notifications (currently 2-5 min IMAP delay)
 
 ### Completed This Session
+- [x] PR #29: Vehicle cascade dropdowns (NHTSA API, "Other" free-text fallback) applied to Quick Quote and Receipt Builder; appointments Clear Selection now zeroes prices; Preview Email button on New Appointment form; required year/make/model validation on public contact forms (index.html + contact.html).
+
+### Previously Completed This Session
 - [x] PR #26: Fix duplicate services on receipts/quotes (dedup customService before appending); fix Square sync re-importing deleted name-only customers (skip Square customers with no email AND no phone).
 - [x] PR #25: Home address on customer profile (stored, editable, shown as clickable Maps link in header); clickable Maps links on lead cards, scheduling panel, and appointments tab (falls back to customer home address when no service address); custom service field on quote builder, receipt builder, and appointment form; fix duplicate customers from Square sync (Square ID lookup first); customer list sort fixes (active customers first, "Most jobs" by count); delete button on customer list cards.
 - [x] PR #24: Custom service field platform-wide (quote builder, receipt builder, appointments); Quick Quote receipt mode fix (custom service was dropped from email and preview).
