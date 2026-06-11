@@ -256,3 +256,14 @@ Alex is a small business owner, not a developer. Every coding session:
 - Never assume knowledge of terms like "function," "variable," "array," "middleware," etc. without a brief explanation
 - Flag anything that could break existing functionality
 - Keep instructions step-by-step and actionable
+
+
+---
+
+## Available Skills
+
+The following additional skills are available in this project. Load them when the task matches.
+
+| Skill | File | When to use |
+|-------|------|-------------|
+| humanizer | `.claude/skills/humanizer/SKILL.md` | **Use automatically** whenever writing or editing any customer-facing copy: website pages, blog posts, Google Business Profile posts, email templates (quotes, receipts, confirmations, follow-ups, reminders). Load this skill before generating or revising any of that content — it defines the Brake Knights voice and rewriting rules. |
