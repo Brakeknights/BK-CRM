@@ -330,7 +330,7 @@ function nextStageHint(lead) {
     new:            { text: 'Next: build and send a quote using the form on this page.', bg: '#e3f0ff', border: '#b9d4f5', color: '#1a2a3a' },
     quoted:         { text: 'Waiting for the customer to accept the quote.', bg: '#dde7fb', border: '#b9c9f5', color: '#3a4fb8' },
     quote_accepted: { text: 'Review the appointment request above and Approve or Deny.', bg: '#e0f4f8', border: '#b9dde8', color: '#0e7490' },
-    booked:         { text: 'Job is booked. After the service, click Complete Job &amp; Send Receipt.', bg: '#e6f9ee', border: '#bfe3cb', color: '#1a7a3a' },
+    booked:         { text: 'Job is booked. After the service, click Send Receipt to wrap it up.', bg: '#e6f9ee', border: '#bfe3cb', color: '#1a7a3a' },
     completed:      { text: 'Job done. Send the customer a receipt to wrap up.', bg: '#fff1de', border: '#f5d9b0', color: '#7a4a00' },
     receipt:        { text: 'Receipt sent. Follow-ups are scheduled if applicable.', bg: '#e6f9ee', border: '#bfe3cb', color: '#0a6b2e' }
   };
@@ -1406,7 +1406,7 @@ router.get('/', requireAuth, function(req, res) {
           + (l.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(l.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('envelope') + 'Email</button>' : '')
           + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;min-width:120px;">Open Quote</a>'
           + '</div>'
-          + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">&#10003; Complete Job &amp; Send Receipt</a>')
+          + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">Send Receipt</a>')
           + (l.archived
               ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
                 + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
@@ -1570,7 +1570,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div id="sects">'
 
     + '<div data-section="complete-job">'
-    + (!lead.archived ? '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue" style="margin-bottom:12px;">&#10003; Complete Job &amp; Send Receipt</a>' : '')
+    + (!lead.archived ? '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue btn-sm" style="margin-bottom:12px;">' + ic('receipt') + 'Send Receipt</a>' : '')
     + '</div>'
 
     // Receipt history
