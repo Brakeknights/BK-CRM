@@ -266,4 +266,4 @@ The following additional skills are available in this project. Load them when th
 
 | Skill | File | When to use |
 |-------|------|-------------|
-| humanizer | `~/.claude/skills/humanizer/SKILL.md` | **Use automatically** whenever writing or editing any customer-facing copy: website pages, blog posts, Google Business Profile posts, email templates (quotes, receipts, confirmations, follow-ups, reminders). Load this skill before generating or revising any of that content — it defines the Brake Knights voice and rewriting rules. |
+| humanizer | `.claude/skills/humanizer/SKILL.md` | **Use automatically** whenever writing or editing any customer-facing copy: website pages, blog posts, Google Business Profile posts, email templates (quotes, receipts, confirmations, follow-ups, reminders). Load this skill before generating or revising any of that content — it defines the Brake Knights voice and rewriting rules. |
