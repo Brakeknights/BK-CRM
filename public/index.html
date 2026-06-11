@@ -1025,11 +1025,14 @@
       document.getElementById('tesla-block-msg').style.display = 'block';
       return;
     }
-    const vehicleVal = document.getElementById('vehicle')?.value;
-    if (!vehicleVal) {
+    const vehicleYear  = document.getElementById('vehicle-year-val')?.value;
+    const vehicleMake  = document.getElementById('vehicle-make-val')?.value;
+    const vehicleModel = document.getElementById('vehicle-model-val')?.value;
+    if (!vehicleYear || !vehicleMake || !vehicleModel) {
       alert('Please select your vehicle year, make, and model.');
       return;
     }
+    const vehicleVal = document.getElementById('vehicle')?.value;
     btn.textContent = 'Sending…';
     btn.disabled = true;
     const data = {
@@ -1038,9 +1041,9 @@
       phone:            document.getElementById('phone')?.value,
       email:            document.getElementById('email')?.value,
       vehicle:          vehicleVal,
-      vehicleYear:      document.getElementById('vehicle-year-val')?.value,
-      vehicleMake:      document.getElementById('vehicle-make-val')?.value,
-      vehicleModel:     document.getElementById('vehicle-model-val')?.value,
+      vehicleYear:      vehicleYear,
+      vehicleMake:      vehicleMake,
+      vehicleModel:     vehicleModel,
       service:          document.getElementById('service')?.value,
       preferredContact: document.getElementById('preferred-contact')?.value,
       message:          document.getElementById('message')?.value,
