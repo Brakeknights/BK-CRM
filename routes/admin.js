@@ -404,6 +404,18 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .appbar-bell:hover{background:var(--gray-100)}
 .appbar-bell svg{width:22px;height:22px}
 .appbar-bell .cnt{position:absolute;top:5px;right:4px;background:var(--cta);color:#fff;font-size:0.64rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px}
+.appbar-bell-wrap{position:relative;display:inline-flex}
+.bell-preview{position:absolute;top:calc(100% + 4px);right:0;width:320px;max-width:calc(100vw - 24px);background:#fff;border:1px solid var(--gray-200);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;opacity:0;visibility:hidden;transform:translateY(-6px);transition:opacity .14s ease,transform .14s ease;z-index:200}
+.bell-preview::before{content:"";position:absolute;top:-8px;left:0;right:0;height:8px}
+.appbar-bell-wrap:hover .bell-preview,.appbar-bell-wrap:focus-within .bell-preview{opacity:1;visibility:visible;transform:translateY(0)}
+.bell-preview-hd{font-size:0.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray-400);padding:8px 10px 6px}
+.bell-preview-item{display:block;padding:9px 10px;border-radius:8px;text-decoration:none}
+.bell-preview-item:hover{background:var(--gray-100)}
+.bell-preview-item .nm{font-size:0.86rem;font-weight:600;color:#0a1f3d}
+.bell-preview-item .ds{font-size:0.8rem;color:var(--gray-600);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bell-preview-item .dt{font-size:0.74rem;font-weight:600;color:var(--cta);margin-top:2px}
+.bell-preview-ft{display:block;text-align:center;padding:9px;margin-top:4px;border-top:1px solid var(--gray-100);font-size:0.82rem;font-weight:600;color:var(--cta);text-decoration:none}
+.bell-preview-empty{padding:20px 12px;text-align:center;color:var(--gray-400);font-size:0.85rem}
 .appbar-logout{color:var(--gray-600);font-size:0.84rem;text-decoration:none;padding:8px 10px;border-radius:8px}
 .appbar-logout:hover{background:var(--gray-100);color:var(--gray-900)}
 .content{max-width:960px;width:100%;margin:0 auto;padding:24px 16px}
@@ -746,6 +758,17 @@ function page(title, body, req) {
     dueCount = db.prepare("SELECT COUNT(*) AS n FROM followups WHERE sent = 0 AND date(due_date) <= date('now')").get().n;
   } catch (_) {}
 
+  // Due-now items for the bell hover preview (snapshot without leaving the page).
+  var dueItems = [];
+  try {
+    dueItems = db.prepare(
+      'SELECT f.id, f.description, f.due_date, f.lead_id, l.first_name, l.last_name '
+      + 'FROM followups f JOIN leads l ON l.id = f.lead_id '
+      + "WHERE f.sent = 0 AND date(f.due_date) <= date('now') "
+      + 'ORDER BY f.due_date ASC, f.id ASC LIMIT 6'
+    ).all();
+  } catch (_) {}
+
   // Count of unactioned new leads for the sidebar badge.
   var newLeadCount = 0;
   try {
@@ -770,8 +793,26 @@ function page(title, body, req) {
       }).join('')
     + '</aside>';
 
-  var bell = '<a href="/admin/followups" class="appbar-bell" aria-label="Follow-ups">'
-    + icon('clock') + (dueCount > 0 ? '<span class="cnt">' + dueCount + '</span>' : '') + '</a>';
+  var bellPreviewItems = dueItems.map(function(f) {
+    var nm = ((f.first_name || '') + ' ' + (f.last_name || '')).trim() || 'Lead #' + f.lead_id;
+    return '<a href="/admin/quote/' + f.lead_id + '" class="bell-preview-item">'
+      + '<div class="nm">' + esc(nm) + '</div>'
+      + '<div class="ds">' + esc(f.description || 'Follow-up') + '</div>'
+      + '<div class="dt">Due ' + esc(fmtPrefDate(f.due_date)) + '</div>'
+      + '</a>';
+  }).join('');
+  var bellPanel = '<div class="bell-preview">'
+    + '<div class="bell-preview-hd">Needs action' + (dueCount > 0 ? ' (' + dueCount + ')' : '') + '</div>'
+    + (dueItems.length
+        ? bellPreviewItems
+          + (dueCount > dueItems.length ? '<a href="/admin/followups" class="bell-preview-ft">View all ' + dueCount + ' follow-ups</a>' : '<a href="/admin/followups" class="bell-preview-ft">Open follow-ups</a>')
+        : '<div class="bell-preview-empty">You&rsquo;re all caught up.</div>')
+    + '</div>';
+  var bell = '<div class="appbar-bell-wrap">'
+    + '<a href="/admin/followups" class="appbar-bell" aria-label="Follow-ups">'
+    + icon('clock') + (dueCount > 0 ? '<span class="cnt">' + dueCount + '</span>' : '') + '</a>'
+    + bellPanel
+    + '</div>';
 
   var pushBtn = vapidKey
     ? '<button id="push-btn" class="push-btn" onclick="togglePush()" title="Enable push notifications" aria-label="Enable push notifications">'
