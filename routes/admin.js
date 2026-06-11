@@ -1404,9 +1404,8 @@ router.get('/', requireAuth, function(req, res) {
           + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('phone') + 'Call</a>'
           + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('chat') + 'Text</a>'
           + (l.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(l.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('envelope') + 'Email</button>' : '')
-          + '<a href="/admin/quote/' + l.id + '" class="btn btn-navy btn-sm" style="flex:1;text-align:center;min-width:120px;">Open Quote</a>'
           + '</div>'
-          + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-blue btn-sm" style="width:100%;margin-top:8px;text-align:center;">Send Receipt</a>')
+          + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-navy btn-sm" style="width:100%;margin-top:8px;text-align:center;">' + ic('receipt') + 'Send Receipt</a>')
           + (l.archived
               ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
                 + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
@@ -1570,7 +1569,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div id="sects">'
 
     + '<div data-section="complete-job">'
-    + (!lead.archived ? '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue btn-sm" style="margin-bottom:12px;">' + ic('receipt') + 'Send Receipt</a>' : '')
+    + (!lead.archived ? '<a href="/admin/receipt/' + lead.id + '" class="btn btn-navy btn-sm" style="margin-bottom:12px;">' + ic('receipt') + 'Send Receipt</a>' : '')
     + '</div>'
 
     // Receipt history
@@ -4338,7 +4337,6 @@ router.get('/appointments', requireAuth, function(req, res) {
       + (a.pref_location ? '<div style="font-size:0.82rem;margin-top:2px;">' + mapsLink(a.pref_location, { style: 'color:#1a6fc4;font-size:0.82rem;text-decoration:none;' }) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(a.total) + '</div>'
       + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
-      + '<a href="/admin/quote/' + a.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('clipboard') + 'Open Lead</a>'
       + '<button type="button" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">' + ic('calendar') + 'Reschedule</button>'
       + '<form method="POST" action="/admin/appointments/' + a.id + '/cancel" style="display:inline;margin:0;" onsubmit="return confirm(\'Cancel this appointment? The lead will return to the pipeline.\');">'
       + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;" onclick="event.stopPropagation();">Cancel Appt</button>'
