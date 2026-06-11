@@ -457,8 +457,13 @@ function buildReminderEmail(q, soonText) {
     + '<div style="text-align:center;margin:0 0 24px;">'
     + '<a href="' + calendarUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">&#128197; Add to Calendar</a>'
     + '</div>'
+    + '<div style="text-align:center;margin:0 0 24px;">'
+    + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
+    + '<a href="https://brakeknights.com/quote/' + q.id + '/' + q.accept_token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'
+    + '<a href="https://brakeknights.com/quote/' + q.id + '/' + q.accept_token + '?action=cancel" style="display:inline-block;background:#fff;border:2px solid #c0392b;color:#c0392b;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Cancel Appointment</a>'
+    + '</div>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
-    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Need to reschedule? Call or text:</p>'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
     + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
     + '</div></div>'
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
@@ -501,6 +506,7 @@ setInterval(function() {
     tx().sendMail({
       from:    '"Brake Knights" <greetings@brakeknights.com>',
       to:      q.lead_email,
+      cc:      'greetings@brakeknights.com',
       subject: 'Reminder: Your Brake Knights appointment',
       html:    buildReminderEmail(q, soonText)
     }).catch(function(err) { console.error('Appointment reminder error:', err.message); });
