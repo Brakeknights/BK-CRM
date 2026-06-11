@@ -4,6 +4,7 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const db = require('../db');
 const customers = require('../customers');
+const { sendStagePush } = require('../push');
 const PRICING = require('../pricing');
 const { client: squareClient } = require('../square');
 const { toEasternRfc3339 } = require('../datetime');
@@ -653,7 +654,10 @@ function vehicleCascadeHtml(prefix, names, vals) {
     + '<div class="form-group" style="margin-bottom:8px;"><label>Make</label>'
     + '<select name="' + nMake + '" id="' + prefix + '-make">' + adminMakeOptions(vals.make) + '</select></div>'
     + '<div class="form-group" style="margin-bottom:8px;"><label>Model</label>'
-    + '<select name="' + nModel + '" id="' + prefix + '-model"' + (vals.model ? ' data-preset="' + esc(vals.model) + '"' : '') + '>' + modelOpt + '</select></div>'
+    + '<select id="' + prefix + '-model"' + (vals.model ? ' data-preset="' + esc(vals.model) + '"' : '') + '>' + modelOpt + '</select>'
+    + '<input type="text" id="' + prefix + '-model-other" placeholder="Type model…" autocomplete="off" style="display:none;margin-top:6px;">'
+    + '<input type="hidden" name="' + nModel + '" id="' + prefix + '-model-hid" value="' + esc(vals.model || '') + '">'
+    + '</div>'
     + '</div>';
 }
 
@@ -668,19 +672,30 @@ var VEHICLE_CASCADE_JS = '<script>'
   +   'if(!dataPromise){dataPromise=fetch("/assets/vehicle-models.json").then(function(r){return r.json();}).then(function(d){return (d&&d.makes)||{};}).catch(function(){return {};});}'
   +   'return dataPromise;'
   + '}'
+  + 'function syncHidden(prefix){'
+  +   'var mo=document.getElementById(prefix+"-model"),hid=document.getElementById(prefix+"-model-hid"),ot=document.getElementById(prefix+"-model-other");'
+  +   'if(!mo||!hid)return;'
+  +   'if(mo.value==="__other__"){'
+  +     'if(ot){ot.style.display="";ot.focus();}hid.value=ot?ot.value:"";'
+  +   '}else{'
+  +     'hid.value=mo.value;if(ot){ot.style.display="none";ot.value="";}'
+  +   '}'
+  + '}'
   + 'function loadModels(prefix){'
   +   'var mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
   +   'if(!mk||!mo)return;'
   +   'var make=mk.value;'
   +   'var preset=mo.getAttribute("data-preset")||"";'
-  +   'if(!make){mo.innerHTML="<option value=\\"\\">Model</option>";return;}'
+  +   'if(!make){mo.innerHTML="<option value=\\"\\">Model</option>";syncHidden(prefix);return;}'
   +   'mo.innerHTML="<option value=\\"\\">Loading…</option>";'
   +   'getData().then(function(makes){'
   +     'var models=(makes[make]||[]).slice();'
   +     'var html="<option value=\\"\\">Model</option>";'
   +     'models.forEach(function(m){html+="<option value=\\""+m+"\\""+(m===preset?" selected":"")+">"+m+"</option>";});'
   +     'if(preset&&models.indexOf(preset)<0)html+="<option value=\\""+preset+"\\" selected>"+preset+"</option>";'
+  +     'html+="<option value=\\"__other__\\">Other…</option>";'
   +     'mo.innerHTML=html;'
+  +     'syncHidden(prefix);'
   +   '});'
   + '}'
   + 'window.bkVehInit=function(){'
@@ -690,13 +705,17 @@ var VEHICLE_CASCADE_JS = '<script>'
   +     'if(!mk||mk.getAttribute("data-wired"))return;'
   +     'mk.setAttribute("data-wired","1");'
   +     'mk.addEventListener("change",function(){loadModels(prefix);});'
+  +     'var mo=document.getElementById(prefix+"-model"),ot=document.getElementById(prefix+"-model-other");'
+  +     'if(mo)mo.addEventListener("change",function(){syncHidden(prefix);});'
+  +     'if(ot)ot.addEventListener("input",function(){var hid=document.getElementById(prefix+"-model-hid");if(hid)hid.value=ot.value;});'
   +     'if(mk.value)loadModels(prefix);'
   +   '});'
   + '};'
   + 'window.bkVehFill=function(prefix,v){'
-  +   'v=v||{};var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model");'
+  +   'v=v||{};var y=document.getElementById(prefix+"-year"),mk=document.getElementById(prefix+"-make"),mo=document.getElementById(prefix+"-model"),hid=document.getElementById(prefix+"-model-hid");'
   +   'if(y)y.value=v.year||"";if(mk)mk.value=v.make||"";'
   +   'if(mo){if(v.model){mo.setAttribute("data-preset",v.model);}else{mo.removeAttribute("data-preset");mo.innerHTML="<option value=\\"\\">Model</option>";}}'
+  +   'if(hid)hid.value=v.model||"";'
   +   'if(mk&&mk.value)loadModels(prefix);'
   + '};'
   + 'if(document.readyState!=="loading")window.bkVehInit();else document.addEventListener("DOMContentLoaded",window.bkVehInit);'
@@ -945,6 +964,7 @@ router.post('/lead/:id/status', requireAuth, express.urlencoded({ extended: fals
     var statusLabels = { new: 'New', quoted: 'Quoted', follow_up: 'Follow Up', quote_accepted: 'Quote Accepted', booked: 'Booked', completed: 'Completed', receipt: 'Receipt Sent' };
     db.prepare("UPDATE leads SET status = ?, status_updated_at = datetime('now') WHERE id = ?").run(status, req.params.id);
     logHistory(lead.id, 'Status changed to ' + (statusLabels[status] || status));
+    sendStagePush(lead, status);
     notifyStageChange(req, lead, status).catch(function(err) { console.error('Stage notification error:', err.message); });
   }
   var back = req.body.back || '/admin';
@@ -1062,6 +1082,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
 
   db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ', ' + quote.pref_location : ''));
+  if (lead.status !== 'booked') sendStagePush(lead, 'booked');
 
   // Square calendar booking
   try {
@@ -1142,12 +1163,17 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
         + '<p style="color:#888;font-size:0.8rem;margin:6px 0 0;">Google Calendar opens in your browser. The .ics works with Apple Calendar and Outlook.</p>'
         + '</div>'
         + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
+        + '<div style="text-align:center;margin:0 0 24px;">'
+        + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
+        + '<a href="' + baseUrl + '/quote/' + quote.id + '/' + quote.accept_token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'
+        + '<a href="' + baseUrl + '/quote/' + quote.id + '/' + quote.accept_token + '?action=cancel" style="display:inline-block;background:#fff;border:2px solid #c0392b;color:#c0392b;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Cancel Appointment</a>'
+        + '</div>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, subject: 'Your appointment is confirmed — Brake Knights', html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, cc: 'greetings@brakeknights.com', subject: 'Your appointment is confirmed — Brake Knights', html });
     } catch (err) { console.error('Approve schedule email error:', err.message); }
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=approved');
@@ -1246,7 +1272,7 @@ router.post('/quote/:id/deny-schedule', requireAuth, express.urlencoded({ extend
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, replyTo: 'greetings@brakeknights.com', subject: 'Scheduling update from Brake Knights', html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, cc: 'greetings@brakeknights.com', replyTo: 'greetings@brakeknights.com', subject: 'Scheduling update from Brake Knights', html });
     } catch (err) { console.error('Deny schedule email error:', err.message); }
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=denied');
@@ -1897,6 +1923,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
 
   db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
+  if (lead.status !== 'quoted') sendStagePush(lead, 'quoted');
 
   if (!lead.email) return res.redirect('/admin?msg=saved');
 
@@ -2048,7 +2075,18 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     || {};
 
   var service   = quote.service || lead.service || '';
-  var vehicle   = lead.vehicle || '';
+  // Try structured vehicle from customer_vehicles; fall back to parsing lead.vehicle string.
+  var rcVehData = lead.customer_id
+    ? (db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(lead.customer_id) || null)
+    : null;
+  if (!rcVehData && lead.vehicle) {
+    var _vp = lead.vehicle.trim().split(/\s+/);
+    var _yr = /^(19|20)\d{2}$/.test(_vp[0]) ? _vp.shift() : '';
+    var _mk = _vp.length > 1 ? _vp.shift() : (_vp[0] || '');
+    var _mo = _vp.length > 0 ? _vp.join(' ') : '';
+    rcVehData = { year: _yr, make: _mk, model: _mo };
+  }
+  rcVehData = rcVehData || {};
   // Prefer the chosen quote's location; otherwise pull the most recent service
   // address from any of this lead's quotes (phone-booked jobs may have it on a
   // different quote than the one we prefilled from).
@@ -2114,8 +2152,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<button type="button" class="tier-btn' + (receiptTier === 'standard' ? ' active' : '') + '" id="rBtnStd" onclick="rSetTier(\'standard\')">Standard</button>'
     + '<button type="button" class="tier-btn' + (receiptTier === 'premium'  ? ' active' : '') + '" id="rBtnPrem" onclick="rSetTier(\'premium\')">Premium</button>'
     + '</div></div>'
-    + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model)</span></label>'
-    + '<input type="text" name="vehicle" value="' + esc(vehicle) + '" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '<div class="form-group"><label>Vehicle</label>'
+    + vehicleCascadeHtml('rc-veh', {}, { year: rcVehData.year || '', make: rcVehData.make || '', model: rcVehData.model || '' })
+    + '</div>'
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
     + '<div class="form-group"><label>Date of service</label>'
     + '<input type="date" name="serviceDate" value="' + esc(easternToday()) + '"></div>'
@@ -2271,6 +2310,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'box.style.display="block";document.getElementById("rPrevBtn").textContent="Hide Preview";'
     + '}'
     + '</script>'
+    + VEHICLE_CASCADE_JS
     + (process.env.GOOGLE_MAPS_API_KEY
         ? '<script>function initBkRecAddr(){var el=document.getElementById("receiptAddr");if(!el||!window.google||!google.maps||!google.maps.places)return;var ac=new google.maps.places.Autocomplete(el,{fields:["formatted_address"],componentRestrictions:{country:"us"},types:["address"]});ac.addListener("place_changed",function(){if(ac.getPlace())el.value=ac.getPlace().formatted_address||el.value;});}<\/script>'
           + '<script src="https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(process.env.GOOGLE_MAPS_API_KEY) + '&libraries=places&loading=async&callback=initBkRecAddr" async><\/script>'
@@ -2286,7 +2326,7 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var service      = (req.body.service || '').trim();
   var customSvc    = (req.body.customService || '').trim();
   if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
-  var vehicle      = (req.body.vehicle || '').trim();
+  var vehicle      = [req.body.veh_year, req.body.veh_make, req.body.veh_model].map(function(v){return (v||'').trim();}).filter(Boolean).join(' ');
   var serviceDate  = (req.body.serviceDate || '').trim() || easternToday();
   var address      = (req.body.serviceAddress || '').trim();
   var partsLabor   = parseFloat(req.body.partsLabor)   || 0;
@@ -2337,6 +2377,7 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
       await tx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      lead.email,
+        cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
         subject: 'Your Brake Knights Service Receipt',
         html:    buildReceiptEmail(lead, receipt, notes)
@@ -2344,14 +2385,17 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
       db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
       db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
       logHistory(lead.id, 'Receipt sent to customer', receiptDetail);
+      sendStagePush(lead, 'receipt');
       return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_sent');
     } catch (err) {
       console.error('Receipt email error:', err.message);
       logHistory(lead.id, 'Receipt saved (email failed)', receiptDetail);
+      sendStagePush(lead, 'completed');
       return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_err');
     }
   }
   logHistory(lead.id, 'Receipt saved (not emailed)', receiptDetail);
+  sendStagePush(lead, 'completed');
   res.redirect('/admin/quote/' + lead.id + '?msg=receipt_saved');
 });
 
@@ -2643,23 +2687,25 @@ router.get('/quick', requireAuth, function(req, res) {
   // Customer data for the receipt-mode customer search typeahead.
   var qqCustomers = db.prepare(
     'SELECT c.id, c.first_name, c.last_name, c.email, c.phone,'
-    + ' COALESCE('
-    + "  (SELECT TRIM(COALESCE(cv.year,'') || ' ' || COALESCE(cv.make,'') || ' ' || COALESCE(cv.model,''))"
-    + '   FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1),'
-    + "  (SELECT l.vehicle FROM leads l WHERE l.customer_id = c.id AND l.vehicle IS NOT NULL AND l.vehicle != '' ORDER BY l.id DESC LIMIT 1)"
-    + ' ) AS last_vehicle,'
+    + ' (SELECT cv.year  FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1) AS last_veh_year,'
+    + ' (SELECT cv.make  FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1) AS last_veh_make,'
+    + ' (SELECT cv.model FROM customer_vehicles cv WHERE cv.customer_id = c.id ORDER BY cv.id DESC LIMIT 1) AS last_veh_model,'
     + ' (SELECT ca.address FROM customer_addresses ca WHERE ca.customer_id = c.id ORDER BY ca.id DESC LIMIT 1) AS last_address'
     + ' FROM customers c ORDER BY c.last_name, c.first_name'
   ).all();
   var qqCustJson = JSON.stringify(qqCustomers.map(function(c) {
     var name = ((c.first_name || '') + ' ' + (c.last_name || '')).trim();
+    var vehParts = [c.last_veh_year, c.last_veh_make, c.last_veh_model].filter(Boolean);
     return {
       id: c.id,
       fn: c.first_name || '',
       ln: c.last_name || '',
       em: c.email || '',
       ph: c.phone || '',
-      veh: (c.last_vehicle || '').trim(),
+      veh_year:  c.last_veh_year  || '',
+      veh_make:  c.last_veh_make  || '',
+      veh_model: c.last_veh_model || '',
+      veh: vehParts.join(' '),
       addr: c.last_address || '',
       label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''),
       search: (name + ' ' + (c.phone || '') + ' ' + (c.email || '')).toLowerCase()
@@ -2755,8 +2801,9 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Email <span id="qemHint" style="color:#bbb;font-weight:400;">(to send)</span></label><input type="email" name="email" id="qem" placeholder="customer@email.com"></div>'
     + '<div class="form-group"><label>Phone <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="tel" name="phone" id="qph" placeholder="703-555-0123"></div>'
     + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle <span style="color:#bbb;font-weight:400;">(year make model, optional)</span></label>'
-    + '<input type="text" name="vehicle" id="qveh" placeholder="e.g. 2018 Honda Accord"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Vehicle <span style="color:#bbb;font-weight:400;">(optional)</span></label>'
+    + vehicleCascadeHtml('qq-veh')
+    + '</div>'
     + COLLAPSE_CLOSE
 
     // Services + tier
@@ -2885,7 +2932,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qln").value=c.ln;'
     +   'document.getElementById("qem").value=c.em;'
     +   'document.getElementById("qph").value=c.ph;'
-    +   'var vehEl=document.getElementById("qveh");if(vehEl&&c.veh)vehEl.value=c.veh;'
+    +   'if(window.bkVehFill)window.bkVehFill("qq-veh",{year:c.veh_year||"",make:c.veh_make||"",model:c.veh_model||""});'
     +   'var addrEl=document.querySelector("[name=serviceAddress]");if(addrEl&&c.addr&&!addrEl.value)addrEl.value=c.addr;'
     +   'var name=(c.fn+" "+c.ln).trim();'
     +   'var chip=document.getElementById("qqCustChip");'
@@ -3065,7 +3112,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'qClearServices();'
     +   'document.getElementById("qfn").value="";document.getElementById("qln").value="";'
     +   'document.getElementById("qem").value="";document.getElementById("qph").value="";'
-    +   'var veh=document.getElementById("qveh");if(veh)veh.value="";'
+    +   'if(window.bkVehFill)window.bkVehFill("qq-veh",{});'
     +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
     +   'document.getElementById("qCustomSvcHint").style.display="none";'
     +   'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";'
@@ -3103,7 +3150,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'ln:document.getElementById("qln").value,'
     +       'em:document.getElementById("qem").value,'
     +       'ph:document.getElementById("qph").value,'
-    +       'veh:(document.getElementById("qveh")||{}).value||"",'
+    +       'veh_year:document.getElementById("qq-veh-year")?(document.getElementById("qq-veh-year").value||""):"",veh_make:document.getElementById("qq-veh-make")?(document.getElementById("qq-veh-make").value||""):"",veh_model:document.getElementById("qq-veh-model-hid")?(document.getElementById("qq-veh-model-hid").value||""):"",veh:"",'
     +       'svcs:qCheckedServices(),'
     +       'customSvc:qCustomSvcVal(),'
     +       'parts:document.getElementById("qparts").value,'
@@ -3130,7 +3177,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(s.ln)document.getElementById("qln").value=s.ln;'
     +     'if(s.em)document.getElementById("qem").value=s.em;'
     +     'if(s.ph)document.getElementById("qph").value=s.ph;'
-    +     'if(s.veh&&document.getElementById("qveh"))document.getElementById("qveh").value=s.veh;'
+    +     'if(window.bkVehFill&&(s.veh_year||s.veh_make||s.veh_model))window.bkVehFill("qq-veh",{year:s.veh_year||"",make:s.veh_make||"",model:s.veh_model||""});'
     +     'if(s.svcs&&s.svcs.length)document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});'
     +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
     +     'if(s.parts!==undefined)document.getElementById("qparts").value=s.parts;'
@@ -3179,7 +3226,8 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'qRenderTags();qPayToggle();'
     + 'qRestoreState();'
     + 'qcalc();'
-    + '</script>';
+    + '</script>'
+    + VEHICLE_CASCADE_JS;
 
   res.send(page('Quick Quote', body, req));
 });
@@ -3213,7 +3261,10 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var lastName  = (req.body.lastName  || '').trim();
   var email     = (req.body.email     || '').trim() || null;
   var phone     = (req.body.phone     || '').trim();
-  var vehicle   = (req.body.vehicle   || '').trim() || null;
+  var vehYear   = (req.body.veh_year  || '').trim();
+  var vehMake   = (req.body.veh_make  || '').trim();
+  var vehModel  = (req.body.veh_model || '').trim();
+  var vehicle   = [vehYear, vehMake, vehModel].filter(Boolean).join(' ') || null;
 
   // Save Draft: persist form state to quick_drafts, no lead created, no validation.
   if (action === 'draft_save') {
@@ -3226,7 +3277,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     if (firstSvcD) draftLabel += ' - ' + firstSvcD.substring(0, 28);
     var draftData = {
       mode: mode, tier: req.body.tier === 'premium' ? 'premium' : 'standard',
-      fn: firstName, ln: lastName, em: email || '', ph: phone, veh: vehicle || '',
+      fn: firstName, ln: lastName, em: email || '', ph: phone, veh: '', veh_year: vehYear, veh_make: vehMake, veh_model: vehModel,
       svcs: presetSvcsD, customSvc: customSvcD,
       parts: req.body.parts || '0.00', labor: req.body.labor || '0.00',
       ss: req.body.shopSupplies || '0.00',
@@ -3386,6 +3437,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       await rtx.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      email,
+        cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
         subject: 'Your Brake Knights Service Receipt',
         html:    buildReceiptEmail(lead, receipt, notes)
@@ -3393,6 +3445,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
       db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(leadId);
       logHistory(leadId, 'Receipt sent to customer', receiptDetail);
+      sendStagePush(lead, 'receipt');
       return res.redirect('/admin/quote/' + leadId + '?msg=receipt_sent');
     } catch (err) {
       console.error('Quick receipt email error:', err.message);
@@ -4129,7 +4182,7 @@ router.post('/customer/:id/vehicle/:vid/delete', requireAuth, express.urlencoded
 // Falls back to parsing the latest lead's free-text vehicle string when no
 // structured customer_vehicles row exists.
 router.get('/customer/:id/autofill', requireAuth, function(req, res) {
-  var c = db.prepare('SELECT id, home_address FROM customers WHERE id = ?').get(req.params.id);
+  var c = db.prepare('SELECT id, email, home_address FROM customers WHERE id = ?').get(req.params.id);
   if (!c) return res.json({ ok: false });
   var veh = db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
   if (!veh) {
@@ -4144,6 +4197,7 @@ router.get('/customer/:id/autofill', requireAuth, function(req, res) {
   var addr = db.prepare('SELECT address FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
   res.json({
     ok: true,
+    email: c.email || '',
     vehicle: veh ? { year: veh.year || '', make: veh.make || '', model: veh.model || '' } : null,
     address: addr ? addr.address : '',
     home_address: c.home_address || ''
@@ -4180,6 +4234,20 @@ router.post('/customer/:id/delete', requireAuth, express.urlencoded({ extended: 
 
 // ─── Appointments ─────────────────────────────────────────────────────────────
 
+// Owner/staff appointment time options: 8 AM to 7 PM, every 30 minutes.
+// Wider than the customer-facing picker on purpose — the owner has full control.
+function ownerTimeOptions(sel) {
+  var o = '<option value="">-- Select time --</option>';
+  for (var mins = 8 * 60; mins <= 19 * 60; mins += 30) {
+    var h24 = Math.floor(mins / 60), m = mins % 60;
+    var ampm = h24 < 12 ? 'AM' : 'PM';
+    var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    var label = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+    o += '<option value="' + label + '"' + (sel === label ? ' selected' : '') + '>' + label + '</option>';
+  }
+  return o;
+}
+
 router.get('/appointments', requireAuth, function(req, res) {
   var today = easternToday();
 
@@ -4199,25 +4267,23 @@ router.get('/appointments', requireAuth, function(req, res) {
     + 'ORDER BY q.pref_date DESC, q.pref_time DESC LIMIT 30'
   ).all(today);
 
-  // Build date → count map for the calendar dots.
+  // Owner personal time blocks (visual only — not customer facing).
+  var events = db.prepare(
+    'SELECT * FROM personal_events WHERE event_date >= ? ORDER BY event_date ASC, start_time ASC'
+  ).all(today);
+
+  // Build date → count map for the calendar dots (blue = jobs, amber = personal).
   var dateMap = {};
   upcoming.concat(past).forEach(function(a) {
     if (a.pref_date) dateMap[a.pref_date] = (dateMap[a.pref_date] || 0) + 1;
   });
+  var peMap = {};
+  events.forEach(function(ev) { peMap[ev.event_date] = (peMap[ev.event_date] || 0) + 1; });
 
   function apptCard(a) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
-    var tOpts = '<option value="">-- Select time --</option>';
-    for (var mins = 8 * 60; mins <= 17 * 60; mins += 30) {
-      if (mins >= 12 * 60 && mins < 13 * 60) continue;
-      var h24 = Math.floor(mins / 60);
-      var m = mins % 60;
-      var ampm = h24 < 12 ? 'AM' : 'PM';
-      var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-      var tlabel = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
-      tOpts += '<option value="' + tlabel + '"' + (a.pref_time === tlabel ? ' selected' : '') + '>' + tlabel + '</option>';
-    }
+    var tOpts = ownerTimeOptions(a.pref_time);
     return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
@@ -4255,18 +4321,54 @@ router.get('/appointments', requireAuth, function(req, res) {
       + '</div>';
   }
 
-  var allCards = upcoming.map(apptCard).join('') + (past.length
+  // Personal time block card: amber accent, title + window, remove button.
+  function eventCard(ev) {
+    var timeStr = (ev.start_time || '') + (ev.end_time ? ' – ' + ev.end_time : '');
+    return '<div class="card appt-card" data-date="' + esc(ev.event_date) + '" style="border-left:4px solid #f0b429;background:#fffdf5;margin-bottom:10px;">'
+      + '<div class="row-sb">'
+      + '<div class="lead-name">' + esc(ev.title) + '</div>'
+      + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(ev.event_date)) + '</span>'
+      + '</div>'
+      + '<div style="font-size:0.85rem;color:#a07800;font-weight:600;margin-top:4px;">Blocked time' + (timeStr ? ' · ' + esc(timeStr) : '') + '</div>'
+      + (ev.note ? '<div style="font-size:0.85rem;color:#666;margin-top:4px;">' + esc(ev.note) + '</div>' : '')
+      + '<div style="margin-top:10px;">'
+      + '<form method="POST" action="/admin/appointments/block/' + ev.id + '/delete" style="display:inline;margin:0;" onsubmit="return confirm(\'Remove this time block?\');">'
+      + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;">Remove</button>'
+      + '</form>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // Interleave jobs and personal blocks by date + time so the day list reads
+  // top to bottom like a schedule.
+  function sortMins(t) {
+    var m = /(\d+):(\d+)\s*(AM|PM)/i.exec(t || '');
+    if (!m) return 9999;
+    var h = (+m[1] % 12) + (m[3].toUpperCase() === 'PM' ? 12 : 0);
+    return h * 60 + (+m[2]);
+  }
+  var upcomingItems = upcoming.map(function(a) {
+    return { date: a.pref_date, mins: sortMins(a.pref_time), html: apptCard(a) };
+  }).concat(events.map(function(ev) {
+    return { date: ev.event_date, mins: sortMins(ev.start_time), html: eventCard(ev) };
+  }));
+  upcomingItems.sort(function(x, y) {
+    return x.date < y.date ? -1 : x.date > y.date ? 1 : x.mins - y.mins;
+  });
+
+  var allCards = upcomingItems.map(function(i) { return i.html; }).join('') + (past.length
     ? '<div id="pastHeader" class="section-title" style="margin:20px 0 10px;">Recent Past</div>' + past.map(apptCard).join('')
     : '');
 
   var emptyAll = '<div id="apptEmpty" style="display:none;text-align:center;padding:32px;color:#888;">No appointments on this date.</div>';
 
-  var noUpcoming = upcoming.length === 0
+  var noUpcoming = (upcoming.length === 0 && events.length === 0)
     ? '<div class="card" style="text-align:center;padding:32px;color:#888;" id="apptNoUpcoming">No upcoming appointments. Create one with the button above.</div>'
     : '';
 
   var calScript = '<script>(function(){'
     + 'var DATE_MAP=' + JSON.stringify(dateMap) + ';'
+    + 'var PE_MAP=' + JSON.stringify(peMap) + ';'
     + 'var TODAY="' + today + '";'
     + 'var MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];'
     + 'var DAYS=["Su","Mo","Tu","We","Th","Fr","Sa"];'
@@ -4291,11 +4393,17 @@ router.get('/appointments', requireAuth, function(req, res) {
     +     'var isToday=dateStr===TODAY;'
     +     'var isSel=dateStr===selDate;'
     +     'var hasAppt=!!DATE_MAP[dateStr];'
+    +     'var hasPE=!!PE_MAP[dateStr];'
     +     'var bg=isSel?"#0d1b2a":isToday?"#4169e1":"transparent";'
     +     'var fg=isSel||isToday?"#fff":"#0f172a";'
     +     'h+=\'<div onclick="apptDayClick(\\\'\'+dateStr+\'\\\')" style="text-align:center;padding:6px 2px;border-radius:8px;cursor:pointer;min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:\'+bg+\';-webkit-tap-highlight-color:transparent;">\';'
     +     'h+=\'<span style="font-size:0.88rem;font-weight:\'+(isToday||isSel?"700":"400")+\';color:\'+fg+\'">\'+d+\'</span>\';'
-    +     'if(hasAppt)h+=\'<span style="display:block;width:5px;height:5px;border-radius:50%;background:\'+(isSel||isToday?"#fff":"#4169e1")+\';margin-top:2px;"></span>\';'
+    +     'if(hasAppt||hasPE){'
+    +       'h+=\'<span style="display:flex;gap:2px;margin-top:2px;">\';'
+    +       'if(hasAppt)h+=\'<span style="display:block;width:5px;height:5px;border-radius:50%;background:\'+(isSel||isToday?"#fff":"#4169e1")+\';"></span>\';'
+    +       'if(hasPE)h+=\'<span style="display:block;width:5px;height:5px;border-radius:50%;background:\'+(isSel||isToday?"#ffe08a":"#f0b429")+\';"></span>\';'
+    +       'h+=\'</span>\';'
+    +     '}'
     +     'h+=\'</div>\';'
     +   '}'
     +   'h+=\'</div>\';'
@@ -4338,12 +4446,37 @@ router.get('/appointments', requireAuth, function(req, res) {
   var apptMsg = '';
   if (req.query.msg === 'rescheduled') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment rescheduled.</div>';
   if (req.query.msg === 'cancelled') apptMsg = '<div class="alert" style="margin-bottom:14px;background:#fff8e1;border:1px solid #f0b429;color:#6b4c00;padding:10px 14px;border-radius:8px;">Appointment cancelled. Lead returned to pipeline.</div>';
+  if (req.query.msg === 'blocked') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Time blocked off.</div>';
+  if (req.query.msg === 'blockremoved') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Time block removed.</div>';
 
-  var body = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+  var inputStyle = 'width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;';
+  var blockFormHtml = '<div id="blockForm" class="card" style="display:none;margin-bottom:16px;border-left:4px solid #f0b429;">'
+    + '<div class="section-title" style="margin-bottom:10px;">Block Off Time</div>'
+    + '<form method="POST" action="/admin/appointments/block">'
+    + '<div class="form-group"><label>Title <span style="color:#c0392b;">*</span></label>'
+    + '<input type="text" name="title" required placeholder="e.g. Personal, Dentist, Lunch" style="' + inputStyle + '"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
+    + '<input type="date" name="event_date" required style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>Start</label>'
+    + '<select name="start_time" style="' + inputStyle + '">' + ownerTimeOptions('') + '</select></div>'
+    + '<div class="form-group"><label>End</label>'
+    + '<select name="end_time" style="' + inputStyle + '">' + ownerTimeOptions('') + '</select></div>'
+    + '</div>'
+    + '<div class="form-group"><label>Note <span style="color:#bbb;font-weight:400;">(optional)</span></label>'
+    + '<input type="text" name="note" style="' + inputStyle + '"></div>'
+    + '<button type="submit" class="btn btn-navy btn-sm" style="width:auto;">Save Time Block</button>'
+    + '</form></div>';
+
+  var body = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:14px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Appointments</h1>'
+    + '<div style="display:flex;gap:8px;">'
+    + '<button type="button" class="btn btn-sm" style="width:auto;background:#fff8e1;color:#a07800;border:1px solid #f0b429;" onclick="var f=document.getElementById(\'blockForm\');f.style.display=f.style.display===\'none\'?\'block\':\'none\';">+ Block Time</button>'
     + '<a href="/admin/appointments/new" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + '+ New Appointment</a>'
     + '</div>'
+    + '</div>'
     + apptMsg
+    + blockFormHtml
     + calHtml
     + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">'
     + '<div class="section-title" style="margin:0;" id="apptFilterLabel">All appointments</div>'
@@ -4371,14 +4504,31 @@ router.post('/appointments/:lead_id/reschedule', requireAuth, express.urlencoded
 });
 
 router.post('/appointments/:lead_id/cancel', requireAuth, function(req, res) {
-  var lead = db.prepare('SELECT id FROM leads WHERE id = ?').get(req.params.lead_id);
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.lead_id);
   if (!lead) return res.redirect('/admin/appointments');
   db.prepare("UPDATE quotes SET pref_date = NULL, pref_time = NULL WHERE lead_id = ? AND status = 'approved'")
     .run(lead.id);
   db.prepare("UPDATE leads SET status = 'approved', status_updated_at = datetime('now') WHERE id = ?")
     .run(lead.id);
   logHistory(lead.id, 'Appointment cancelled', 'Lead returned to pipeline');
+  sendStagePush(lead, 'approved');
   res.redirect('/admin/appointments?msg=cancelled');
+});
+
+// ─── Personal time blocks (owner calendar events, visual only) ────────────────
+
+router.post('/appointments/block', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var title = (req.body.title || '').trim();
+  var date  = (req.body.event_date || '').trim();
+  if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.redirect('/admin/appointments');
+  db.prepare('INSERT INTO personal_events (title, event_date, start_time, end_time, note) VALUES (?,?,?,?,?)')
+    .run(title, date, (req.body.start_time || '').trim() || null, (req.body.end_time || '').trim() || null, (req.body.note || '').trim() || null);
+  res.redirect('/admin/appointments?msg=blocked');
+});
+
+router.post('/appointments/block/:id/delete', requireAuth, function(req, res) {
+  db.prepare('DELETE FROM personal_events WHERE id = ?').run(req.params.id);
+  res.redirect('/admin/appointments?msg=blockremoved');
 });
 
 router.get('/appointments/new', requireAuth, function(req, res) {
@@ -4387,7 +4537,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
   var pricingJson = JSON.stringify(apptPricing);
   var taxRate = PRICING.taxRate;
 
-  var allCustomers = db.prepare('SELECT id, first_name, last_name, phone FROM customers ORDER BY last_name, first_name').all();
+  var allCustomers = db.prepare('SELECT id, first_name, last_name, phone, email FROM customers ORDER BY last_name, first_name').all();
 
   var preselectedCustomerId = (req.query.customer_id || '').trim();
   var preselectedCustomer = preselectedCustomerId
@@ -4397,10 +4547,10 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     ? ((preselectedCustomer.first_name + ' ' + preselectedCustomer.last_name).trim() + (preselectedCustomer.phone ? ' (' + fmtPhone(preselectedCustomer.phone) + ')' : ''))
     : '';
 
-  // Embed minimal customer data for client-side typeahead (id, display name, phone digits for search).
+  // Embed minimal customer data for client-side typeahead (id, display name, email, phone digits for search).
   var custJson = JSON.stringify(allCustomers.map(function(c) {
     var name = (c.first_name + ' ' + c.last_name).trim();
-    return { id: c.id, label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''), search: (name + ' ' + (c.phone || '')).toLowerCase() };
+    return { id: c.id, label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''), email: c.email || '', search: (name + ' ' + (c.phone || '')).toLowerCase() };
   }));
 
   var serviceCheckboxes = '<div class="svc-check-list">'
@@ -4410,16 +4560,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
     + '<input type="hidden" name="service" id="apptSvcHidden" value="">';
 
-  var timeOpts = '<option value="">-- Select time --</option>';
-  for (var mins = 8 * 60; mins <= 17 * 60; mins += 30) {
-    if (mins >= 12 * 60 && mins < 13 * 60) continue;
-    var h24 = Math.floor(mins / 60);
-    var m = mins % 60;
-    var ampm = h24 < 12 ? 'AM' : 'PM';
-    var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-    var label = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
-    timeOpts += '<option value="' + label + '">' + label + '</option>';
-  }
+  var timeOpts = ownerTimeOptions('');
 
   var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
   var mapsScript = mapsKey
@@ -4437,6 +4578,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
     + '<input type="hidden" name="customer_id" id="apptCustId" value="' + esc(preselectedCustomerId) + '">'
+    + '<input type="hidden" id="apptCustEmail" value="' + esc((preselectedCustomer && preselectedCustomer.email) || '') + '">'
     + '<div class="form-group" style="margin-bottom:0;">'
     + '<label>Search existing customer</label>'
     + '<div style="position:relative;">'
@@ -4525,6 +4667,8 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<input type="checkbox" name="send_email" value="1" style="width:18px;height:18px;"> Send confirmation email to customer</label>'
     + '</div>'
 
+    + '<button type="button" id="apptPreviewBtn" class="btn btn-outline" style="margin-bottom:8px;" onclick="apptPreview()">Preview Email</button>'
+    + '<div id="apptPreviewBox" style="display:none;margin-bottom:12px;"></div>'
     + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="margin-bottom:24px;">Create Appointment</button>'
     + '</form>'
     + '<script>(function(){'
@@ -4559,6 +4703,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     '});'
     +     'drop.style.display="block";'
     +   '}'
+    +   'var hidEmail=document.getElementById("apptCustEmail");'
     +   'function selectCust(id,label){'
     +     'hidId.value=id;'
     +     'inp.value="";'
@@ -4566,14 +4711,18 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'chip.style.display="flex";'
     +     'chipLbl.textContent=label;'
     +     'newFields.style.display="none";'
+    +     'var c=CUST_LIST.find(function(x){return String(x.id)===String(id);});'
+    +     'if(hidEmail)hidEmail.value=(c&&c.email)||"";'
     +     'fetch("/admin/customer/"+id+"/autofill").then(function(r){return r.json();}).then(function(d){'
     +       'if(!d||!d.ok)return;'
     +       'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
     +       'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
+    +       'if(hidEmail&&d.email)hidEmail.value=d.email;'
     +     '}).catch(function(){});'
     +   '}'
     +   'function clearCust(){'
     +     'hidId.value="";'
+    +     'if(hidEmail)hidEmail.value="";'
     +     'inp.value="";'
     +     'chip.style.display="none";'
     +     'chipLbl.textContent="";'
@@ -4587,6 +4736,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'if(!d||!d.ok)return;'
     +     'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
     +     'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
+    +     'if(hidEmail&&d.email)hidEmail.value=d.email;'
     +   '}).catch(function(){});}'
     +   'inp.addEventListener("input",function(){'
     +     'var q=inp.value.trim().toLowerCase();'
@@ -4623,7 +4773,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + 'function apptAutofill(){'
     +   'var names=apptCheckedServices();'
     +   'document.getElementById("apptSvcHidden").value=names.join(", ");'
-    +   'if(names.length===0){apptCalc();return;}'
+    +   'if(names.length===0){document.getElementById("apptParts").value="0.00";document.getElementById("apptLabor").value="0.00";document.getElementById("apptSupplies").value="0.00";apptCalc();return;}'
     +   'var parts=0,labor=0,ss=0;'
     +   'names.forEach(function(s){var sv=APPT_PRICING[s];if(!sv)return;var p=sv[apptTier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
     +   'document.getElementById("apptParts").value=parts.toFixed(2);'
@@ -4641,6 +4791,40 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'document.getElementById("apptTotal").textContent="$"+Number(total).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});'
     + '}'
     + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
+    + 'function apptPreview(){'
+    +   'var box=document.getElementById("apptPreviewBox"),btn=document.getElementById("apptPreviewBtn");'
+    +   'if(box.style.display!=="none"&&box.innerHTML){box.style.display="none";box.innerHTML="";btn.textContent="Preview Email";return;}'
+    +   'var custId=(document.getElementById("apptCustId")||{}).value||"";'
+    +   'var toName,toEmail;'
+    +   'if(custId){'
+    +     'var chipLbl=document.getElementById("custPickerLabel");'
+    +     'toName=chipLbl?chipLbl.textContent.replace(/\\s*\\(\\d[\\d\\s\\-\\.]*\\)\\s*$/,"").trim():"(selected customer)";'
+    +     'toEmail=(document.getElementById("apptCustEmail")||{}).value||"email on file";'
+    +   '}else{'
+    +     'var fn=(document.getElementById("apptCustFirst")||{}).value||"";'
+    +     'var ln=(document.getElementById("apptCustLast")||{}).value||"";'
+    +     'toName=(fn+" "+ln).trim()||"(no name entered)";'
+    +     'toEmail=(document.querySelector("[name=cust_email]")||{}).value||"";'
+    +   '}'
+    +   'var svcs=apptCheckedServices();'
+    +   'var customSvc=(document.querySelector("[name=customService]")||{}).value||"";'
+    +   'if(customSvc.trim())svcs=svcs.concat(customSvc.trim().split(",").map(function(s){return s.trim();}).filter(Boolean));'
+    +   'var date=(document.getElementById("apptDate")||{}).value||"";'
+    +   'var time=(document.querySelector("[name=pref_time]")||{}).value||"";'
+    +   'var addr=(document.getElementById("apptAddr")||{}).value||"";'
+    +   'var total=(document.getElementById("apptTotal")||{}).textContent||"$0.00";'
+    +   'var toLine=toName+(toEmail?"&nbsp;&lt;"+toEmail+"&gt;":"");'
+    +   'var rows="<table style=\'width:100%;border-collapse:collapse;font-size:0.88rem;\'>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;white-space:nowrap;vertical-align:top;\'>To</td><td style=\'padding:5px 0;\'>"+toLine+"</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Subject</td><td style=\'padding:5px 0;\'>Your Brake Service Appointment Is Confirmed — Brake Knights</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+(svcs.length?svcs.join(", "):"<em style=\'color:#e07000\'>(none selected)</em>")+"</td></tr>";'
+    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
+    +   'if(date)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Date &amp; Time</td><td style=\'padding:5px 0;\'>"+date+(time?" at "+time:"")+"</td></tr>";'
+    +   'if(addr)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Address</td><td style=\'padding:5px 0;\'>"+addr+"</td></tr>";'
+    +   'rows+="</table>";'
+    +   'box.innerHTML="<div class=\'preview-box\'><h4>Confirmation Email Preview</h4>"+rows+"</div>";'
+    +   'box.style.display="block";btn.textContent="Hide Preview";'
+    + '}'
     + '</script>'
     + VEHICLE_CASCADE_JS
     + mapsScript;
@@ -4768,12 +4952,17 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
         + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">Apple / Outlook (.ics)</a>'
         + '</div>'
         + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair.</p>'
+        + '<div style="text-align:center;margin:0 0 24px;">'
+        + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
+        + '<a href="' + baseUrl + '/quote/' + quoteResult.lastInsertRowid + '/' + token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'
+        + '<a href="' + baseUrl + '/quote/' + quoteResult.lastInsertRowid + '/' + token + '?action=cancel" style="display:inline-block;background:#fff;border:2px solid #c0392b;color:#c0392b;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Cancel Appointment</a>'
+        + '</div>'
         + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
         + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
         + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
         + '</div></div>'
         + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
-      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: cust.email, subject: 'Your appointment is confirmed - Brake Knights', html: html });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: cust.email, cc: 'greetings@brakeknights.com', subject: 'Your appointment is confirmed - Brake Knights', html: html });
     } catch (err) { console.error('Appointment confirmation email error:', err.message); }
   }
 

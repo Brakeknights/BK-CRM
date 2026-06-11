@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const nodemailer = require('nodemailer');
-const webpush = require('web-push');
+const { sendPush, sendNewLeadPush } = require('./push');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 const { syncAllSquareCustomers } = require('./square-sync');
 const { toEasternRfc3339 } = require('./datetime');
@@ -11,43 +11,6 @@ const customers = require('./customers');
 const SqliteStore = require('./sqlite-session-store');
 const adminRouter = require('./routes/admin');
 const quoteRouter = require('./routes/quote');
-
-if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    'mailto:greetings@brakeknights.com',
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-  );
-}
-
-// Sends a browser push to every registered admin device. Generic so both new
-// leads and Square sync alerts can reuse it.
-function sendPush(title, body, url) {
-  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) return;
-  var subs = db.prepare('SELECT * FROM push_subscriptions').all();
-  if (!subs.length) return;
-  // Tag dev notifications so they're distinguishable from live ones on the phone.
-  // Push subscriptions are per-domain, so a dev-subscribed device only ever gets
-  // dev pushes anyway, but the prefix makes it obvious at a glance.
-  var pushTitle = (process.env.NODE_ENV === 'production') ? title : '[DEV] ' + title;
-  var payload = JSON.stringify({ title: pushTitle, body: body, url: url || '/admin' });
-  subs.forEach(function(row) {
-    var sub = { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } };
-    webpush.sendNotification(sub, payload).catch(function(err) {
-      if (err.statusCode === 404 || err.statusCode === 410) {
-        db.prepare('DELETE FROM push_subscriptions WHERE id = ?').run(row.id);
-      } else {
-        console.error('Push send error:', err.message);
-      }
-    });
-  });
-}
-
-function sendNewLeadPush(lead) {
-  var name = lead.first_name + ' ' + lead.last_name;
-  var body = [lead.service, lead.vehicle].filter(Boolean).join(' — ') || lead.phone;
-  sendPush('New Lead: ' + name, body, '/admin?status=new');
-}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -494,8 +457,13 @@ function buildReminderEmail(q, soonText) {
     + '<div style="text-align:center;margin:0 0 24px;">'
     + '<a href="' + calendarUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">&#128197; Add to Calendar</a>'
     + '</div>'
+    + '<div style="text-align:center;margin:0 0 24px;">'
+    + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
+    + '<a href="https://brakeknights.com/quote/' + q.id + '/' + q.accept_token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'
+    + '<a href="https://brakeknights.com/quote/' + q.id + '/' + q.accept_token + '?action=cancel" style="display:inline-block;background:#fff;border:2px solid #c0392b;color:#c0392b;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Cancel Appointment</a>'
+    + '</div>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
-    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Need to reschedule? Call or text:</p>'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
     + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
     + '</div></div>'
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
@@ -538,6 +506,7 @@ setInterval(function() {
     tx().sendMail({
       from:    '"Brake Knights" <greetings@brakeknights.com>',
       to:      q.lead_email,
+      cc:      'greetings@brakeknights.com',
       subject: 'Reminder: Your Brake Knights appointment',
       html:    buildReminderEmail(q, soonText)
     }).catch(function(err) { console.error('Appointment reminder error:', err.message); });
