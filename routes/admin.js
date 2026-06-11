@@ -1081,6 +1081,9 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
   if (!quote) return res.redirect('/admin/quote/' + lead.id + '?msg=no_accepted_quote');
 
   db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+  // Mark the accepted quote as approved so it appears on the appointments calendar
+  // and powers the reschedule/cancel flows, which all key off status = 'approved'.
+  db.prepare("UPDATE quotes SET status = 'approved' WHERE id = ?").run(quote.id);
   logHistory(lead.id, 'Time approved', (quote.pref_date || '') + (quote.pref_time ? ' at ' + quote.pref_time : '') + (quote.pref_location ? ', ' + quote.pref_location : ''));
   if (lead.status !== 'booked') sendStagePush(lead, 'booked');
 

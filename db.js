@@ -193,6 +193,24 @@ addLeadCol('vin',                'TEXT');
 addLeadCol('internal_notes',     'TEXT');
 addLeadCol('customer_id',        'INTEGER REFERENCES customers(id)');
 
+// ─── Backfill: approved appointments missing the quote 'approved' status ───────
+// The owner-approve flow used to set only the lead to 'booked' and left the quote
+// status untouched, so booked appointments from the customer accept flow never
+// matched the calendar query (which requires quote.status = 'approved'). Heal any
+// existing rows: a booked, non-archived lead whose accepted quote has a date but
+// isn't marked approved yet. Idempotent — only touches rows still out of sync.
+db.exec(`
+  UPDATE quotes SET status = 'approved'
+  WHERE status != 'approved'
+    AND pref_date IS NOT NULL
+    AND id IN (
+      SELECT MAX(q.id) FROM quotes q
+      JOIN leads l ON l.id = q.lead_id
+      WHERE l.status = 'booked' AND l.archived = 0 AND q.accepted_at IS NOT NULL
+      GROUP BY q.lead_id
+    )
+`);
+
 // ─── Customer home address ─────────────────────────────────────────────────────
 const custCols = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
 if (!custCols.includes('home_address')) db.exec("ALTER TABLE customers ADD COLUMN home_address TEXT");
