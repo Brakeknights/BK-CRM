@@ -104,7 +104,11 @@ app.use('/images', express.static(path.join(__dirname, 'public/images'), {
 app.use('/css', express.static(path.join(__dirname, 'public/css'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 }));
-app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+// redirect:false stops express.static from 301-ing a bare directory request
+// (e.g. /blog -> /blog/). That redirect fought the trailing-slash stripper above
+// and caused an infinite loop. With it off, /blog falls through to the explicit
+// route below, which serves the directory's index.html directly.
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], redirect: false }));
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
