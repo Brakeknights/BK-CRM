@@ -117,7 +117,11 @@ app.get('/', (req, res) => {
 // The trailing-slash stripper causes a redirect loop for directory index files
 // (express.static redirects /blog → /blog/, stripper strips it back → loop).
 // Explicit routes for directories with index files avoid this.
+// no-cache so the Hostinger CDN never caches this path: a previously cached
+// redirect here poisoned the edge and re-created the loop even after the origin
+// was fixed. Forcing revalidation keeps the CDN from holding a stale response.
 app.get('/blog', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'public', 'blog', 'index.html'));
 });
 
