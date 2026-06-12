@@ -215,6 +215,10 @@ db.exec(`
 const custCols = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
 if (!custCols.includes('home_address')) db.exec("ALTER TABLE customers ADD COLUMN home_address TEXT");
 
+// ─── Vehicle license plate ─────────────────────────────────────────────────────
+const vehCols = db.prepare("PRAGMA table_info(customer_vehicles)").all().map(c => c.name);
+if (!vehCols.includes('license_plate')) db.exec("ALTER TABLE customer_vehicles ADD COLUMN license_plate TEXT");
+
 // ─── Phase 8E: push subscriptions for new-lead browser notifications ─────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS push_subscriptions (

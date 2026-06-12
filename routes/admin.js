@@ -1531,6 +1531,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>'
     + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>'
     + (lead.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(lead.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
+    + (['quoted','quote_accepted','new','follow_up'].indexOf(lead.status) !== -1
+        ? '<a href="/admin/appointments/new?from_lead=' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Book Appointment</a>'
+        : '')
     + '</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
@@ -3711,21 +3714,31 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Last name <span style="color:#c0392b;">*</span></label><input type="text" name="last_name" required></div>'
     + '</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" placeholder="703-555-0123"></div>'
+    + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" placeholder="customer@email.com"></div>'
     + '</div>'
     + '</div>'
     + '<div class="card">'
     + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
     + vehicleCascadeHtml('custnew-veh')
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
     + '<div class="form-group" style="margin-bottom:0;"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>License plate <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_plate" maxlength="10" placeholder="optional"></div>'
+    + '</div>'
+    + '</div>'
+    + '<div class="card">'
+    + '<div class="section-title">Service Address <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address</label><input type="text" name="service_address" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>'
     + '<div class="card">'
     + '<div class="section-title">Additional Info</div>'
     + '<div class="form-group"><label>Tags <span style="color:#bbb;font-weight:400;">(comma-separated)</span></label><input type="text" name="tags" placeholder="Fleet, HOA, Referral..."></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Internal Notes</label><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times..."></textarea></div>'
     + '</div>'
-    + '<button type="submit" class="btn btn-navy" style="margin-top:4px;">Create Customer</button>'
+    + '<div style="display:flex;gap:10px;align-items:center;margin-top:4px;">'
+    + '<button type="submit" class="btn btn-navy" style="flex:1;">Create Customer</button>'
+    + '<a href="/admin/customer/new" class="btn btn-outline" style="width:auto;">Start Over</a>'
+    + '</div>'
     + '</form>'
     + VEHICLE_CASCADE_JS;
 
@@ -3751,12 +3764,16 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
   var vehMake  = (req.body.veh_make  || '').trim() || null;
   var vehModel = (req.body.veh_model || '').trim() || null;
   var vehVin   = (req.body.veh_vin   || '').trim() || null;
-  // Save whatever vehicle detail was entered. Previously this silently dropped the
-  // vehicle unless BOTH year and make were filled, which lost owner-entered data.
-  if (vehMake || vehModel || vehVin) {
+  var vehPlate = (req.body.veh_plate || '').trim() || null;
+  if (vehMake || vehModel || vehVin || vehPlate) {
     db.prepare(
-      'INSERT INTO customer_vehicles (customer_id, year, make, model, vin) VALUES (?,?,?,?,?)'
-    ).run(newId, vehYear, vehMake, vehModel || null, vehVin || null);
+      'INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)'
+    ).run(newId, vehYear, vehMake, vehModel || null, vehVin || null, vehPlate || null);
+  }
+
+  var svcAddr = (req.body.service_address || '').trim();
+  if (svcAddr) {
+    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(newId, 'Service', svcAddr);
   }
 
   res.redirect('/admin/customer/' + newId + '?msg=created');
@@ -3886,6 +3903,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
     + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
     + (c.home_address ? '<span class="info-key">Home address</span><span class="info-val">' + mapsLink(c.home_address) + '</span>' : '')
+    + (addresses.length ? '<span class="info-key">Service address</span><span class="info-val">' + mapsLink(addresses[0].address) + (addresses[0].label ? ' <span style="font-size:0.78rem;color:#aaa;">(' + esc(addresses[0].label) + ')</span>' : '') + '</span>' : '')
     + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
     + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
     + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
@@ -3948,13 +3966,12 @@ router.get('/customer/:id', requireAuth, function(req, res) {
       })()
     + COLLAPSE_CLOSE;
 
-  // Internal notes (collapsible, open by default)
+  // Internal notes — inside the unified save form so saving notes doesn't wipe unsaved
+  // contact/vehicle/address fields the owner was filling in at the same time.
   var notesCard = collapseOpen('cust_notes', 'Internal Notes', true)
-    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Visible to the tech before arrival, never sent.</div>'
-    + '<form method="POST" action="/admin/customer/' + c.id + '/notes">'
-    + '<div class="form-group" style="margin-bottom:10px;"><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times, anything the tech should know...">' + esc(c.notes || '') + '</textarea></div>'
-    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save Notes</button>'
-    + '</form>' + COLLAPSE_CLOSE;
+    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Visible to the tech before arrival, never sent. Saved with the button below.</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times, anything the tech should know...">' + esc(c.notes || '') + '</textarea></div>'
+    + COLLAPSE_CLOSE;
 
   // Vehicles (no inner form — inside unified save form; delete uses formaction)
   var vehList = vehicles.length
@@ -3962,7 +3979,8 @@ router.get('/customer/:id', requireAuth, function(req, res) {
         var title = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || 'Vehicle';
         return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
           + '<div><div style="font-weight:600;color:#0a1f3d;font-size:0.9rem;">' + esc(title) + '</div>'
-          + (v.vin ? '<div style="font-size:0.78rem;color:#888;margin-top:2px;">VIN ' + esc(v.vin) + '</div>' : '') + '</div>'
+          + (v.vin ? '<div style="font-size:0.78rem;color:#888;margin-top:2px;">VIN ' + esc(v.vin) + '</div>' : '')
+          + (v.license_plate ? '<div style="font-size:0.78rem;color:#888;margin-top:1px;">Plate ' + esc(v.license_plate) + '</div>' : '') + '</div>'
           + '<button type="submit" formaction="/admin/customer/' + c.id + '/vehicle/' + v.id + '/delete" formmethod="post" onclick="return confirm(\'Remove this vehicle?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button>'
           + '</div>';
       }).join('')
@@ -3973,9 +3991,10 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add a vehicle</div>'
     + vehicleCascadeHtml('custprof-veh')
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Trim</label><input type="text" name="veh_trim" placeholder="EX-L (optional)"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>VIN</label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Trim</label><input type="text" name="veh_trim" placeholder="EX-L (optional)"></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>VIN</label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
     + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>License plate <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_plate" maxlength="10" placeholder="optional"></div>'
     + '</div>'
     + COLLAPSE_CLOSE;
 
@@ -4113,9 +4132,9 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + alert
     + header
     + tagsCard
-    + notesCard
     + '<form method="POST" action="/admin/customer/' + c.id + '/save" id="profileSaveForm">'
     + contactCard
+    + notesCard
     + vehCard
     + addrCard
     + '</form>'
@@ -4152,17 +4171,30 @@ router.post('/customer/:id/save', requireAuth, express.urlencoded({ extended: fa
   var email       = (req.body.email        || '').trim() || null;
   var phone       = (req.body.phone        || '').trim() || null;
   var homeAddress = (req.body.home_address || '').trim() || null;
-  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ?, home_address = ? WHERE id = ?')
-    .run(firstName, lastName, email, phone, homeAddress, c.id);
+  var notes       = (req.body.notes        || '').trim() || null;
+  db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ?, home_address = ?, notes = ? WHERE id = ?')
+    .run(firstName, lastName, email, phone, homeAddress, notes, c.id);
+
+  // Auto-upsert home address into saved addresses so it appears in the service
+  // address list and auto-fills appointment forms without a separate step.
+  if (homeAddress) {
+    var existingHome = db.prepare("SELECT id FROM customer_addresses WHERE customer_id = ? AND LOWER(COALESCE(label,'')) = 'home'").get(c.id);
+    if (!existingHome) {
+      db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(c.id, 'Home', homeAddress);
+    } else {
+      db.prepare('UPDATE customer_addresses SET address = ? WHERE id = ?').run(homeAddress, existingHome.id);
+    }
+  }
 
   var vYear  = (req.body.veh_year  || '').trim() || null;
   var vMake  = (req.body.veh_make  || '').trim() || null;
   var vModel = (req.body.veh_model || '').trim() || null;
   var vTrim  = (req.body.veh_trim  || '').trim() || null;
   var vVin   = (req.body.veh_vin   || '').trim() || null;
-  if (vMake || vModel || vVin) {
-    db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, trim, vin) VALUES (?,?,?,?,?,?)')
-      .run(c.id, vYear, vMake, vModel, vTrim, vVin);
+  var vPlate = (req.body.veh_plate || '').trim() || null;
+  if (vMake || vModel || vVin || vPlate) {
+    db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, trim, vin, license_plate) VALUES (?,?,?,?,?,?,?)')
+      .run(c.id, vYear, vMake, vModel, vTrim, vVin, vPlate);
   }
 
   var addrAddress = (req.body.addr_address || '').trim();
@@ -4244,23 +4276,24 @@ router.post('/customer/:id/vehicle/:vid/delete', requireAuth, express.urlencoded
 // Falls back to parsing the latest lead's free-text vehicle string when no
 // structured customer_vehicles row exists.
 router.get('/customer/:id/autofill', requireAuth, function(req, res) {
-  var c = db.prepare('SELECT id, email, home_address FROM customers WHERE id = ?').get(req.params.id);
+  var c = db.prepare('SELECT id, email, home_address, notes FROM customers WHERE id = ?').get(req.params.id);
   if (!c) return res.json({ ok: false });
-  var veh = db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
+  var veh = db.prepare('SELECT year, make, model, vin, license_plate FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
   if (!veh) {
     var lastLead = db.prepare("SELECT vehicle FROM leads WHERE customer_id = ? AND vehicle IS NOT NULL AND vehicle != '' ORDER BY id DESC LIMIT 1").get(c.id);
     if (lastLead && lastLead.vehicle) {
       var parts = lastLead.vehicle.trim().split(/\s+/);
       var year = /^(19|20)\d{2}$/.test(parts[0]) ? parts.shift() : '';
       var make = parts.shift() || '';
-      veh = { year: year, make: make, model: parts.join(' ') };
+      veh = { year: year, make: make, model: parts.join(' '), vin: '', license_plate: '' };
     }
   }
   var addr = db.prepare('SELECT address FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(c.id);
   res.json({
     ok: true,
     email: c.email || '',
-    vehicle: veh ? { year: veh.year || '', make: veh.make || '', model: veh.model || '' } : null,
+    notes: c.notes || '',
+    vehicle: veh ? { year: veh.year || '', make: veh.make || '', model: veh.model || '', vin: veh.vin || '', license_plate: veh.license_plate || '' } : null,
     address: addr ? addr.address : '',
     home_address: c.home_address || ''
   });
@@ -4600,7 +4633,10 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
   var allCustomers = db.prepare('SELECT id, first_name, last_name, phone, email FROM customers ORDER BY last_name, first_name').all();
 
-  var preselectedCustomerId = (req.query.customer_id || '').trim();
+  var fromLeadId = (req.query.from_lead || '').trim();
+  var fromLead = fromLeadId ? db.prepare('SELECT * FROM leads WHERE id = ?').get(fromLeadId) : null;
+
+  var preselectedCustomerId = (req.query.customer_id || fromLead && String(fromLead.customer_id) || '').trim();
   var preselectedCustomer = preselectedCustomerId
     ? allCustomers.find(function(c) { return String(c.id) === preselectedCustomerId; }) || null
     : null;
@@ -4614,12 +4650,17 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     return { id: c.id, label: name + (c.phone ? ' (' + fmtPhone(c.phone) + ')' : ''), email: c.email || '', search: (name + ' ' + (c.phone || '')).toLowerCase() };
   }));
 
+  var fromLeadServices = fromLead && fromLead.service
+    ? fromLead.service.split(',').map(function(s) { return s.trim(); })
+    : [];
+  var fromLeadServiceVal = fromLeadServices.join(', ');
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
-        return '<label class="svc-check-item"><input type="checkbox" class="appt-svc-cb" value="' + esc(s) + '" onchange="apptUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
+        var checked = fromLeadServices.indexOf(s) !== -1 ? ' checked' : '';
+        return '<label class="svc-check-item"><input type="checkbox" class="appt-svc-cb" value="' + esc(s) + '"' + checked + ' onchange="apptUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
       }).join('')
     + '</div>'
-    + '<input type="hidden" name="service" id="apptSvcHidden" value="">';
+    + '<input type="hidden" name="service" id="apptSvcHidden" value="' + esc(fromLeadServiceVal) + '">';
 
   var timeOpts = ownerTimeOptions('');
 
@@ -4631,10 +4672,20 @@ router.get('/appointments/new', requireAuth, function(req, res) {
   var alert = '';
   if (req.query.err === 'name') alert = '<div class="alert alert-error">Customer first and last name are required for new customers.</div>';
 
+  var fromLeadBanner = fromLead
+    ? '<div style="background:#e3f0ff;border:1.5px solid #4169e1;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:0.9rem;color:#1a4a7a;">'
+      + '<strong>Booking from existing lead:</strong> ' + esc(fromLead.first_name + ' ' + fromLead.last_name)
+      + (fromLead.service ? ' &mdash; ' + esc(fromLead.service) : '')
+      + '. This appointment will advance that lead to Booked (no duplicate created).'
+      + '</div>'
+    : '';
+
   var body = '<a href="/admin/appointments" class="back-link">&#8592; Appointments</a>'
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">New Appointment</h1>'
+    + fromLeadBanner
     + '<form method="POST" action="/admin/appointments/new">'
+    + (fromLeadId ? '<input type="hidden" name="from_lead" value="' + esc(fromLeadId) + '">' : '')
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
@@ -4669,6 +4720,10 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Vehicle</div>'
     + vehicleCascadeHtml('appt-veh')
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
+    + '<div class="form-group" style="margin-bottom:0;"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_vin" id="apptVehVin" maxlength="17" placeholder="optional"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>License plate <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_plate" id="apptVehPlate" maxlength="10" placeholder="optional"></div>'
+    + '</div>'
     + '</div>'
 
     + '<div class="card">'
@@ -4735,8 +4790,8 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Notes</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Internal notes</label>'
-    + '<textarea name="notes" placeholder="Any notes for the job..."></textarea></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Internal notes <span style="color:#bbb;font-weight:400;">(auto-filled from customer profile)</span></label>'
+    + '<textarea name="notes" id="apptNotes" placeholder="Any notes for the job..."></textarea></div>'
     + '</div>'
 
     + '<div class="card">'
@@ -4746,7 +4801,10 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
     + '<button type="button" id="apptPreviewBtn" class="btn btn-outline" style="margin-bottom:8px;" onclick="apptPreview()">Preview Email</button>'
     + '<div id="apptPreviewBox" style="display:none;margin-bottom:12px;"></div>'
-    + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="margin-bottom:24px;">Create Appointment</button>'
+    + '<div style="display:flex;gap:10px;align-items:center;margin-bottom:24px;">'
+    + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="flex:1;">Create Appointment</button>'
+    + '<a href="/admin/appointments/new" class="btn btn-outline" style="width:auto;">Start Over</a>'
+    + '</div>'
     + '</form>'
     + '<script>(function(){'
     + 'var form=document.querySelector("form[action=\'/admin/appointments/new\']");'
@@ -4795,6 +4853,9 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +       'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
     +       'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
     +       'if(hidEmail&&d.email)hidEmail.value=d.email;'
+    +       'var vin=document.getElementById("apptVehVin");if(vin&&d.vehicle&&d.vehicle.vin)vin.value=d.vehicle.vin;'
+    +       'var plate=document.getElementById("apptVehPlate");if(plate&&d.vehicle&&d.vehicle.license_plate)plate.value=d.vehicle.license_plate;'
+    +       'var notes=document.getElementById("apptNotes");if(notes&&d.notes&&!notes.value)notes.value=d.notes;'
     +     '}).catch(function(){});'
     +   '}'
     +   'function clearCust(){'
@@ -4806,6 +4867,8 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'newFields.style.display="block";'
     +     'if(window.bkVehFill)window.bkVehFill("appt-veh",{});'
     +     'var a=document.getElementById("apptAddr");if(a)a.value="";'
+    +     'var vin=document.getElementById("apptVehVin");if(vin)vin.value="";'
+    +     'var plate=document.getElementById("apptVehPlate");if(plate)plate.value="";'
     +     'inp.focus();'
     +   '}'
     +   'clearBtn.addEventListener("click",clearCust);'
@@ -4814,6 +4877,9 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
     +     'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
     +     'if(hidEmail&&d.email)hidEmail.value=d.email;'
+    +     'var vin=document.getElementById("apptVehVin");if(vin&&d.vehicle&&d.vehicle.vin)vin.value=d.vehicle.vin;'
+    +     'var plate=document.getElementById("apptVehPlate");if(plate&&d.vehicle&&d.vehicle.license_plate)plate.value=d.vehicle.license_plate;'
+    +     'var notes=document.getElementById("apptNotes");if(notes&&d.notes&&!notes.value)notes.value=d.notes;'
     +   '}).catch(function(){});}'
     +   'inp.addEventListener("input",function(){'
     +     'var q=inp.value.trim().toLowerCase();'
@@ -4944,6 +5010,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
 router.post('/appointments/new', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var customerId = (req.body.customer_id || '').trim();
+  var fromLeadId = parseInt(req.body.from_lead || '') || null;
   var vehicle    = [
     (req.body.veh_year  || '').trim(),
     (req.body.veh_make  || '').trim(),
@@ -4986,20 +5053,48 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
   var vYear  = (req.body.veh_year  || '').trim() || null;
   var vMake  = (req.body.veh_make  || '').trim() || null;
   var vModel = (req.body.veh_model || '').trim() || null;
-  if (vMake || vModel) {
+  var vVin   = (req.body.veh_vin   || '').trim() || null;
+  var vPlate = (req.body.veh_plate || '').trim() || null;
+  if (vMake || vModel || vVin || vPlate) {
     var dupe = db.prepare(
       'SELECT id FROM customer_vehicles WHERE customer_id = ? AND IFNULL(year,\'\')=? AND IFNULL(make,\'\')=? AND IFNULL(model,\'\')=?'
     ).get(cust.id, vYear || '', vMake || '', vModel || '');
     if (!dupe) {
-      db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model) VALUES (?,?,?,?)')
-        .run(cust.id, vYear, vMake, vModel);
+      db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)')
+        .run(cust.id, vYear, vMake, vModel, vVin, vPlate);
+    } else if (vVin || vPlate) {
+      // Update VIN/plate on existing vehicle row if those fields are new
+      db.prepare('UPDATE customer_vehicles SET vin = COALESCE(NULLIF(?,\'\'),vin), license_plate = COALESCE(NULLIF(?,\'\'),license_plate) WHERE id = ?')
+        .run(vVin, vPlate, dupe.id);
     }
   }
 
-  var leadResult = db.prepare(
-    'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status, customer_id, status_updated_at) VALUES (?,?,?,?,?,?,?,?,?,datetime(\'now\'))'
-  ).run(cust.first_name, cust.last_name, cust.phone || '', cust.email || null, vehicle, service, 'appointment', 'booked', cust.id);
-  var leadId = leadResult.lastInsertRowid;
+  // If booking from an existing quoted/quote_accepted lead, advance that lead
+  // instead of creating a duplicate. This is the fix for the Daniel Kim case.
+  var leadId;
+  if (fromLeadId) {
+    var existingLead = db.prepare("SELECT * FROM leads WHERE id = ? AND status IN ('quoted','quote_accepted','new','follow_up')").get(fromLeadId);
+    if (existingLead) {
+      db.prepare("UPDATE leads SET status = 'booked', vehicle = COALESCE(?,vehicle), service = COALESCE(?,service), status_updated_at = datetime('now') WHERE id = ?")
+        .run(vehicle, service, existingLead.id);
+      db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Appointment booked from lead', ?)").run(
+        existingLead.id,
+        [service, pref_date, pref_time].filter(Boolean).join(' - ')
+      );
+      leadId = existingLead.id;
+    }
+  }
+
+  if (!leadId) {
+    var leadResult = db.prepare(
+      'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status, customer_id, status_updated_at) VALUES (?,?,?,?,?,?,?,?,?,datetime(\'now\'))'
+    ).run(cust.first_name, cust.last_name, cust.phone || '', cust.email || null, vehicle, service, 'appointment', 'booked', cust.id);
+    leadId = leadResult.lastInsertRowid;
+    db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Appointment created', ?)").run(
+      leadId,
+      [service, pref_date, pref_time].filter(Boolean).join(' - ')
+    );
+  }
 
   var parts    = parseFloat(price_parts)    || 0;
   var labor    = parseFloat(price_labor)    || 0;
@@ -5011,11 +5106,6 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
   var quoteResult = db.prepare(
     'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, status, accept_token, accepted_at, pref_date, pref_time, pref_location, scheduling_notes, sent_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?,?,?,?,datetime(\'now\'))'
   ).run(leadId, service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, 'approved', token, pref_date, pref_time, pref_location, notes);
-
-  db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Appointment created', ?)").run(
-    leadId,
-    [service, pref_date, pref_time].filter(Boolean).join(' - ')
-  );
 
   if (send_email && cust.email && process.env.SMTP_PASS) {
     try {
