@@ -888,6 +888,23 @@ function page(title, body, req) {
       +   '});'
       + '}'
     ) : '')
+    // Idle guard: auto-log-out after 30 min of no interaction, and verify the session
+    // the instant the tab regains focus after being away. This is the safety net for
+    // "I came back hours later" — instead of letting a stale form attempt an action
+    // (Send Quote, etc.) on a dead session, it sends the owner to a clean login.
+    + '(function(){'
+    +   'var IDLE_MS=30*60*1000;var t;'
+    +   'function expire(){window.location.href="/admin/logout";}'
+    +   'function reset(){clearTimeout(t);t=setTimeout(expire,IDLE_MS);}'
+    +   '["mousedown","keydown","touchstart","scroll","click"].forEach(function(ev){document.addEventListener(ev,reset,{passive:true});});'
+    +   'reset();'
+    +   'document.addEventListener("visibilitychange",function(){'
+    +     'if(document.visibilityState!=="visible")return;'
+    +     'fetch("/admin/session-status",{headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();}).then(function(d){'
+    +       'if(!d||!d.authed){window.location.href="/admin/login?error=expired";}else{reset();}'
+    +     '}).catch(function(){});'
+    +   '});'
+    + '})();'
     + '</script>'
     + '</body></html>';
 }
@@ -917,6 +934,8 @@ router.get('/login', function(req, res) {
   var errorHtml = '';
   if (req.query.error === 'locked') {
     errorHtml = '<div class="alert alert-error">Too many failed attempts. Try again in a few minutes.</div>';
+  } else if (req.query.error === 'expired') {
+    errorHtml = '<div class="alert" style="background:#eef3ff;color:#1a4a7a;border:1px solid #c5d6ef;">You were signed out after 30 minutes of inactivity. Please sign in again to continue.</div>';
   } else if (req.query.error) {
     errorHtml = '<div class="alert alert-error">Incorrect password. Try again.</div>';
   }
@@ -987,6 +1006,16 @@ router.post('/login', express.urlencoded({ extended: false }), function(req, res
   }
   loginFails.set(ip, next);
   res.redirect('/admin/login?error=' + (next.lockedUntil > now ? 'locked' : '1'));
+});
+
+// Lightweight session check for the client-side idle guard. Deliberately NOT behind
+// requireAuth so it returns JSON (never a redirect): the browser polls this when the
+// tab regains focus to learn whether the session is still alive. Reading the session
+// also refreshes the rolling 30-min window when it is valid, which is correct (the
+// owner just returned and is active). Returns no customer data.
+router.get('/session-status', function(req, res) {
+  res.set('Cache-Control', 'no-store');
+  res.json({ authed: !!(req.session && req.session.adminAuthed) });
 });
 
 router.get('/logout', function(req, res) {
