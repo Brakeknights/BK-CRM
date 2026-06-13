@@ -15,7 +15,12 @@ const quoteRouter = require('./routes/quote');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 hours
+// 30-minute idle timeout. With rolling:true below, every admin request refreshes
+// this window, so an active session never drops mid-task, but 30 minutes of no
+// activity (owner leaves the site / backgrounds the phone) expires it. This
+// guarantees a clean re-login after time away rather than resuming a stale
+// session whose next action might silently fail.
+const SESSION_TTL = 30 * 60 * 1000; // 30 minutes (idle, rolling)
 const IS_PROD = process.env.NODE_ENV === 'production';
 
 // Customer-data guard: in production, refuse to start if the admin password or
@@ -52,6 +57,7 @@ app.use(session({
   name: 'bk.sid',
   secret: process.env.SESSION_SECRET || 'bk-dev-secret-change-in-prod',
   resave: false,
+  rolling: true,              // refresh the 30-min idle window on every request
   saveUninitialized: false,
   store: new SqliteStore(db, SESSION_TTL),
   cookie: {

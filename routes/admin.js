@@ -888,6 +888,44 @@ function page(title, body, req) {
       +   '});'
       + '}'
     ) : '')
+    // Form draft autosave. Saves every named field of a form to localStorage as the
+    // owner types and restores it on next load, so the 30-min idle logout never costs
+    // unsaved work: the owner re-authenticates and resumes the exact same draft. Drafts
+    // older than 24h are discarded. The optional after() hook lets each form re-derive
+    // its widget state (service checkboxes, tier buttons, totals) without re-pulling
+    // prices from the pricing table, so manual price overrides are preserved.
+    + 'window.bkAutosave=function(form,key,after){'
+    +   'if(!form)return;var SK="bkdraft_"+key;var MAX=24*60*60*1000;'
+    +   'function flds(){return form.querySelectorAll("input[name],select[name],textarea[name]");}'
+    +   'function save(){try{var d={};flds().forEach(function(el){var n=el.name;if(!n)return;if(el.type==="checkbox"){if(!d[n])d[n]=[];if(el.checked)d[n].push(el.value);}else if(el.type==="radio"){if(el.checked)d[n]=el.value;}else{d[n]=el.value;}});localStorage.setItem(SK,JSON.stringify({savedAt:Date.now(),data:d}));}catch(_){}}'
+    +   'function restore(){try{var raw=localStorage.getItem(SK);if(!raw)return;var b=JSON.parse(raw);if(!b||!b.data)return;if(b.savedAt&&Date.now()-b.savedAt>MAX){localStorage.removeItem(SK);return;}var d=b.data;flds().forEach(function(el){var n=el.name;if(!(n in d))return;if(el.type==="checkbox"){el.checked=(d[n]||[]).indexOf(el.value)>=0;}else if(el.type==="radio"){el.checked=(d[n]===el.value);}else{el.value=d[n];}});form.querySelectorAll("[data-veh-cascade]").forEach(function(box){var p=box.getAttribute("data-veh-cascade");var y=document.getElementById(p+"-year"),mk=document.getElementById(p+"-make"),hid=document.getElementById(p+"-model-hid");if(window.bkVehFill)window.bkVehFill(p,{year:y?y.value:"",make:mk?mk.value:"",model:hid?hid.value:""});});if(typeof after==="function"){try{after(d);}catch(_){}}}catch(_){}}'
+    +   'var t;function deb(){clearTimeout(t);t=setTimeout(save,400);}'
+    +   'form.addEventListener("input",deb);form.addEventListener("change",deb);'
+    +   'form.addEventListener("submit",function(){try{localStorage.removeItem(SK);}catch(_){}});'
+    +   'restore();'
+    + '};'
+    + 'window.bkClearDraft=function(key){try{localStorage.removeItem("bkdraft_"+key);}catch(_){}};'
+    // Auto-init: any form tagged data-autosave is wired here (this runs at end of body,
+    // so every form and its helper scripts are already defined). An optional
+    // data-autosave-after names a global finalizer the form's own script defines.
+    + '(function(){try{document.querySelectorAll("form[data-autosave]").forEach(function(f){var fn=f.getAttribute("data-autosave-after");var after=(fn&&window[fn])?window[fn]:null;bkAutosave(f,f.getAttribute("data-autosave"),after);});}catch(_){}})();'
+    // Idle guard: auto-log-out after 30 min of no interaction, and verify the session
+    // the instant the tab regains focus after being away. This is the safety net for
+    // "I came back hours later" — instead of letting a stale form attempt an action
+    // (Send Quote, etc.) on a dead session, it sends the owner to a clean login.
+    + '(function(){'
+    +   'var IDLE_MS=30*60*1000;var t;'
+    +   'function expire(){window.location.href="/admin/logout";}'
+    +   'function reset(){clearTimeout(t);t=setTimeout(expire,IDLE_MS);}'
+    +   '["mousedown","keydown","touchstart","scroll","click"].forEach(function(ev){document.addEventListener(ev,reset,{passive:true});});'
+    +   'reset();'
+    +   'document.addEventListener("visibilitychange",function(){'
+    +     'if(document.visibilityState!=="visible")return;'
+    +     'fetch("/admin/session-status",{headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();}).then(function(d){'
+    +       'if(!d||!d.authed){window.location.href="/admin/login?error=expired";}else{reset();}'
+    +     '}).catch(function(){});'
+    +   '});'
+    + '})();'
     + '</script>'
     + '</body></html>';
 }
@@ -917,6 +955,8 @@ router.get('/login', function(req, res) {
   var errorHtml = '';
   if (req.query.error === 'locked') {
     errorHtml = '<div class="alert alert-error">Too many failed attempts. Try again in a few minutes.</div>';
+  } else if (req.query.error === 'expired') {
+    errorHtml = '<div class="alert" style="background:#eef3ff;color:#1a4a7a;border:1px solid #c5d6ef;">You were signed out after 30 minutes of inactivity. Please sign in again to continue.</div>';
   } else if (req.query.error) {
     errorHtml = '<div class="alert alert-error">Incorrect password. Try again.</div>';
   }
@@ -987,6 +1027,16 @@ router.post('/login', express.urlencoded({ extended: false }), function(req, res
   }
   loginFails.set(ip, next);
   res.redirect('/admin/login?error=' + (next.lockedUntil > now ? 'locked' : '1'));
+});
+
+// Lightweight session check for the client-side idle guard. Deliberately NOT behind
+// requireAuth so it returns JSON (never a redirect): the browser polls this when the
+// tab regains focus to learn whether the session is still alive. Reading the session
+// also refreshes the rolling 30-min window when it is valid, which is correct (the
+// owner just returned and is active). Returns no customer data.
+router.get('/session-status', function(req, res) {
+  res.set('Cache-Control', 'no-store');
+  res.json({ authed: !!(req.session && req.session.adminAuthed) });
 });
 
 router.get('/logout', function(req, res) {
@@ -1695,7 +1745,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Build Quote form
     + '<div data-section="build-quote">'
     + collapseOpen('buildquote', 'Build Quote', buildQuoteOpen)
-    + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf">'
+    + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf" data-autosave="quote-' + lead.id + '" data-autosave-after="bkQuoteAfter">'
 
     + '<div class="form-group"><label>Service <span style="color:#bbb;font-weight:400;">(select all that apply)</span></label>'
     + serviceCheckboxes
@@ -1928,6 +1978,18 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'if(!c)return;'
     +   'order.forEach(function(n){var el=c.querySelector("[data-section=\'"+n+"\']");if(el)c.appendChild(el);});'
     + '})();'
+    // Draft restore finalizer: re-check services and reset the tier/line-item toggles
+    // from the restored fields, then recompute tax/total without re-pulling prices so
+    // any manual price overrides in the draft are kept.
+    + 'window.bkQuoteAfter=function(d){'
+    +   'var svc=(document.getElementById("svcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'document.querySelectorAll(".svc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
+    +   'tier=(document.getElementById("tierVal").value)||"standard";'
+    +   'document.getElementById("btnStd").classList.toggle("active",tier==="standard");'
+    +   'document.getElementById("btnPrem").classList.toggle("active",tier==="premium");'
+    +   'if(typeof setLineItems==="function"&&document.getElementById("lineItemsVal"))setLineItems(document.getElementById("lineItemsVal").value||"combined");'
+    +   'renderTags();updateServiceHints(svc);calc();'
+    + '};'
     + '</script>';
 
   res.send(page('Quote — ' + lead.first_name + ' ' + lead.last_name, body, req));
@@ -2182,7 +2244,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
         : '')
     + '</div>'
 
-    + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf">'
+    + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf" data-autosave="receipt-' + lead.id + '" data-autosave-after="bkReceiptAfter">'
 
     + collapseOpen('rc_service', 'Service &amp; Vehicle', true)
     + '<div class="form-group"><label>Service performed <span style="color:#bbb;font-weight:400;">(select all that apply, change if the job grew on arrival)</span></label>'
@@ -2356,6 +2418,19 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     '+"</div>";'
     +   'box.style.display="block";document.getElementById("rPrevBtn").textContent="Hide Preview";'
     + '}'
+    // Draft restore finalizer: re-check services, restore the payment "Other" box and
+    // advisory rows, then recompute the total from restored amounts (no price re-pull).
+    + 'window.bkReceiptAfter=function(d){'
+    +   'var svc=(document.getElementById("rsvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'document.querySelectorAll(".rsvc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
+    +   'rRenderTags();'
+    +   'if(typeof rPayToggle==="function")rPayToggle();'
+    +   'for(var i=2;i<=4;i++){var n=(document.querySelector("[name=custNote"+i+"]")||{}).value||"";var cu=(document.querySelector("[name=fuCustom"+i+"]")||{}).value||"";if(n||cu){var r=document.getElementById("advRow"+i);if(r)r.style.display="block";}}'
+    +   'var allVis=true;for(var j=2;j<=4;j++){var rr=document.getElementById("advRow"+j);if(rr&&rr.style.display==="none")allVis=false;}'
+    +   'if(allVis){var ab=document.getElementById("rAddAdvBtn");if(ab)ab.style.display="none";}'
+    +   'for(var k=1;k<=4;k++){if(typeof toggleCustom==="function")toggleCustom(k);}'
+    +   'if(typeof rcalc==="function")rcalc();'
+    + '};'
     + '</script>'
     + VEHICLE_CASCADE_JS
     + (process.env.GOOGLE_MAPS_API_KEY
@@ -3240,7 +3315,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'function qRestoreState(){'
     +   'try{'
     +     'var s=QDRAFT;'
-    +     'if(!s){var raw=localStorage.getItem("bk_qq_state");if(!raw)return;s=JSON.parse(raw);if(s&&s.savedAt&&Date.now()-s.savedAt>30*60*1000){try{localStorage.removeItem("bk_qq_state");}catch(_){}return;}}'
+    +     'if(!s){var raw=localStorage.getItem("bk_qq_state");if(!raw)return;s=JSON.parse(raw);if(s&&s.savedAt&&Date.now()-s.savedAt>24*60*60*1000){try{localStorage.removeItem("bk_qq_state");}catch(_){}return;}}'
     +     'if(!s)return;'
     +     'if(s.mode)qSetMode(s.mode);'
     +     'if(s.tier)qSetTier(s.tier);'
@@ -3706,7 +3781,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
 
   var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
     + alert
-    + '<form method="POST" action="/admin/customer/new">'
+    + '<form method="POST" action="/admin/customer/new" data-autosave="custnew">'
     + '<div class="card">'
     + '<div class="section-title">Contact</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
@@ -3737,7 +3812,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '</div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-top:4px;">'
     + '<button type="submit" class="btn btn-navy" style="flex:1;">Create Customer</button>'
-    + '<a href="/admin/customer/new" class="btn btn-outline" style="width:auto;">Start Over</a>'
+    + '<a href="/admin/customer/new" class="btn btn-outline" style="width:auto;" onclick="bkClearDraft(\'custnew\')">Start Over</a>'
     + '</div>'
     + '</form>'
     + VEHICLE_CASCADE_JS;
@@ -4684,7 +4759,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">New Appointment</h1>'
     + fromLeadBanner
-    + '<form method="POST" action="/admin/appointments/new">'
+    + '<form method="POST" action="/admin/appointments/new" data-autosave="apptnew-' + esc(fromLeadId || 'new') + '" data-autosave-after="bkApptAfter">'
     + (fromLeadId ? '<input type="hidden" name="from_lead" value="' + esc(fromLeadId) + '">' : '')
 
     + '<div class="card">'
@@ -4803,7 +4878,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div id="apptPreviewBox" style="display:none;margin-bottom:12px;"></div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-bottom:24px;">'
     + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="flex:1;">Create Appointment</button>'
-    + '<a href="/admin/appointments/new" class="btn btn-outline" style="width:auto;">Start Over</a>'
+    + '<a href="/admin/appointments/new" class="btn btn-outline" style="width:auto;" onclick="bkClearDraft(\'apptnew-' + esc(fromLeadId || 'new') + '\')">Start Over</a>'
     + '</div>'
     + '</form>'
     + '<script>(function(){'
@@ -4874,6 +4949,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'clearBtn.addEventListener("click",clearCust);'
     +   'if(hidId.value){fetch("/admin/customer/"+hidId.value+"/autofill").then(function(r){return r.json();}).then(function(d){'
     +     'if(!d||!d.ok)return;'
+    +     'if(window._apptDraftRestored)return;' // a restored draft takes precedence over profile autofill
     +     'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
     +     'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
     +     'if(hidEmail&&d.email)hidEmail.value=d.email;'
@@ -5001,6 +5077,25 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'box.innerHTML="<div class=\'preview-box\'><h4>Confirmation Email Preview</h4>"+rows+"</div>";'
     +   'box.style.display="block";btn.textContent="Hide Preview";'
     + '}'
+    // Draft restore finalizer: re-derive widgets from restored fields without re-pulling
+    // prices, and rebuild the selected-customer chip without a profile autofill (so the
+    // owner's restored vehicle/address/notes are not overwritten).
+    + 'window.bkApptAfter=function(d){'
+    +   'window._apptDraftRestored=true;'
+    +   'var svc=(document.getElementById("apptSvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'document.querySelectorAll(".appt-svc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
+    +   'apptTier=(document.getElementById("apptTier").value)||"standard";'
+    +   'document.getElementById("apptBtnStd").classList.toggle("active",apptTier==="standard");'
+    +   'document.getElementById("apptBtnPrem").classList.toggle("active",apptTier==="premium");'
+    +   'apptRenderTags();'
+    +   'var cid=(document.getElementById("apptCustId")||{}).value||"";'
+    +   'if(cid){var c=(typeof CUST_LIST!=="undefined")?CUST_LIST.find(function(x){return String(x.id)===String(cid);}):null;'
+    +     'if(c){var chip=document.getElementById("custPickerChip");if(chip)chip.style.display="flex";'
+    +       'var lbl=document.getElementById("custPickerLabel");if(lbl)lbl.textContent=c.label;'
+    +       'var nf=document.getElementById("apptNewCustFields");if(nf)nf.style.display="none";'
+    +       'var he=document.getElementById("apptCustEmail");if(he&&!he.value)he.value=c.email||"";}}'
+    +   'apptCalc();'
+    + '};'
     + '</script>'
     + VEHICLE_CASCADE_JS
     + mapsScript;
