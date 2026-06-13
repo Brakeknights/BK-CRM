@@ -3792,6 +3792,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" placeholder="customer@email.com"></div>'
     + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>'
     + '<div class="card">'
     + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
@@ -3800,10 +3801,6 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group" style="margin-bottom:0;"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>License plate <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_plate" maxlength="10" placeholder="optional"></div>'
     + '</div>'
-    + '</div>'
-    + '<div class="card">'
-    + '<div class="section-title">Service Address <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address</label><input type="text" name="service_address" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>'
     + '<div class="card">'
     + '<div class="section-title">Additional Info</div>'
@@ -3830,10 +3827,16 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
   var tags   = (req.body.tags   || '').trim() || null;
   var notes  = (req.body.notes  || '').trim() || null;
 
+  var homeAddress = (req.body.home_address || '').trim() || null;
+
   var result = db.prepare(
-    'INSERT INTO customers (first_name, last_name, phone, email, tags, notes) VALUES (?,?,?,?,?,?)'
-  ).run(first_name, last_name, phone, email, tags, notes);
+    'INSERT INTO customers (first_name, last_name, phone, email, home_address, tags, notes) VALUES (?,?,?,?,?,?,?)'
+  ).run(first_name, last_name, phone, email, homeAddress, tags, notes);
   var newId = result.lastInsertRowid;
+
+  if (homeAddress) {
+    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(newId, 'Home', homeAddress);
+  }
 
   var vehYear  = (req.body.veh_year  || '').trim() || null;
   var vehMake  = (req.body.veh_make  || '').trim() || null;
@@ -3844,11 +3847,6 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
     db.prepare(
       'INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)'
     ).run(newId, vehYear, vehMake, vehModel || null, vehVin || null, vehPlate || null);
-  }
-
-  var svcAddr = (req.body.service_address || '').trim();
-  if (svcAddr) {
-    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(newId, 'Service', svcAddr);
   }
 
   res.redirect('/admin/customer/' + newId + '?msg=created');
@@ -3977,8 +3975,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<div class="info-grid">'
     + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
     + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
-    + (c.home_address ? '<span class="info-key">Home address</span><span class="info-val">' + mapsLink(c.home_address) + '</span>' : '')
-    + (addresses.length ? '<span class="info-key">Service address</span><span class="info-val">' + mapsLink(addresses[0].address) + (addresses[0].label ? ' <span style="font-size:0.78rem;color:#aaa;">(' + esc(addresses[0].label) + ')</span>' : '') + '</span>' : '')
+    + (c.home_address ? '<span class="info-key">Address</span><span class="info-val">' + mapsLink(c.home_address) + '</span>' : '')
     + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
     + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
     + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
@@ -4005,7 +4002,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '</div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" value="' + esc(c.email || '') + '" placeholder="customer@email.com"></div>'
     + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Home address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>';
 
   // Tags card (collapsible) — removable pills + free-text add + preset quick picks
