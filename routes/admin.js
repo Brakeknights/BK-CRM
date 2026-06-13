@@ -4798,6 +4798,9 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
     + '</div>'
+    + '<div class="form-group" style="margin-top:14px;margin-bottom:0;"><label>Service address</label>'
+    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Customer service address" autocomplete="off"></div>'
+    + '</div>'
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Vehicle</div>'
@@ -4818,8 +4821,6 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + timeOpts
     + '</select></div>'
     + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address</label>'
-    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Customer service address" autocomplete="off"></div>'
     + '</div>'
 
     + '<div class="card">'
