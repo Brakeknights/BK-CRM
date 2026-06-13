@@ -4797,7 +4797,6 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Email</label><input type="email" name="cust_email" placeholder="customer@email.com"></div>'
     + '</div>'
     + '</div>'
-    + '</div>'
     + '<div class="form-group" style="margin-top:14px;margin-bottom:0;">'
     + '<input type="text" name="pref_location" id="apptAddr" placeholder="Service address" autocomplete="off" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
     + '</div>'
