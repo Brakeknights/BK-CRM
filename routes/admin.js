@@ -4809,6 +4809,20 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
 
     + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Schedule</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
+    + '<input type="date" name="pref_date" id="apptDate" required></div>'
+    + '<div class="form-group"><label>Time</label>'
+    + '<select name="pref_time" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;">'
+    + timeOpts
+    + '</select></div>'
+    + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address</label>'
+    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Customer service address" autocomplete="off"></div>'
+    + '</div>'
+
+    + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Service</div>'
     + '<div class="form-group" style="margin:0 0 14px;"><label>Tier</label>'
     + '<div class="tier-toggle">'
@@ -4854,20 +4868,6 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="apptTaxDisplay">$0.00</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="apptTotal" style="font-size:1.15rem;">$0.00</span></div>'
     + '</div>'
-    + '</div>'
-
-    + '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Schedule</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
-    + '<input type="date" name="pref_date" id="apptDate" required></div>'
-    + '<div class="form-group"><label>Time</label>'
-    + '<select name="pref_time" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;">'
-    + timeOpts
-    + '</select></div>'
-    + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address</label>'
-    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Customer service address" autocomplete="off"></div>'
     + '</div>'
 
     + '<div class="card">'
