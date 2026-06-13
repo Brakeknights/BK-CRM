@@ -91,12 +91,19 @@ const OLD_REDIRECTS = {
   '/mobile-brake-repair-aldie-va':        '/brake-repair-aldie',
 };
 
-// Strip trailing slashes and /feed suffixes, apply old-URL redirects — all as 301
+// Strip trailing slashes, /feed and .html suffixes, apply old-URL redirects — all
+// as 301. The .html collapse is the SEO fix: every page is reachable at both
+// /page and /page.html (express.static serves the file either way), so Google
+// crawled both and flagged the duplicates as "Alternate page with proper
+// canonical tag." Folding .html to the canonical clean URL leaves one URL per page.
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
   let p = req.path;
   if (p.endsWith('/') && p.length > 1) p = p.slice(0, -1);
   if (p.endsWith('/feed')) p = p.replace(/\/feed$/, '');
+  // /index.html (root or any directory) → the directory; /foo.html → /foo
+  if (p.endsWith('/index.html')) p = p.slice(0, -'index.html'.length).replace(/\/$/, '') || '/';
+  else if (p.endsWith('.html')) p = p.slice(0, -'.html'.length);
   const dest = OLD_REDIRECTS[p];
   if (p !== req.path || dest) return res.redirect(301, dest || p);
   next();
