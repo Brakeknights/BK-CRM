@@ -842,7 +842,7 @@ function page(title, body, req) {
     + 'function fmtPhoneInput(el){var v=el.value.replace(/\\D/g,"").slice(0,10);if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);else if(v.length>=4)v=v.slice(0,3)+"-"+v.slice(3);el.value=v;}'
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
-    + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="1")els[i].classList.remove("collapsed");else if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
+    + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
     + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
     + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
@@ -2091,7 +2091,7 @@ function buildWarrantyClause(service) {
   return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
 }
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems, isRevised) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems, isRevised, customerNotes) {
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
   var revisedBanner = isRevised
@@ -2139,6 +2139,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
           + '<p style="color:#888;font-size:0.82rem;margin:12px 0 0;">You&rsquo;ll pick a preferred day and time. We&rsquo;ll confirm it or reach out about other openings.</p>'
           + '</div>'
         : '')
+    + (customerNotes ? '<p style="color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:8px;padding:12px 16px;line-height:1.6;margin:0 0 20px;font-size:0.88rem;">' + esc(customerNotes) + '</p>' : '')
     + buildWarrantyClause(service)
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
     + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
@@ -2995,6 +2996,12 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="hidden" name="totalAmt" id="qtotalH" value="0.00">'
     + COLLAPSE_CLOSE
 
+    // Quote-only: notes shown to customer in the quote email
+    + '<div class="card qQuoteOnly">'
+    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional — included in the quote email)</span></div>'
+    + '<textarea name="quote_customer_notes" id="qCustNotes" placeholder="e.g. Parts are in stock, we can typically schedule within 1-2 business days. Reach out anytime with questions." style="width:100%;min-height:80px;padding:10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;resize:vertical;box-sizing:border-box;"></textarea>'
+    + '</div>'
+
     // Receipt-only advisories + office notes
     + collapseOpen('qq_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true, ' qReceiptOnly', 'display:none;')
     + advisoryRows
@@ -3080,7 +3087,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qModeReceipt").classList.toggle("active",m==="receipt");'
     +   'var rec=m==="receipt";'
     +   'document.querySelectorAll(".qReceiptOnly").forEach(function(el){el.style.display=rec?"block":"none";});'
-    +   'document.querySelectorAll(".qQuoteOnly").forEach(function(el){el.style.display=rec?"none":"flex";});'
+    +   'document.querySelectorAll(".qQuoteOnly").forEach(function(el){var isCard=el.classList.contains("card");el.style.display=rec?"none":(isCard?"block":"flex");});'
     +   'document.querySelector(".qQuoteActions").style.display=rec?"none":"block";'
     +   'document.querySelector(".qReceiptActions").style.display=rec?"block":"none";'
     +   'document.getElementById("qSummaryLabel").textContent=rec?"Customer Receipt":"Customer Quote";'
@@ -3235,6 +3242,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+pmoney(qss2)+"</td></tr>";'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+pmoney(qtax)+"</td></tr>";'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>$"+pmoney(qtot)+"</td></tr>";'
+    +     'var qcn=(document.getElementById("qCustNotes")||{}).value||"";'
+    +     'if(qcn.trim())rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Notes to customer</td><td style=\'padding:5px 0;font-style:italic;\'>"+qcn+"</td></tr>";'
     +   '}'
     +   'if(rec){'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
@@ -3454,6 +3463,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var taxRate      = parseFloat(req.body.taxRate)      || 0;
   var taxAmt       = parseFloat(req.body.taxAmt)       || 0;
   var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
+  var quoteCustomerNotes = (req.body.quote_customer_notes || '').trim() || null;
 
   var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
 
@@ -3533,7 +3543,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         subject: qqRevised
           ? 'Your Updated Brake Service Quote — Brake Knights'
           : 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined', qqRevised)
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined', qqRevised, quoteCustomerNotes)
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
@@ -3758,7 +3768,7 @@ router.get('/customers', requireAuth, function(req, res) {
     + 'if(mode==="oldest")return g(a,"data-created").localeCompare(g(b,"data-created"));'
     + 'if(mode==="visit")return g(b,"data-jobs").localeCompare(g(a,"data-jobs"))||g(b,"data-visit").localeCompare(g(a,"data-visit"));'
     + 'var da=g(a,"data-activity"),db2=g(b,"data-activity");'
-    + 'if(db2&&!da)return -1;if(da&&!db2)return 1;'
+    + 'if(db2&&!da)return 1;if(da&&!db2)return -1;'
     + 'return db2.localeCompare(da);'
     + '});'
     + 'cards.forEach(function(el){listEl.appendChild(el);});'
@@ -4787,6 +4797,9 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Email</label><input type="email" name="cust_email" placeholder="customer@email.com"></div>'
     + '</div>'
     + '</div>'
+    + '<div class="form-group" style="margin-top:14px;margin-bottom:0;">'
+    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Service address" autocomplete="off" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
+    + '</div>'
     + '</div>'
 
     + '<div class="card">'
@@ -4795,6 +4808,18 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
     + '<div class="form-group" style="margin-bottom:0;"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_vin" id="apptVehVin" maxlength="17" placeholder="optional"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>License plate <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_plate" id="apptVehPlate" maxlength="10" placeholder="optional"></div>'
+    + '</div>'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Schedule</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
+    + '<input type="date" name="pref_date" id="apptDate" required></div>'
+    + '<div class="form-group"><label>Time</label>'
+    + '<select name="pref_time" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;">'
+    + timeOpts
+    + '</select></div>'
     + '</div>'
     + '</div>'
 
@@ -4844,20 +4869,6 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="apptTaxDisplay">$0.00</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="apptTotal" style="font-size:1.15rem;">$0.00</span></div>'
     + '</div>'
-    + '</div>'
-
-    + '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Schedule</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
-    + '<input type="date" name="pref_date" id="apptDate" required></div>'
-    + '<div class="form-group"><label>Time</label>'
-    + '<select name="pref_time" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;">'
-    + timeOpts
-    + '</select></div>'
-    + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address</label>'
-    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Customer service address" autocomplete="off"></div>'
     + '</div>'
 
     + '<div class="card">'
@@ -5366,11 +5377,8 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
   var totalJobs    = db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
   var avgJobValue  = totalJobs > 0 ? totalRevenue / totalJobs : 0;
 
-  var now2 = new Date();
-  var monthStr2 = now2.getFullYear() + '-' + String(now2.getMonth() + 1).padStart(2, '0') + '-01';
-  var revenueThisMonth2 = db.prepare(
-    "SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL AND date(sent_at) >= ?"
-  ).get(monthStr2).n;
+  // Period-filtered stats — all receipts with sent_at, used client-side for the dropdown filter
+  var allReceiptsForFilter = db.prepare("SELECT total, sent_at FROM receipts WHERE sent_at IS NOT NULL").all();
 
   // Build last-12-months list
   var revMonths = [];
@@ -5451,11 +5459,23 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
           + '</tbody></table>')
     + '</div>';
 
+  var allReceiptsJson = JSON.stringify(allReceiptsForFilter.map(function(r) {
+    return { total: r.total, d: (r.sent_at || '').slice(0, 10) };
+  }));
+
   res.send(page('Revenue',
     '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:16px;">Revenue</h1>'
     + '<div class="stat-grid" style="margin-bottom:12px;">'
     + statBox('$' + money(totalRevenue), 'All-Time Revenue')
-    + statBox('$' + money(revenueThisMonth2), 'This Month')
+    + '<div class="stat-box" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;">'
+    + '<span id="periodRevAmt" style="font-size:1.4rem;font-weight:700;color:#0a1f3d;">$0.00</span>'
+    + '<select id="periodSel" style="padding:5px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.82rem;background:#fff;color:#0a1f3d;font-weight:600;">'
+    + '<option value="today">Today</option>'
+    + '<option value="week">This Week</option>'
+    + '<option value="month" selected>This Month</option>'
+    + '<option value="year">This Year</option>'
+    + '</select>'
+    + '</div>'
     + statBox(totalJobs, 'Jobs Completed')
     + statBox('$' + money(avgJobValue), 'Avg Job Value')
     + '</div>'
@@ -5463,7 +5483,31 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
     + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:14px;">Monthly Revenue — Last 12 Months</div>'
     + barChart
     + '</div>'
-    + tableHtml,
+    + tableHtml
+    + '<script>(function(){'
+    + 'var receipts=' + allReceiptsJson + ';'
+    + 'var sel=document.getElementById("periodSel");'
+    + 'var amt=document.getElementById("periodRevAmt");'
+    + 'function pad(n){return String(n).padStart(2,"0");}'
+    + 'function calc(){'
+    +   'var now=new Date();'
+    +   'var todayStr=now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate());'
+    +   'var p=sel.value;'
+    +   'var total=receipts.filter(function(r){'
+    +     'if(p==="today")return r.d===todayStr;'
+    +     'if(p==="week"){'
+    +       'var d=new Date(now);d.setDate(d.getDate()-d.getDay());'
+    +       'var weekStart=d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());'
+    +       'return r.d>=weekStart&&r.d<=todayStr;'
+    +     '}'
+    +     'if(p==="month")return r.d.slice(0,7)===todayStr.slice(0,7);'
+    +     'if(p==="year")return r.d.slice(0,4)===todayStr.slice(0,4);'
+    +     'return true;'
+    +   '}).reduce(function(s,r){return s+r.total;},0);'
+    +   'amt.textContent="$"+total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});'
+    + '}'
+    + 'sel.addEventListener("change",calc);calc();'
+    + '})();</script>',
     req
   ));
 });
@@ -5604,7 +5648,83 @@ router.get('/reports/services', requireAuth, function(req, res) {
 });
 
 // ─── Placeholder pages for not-yet-built sidebar items ────────────────────────
-router.get('/receipts',           requireAuth, function(req, res) { placeholderPage(req, res, 'Receipts', 'an upcoming phase'); });
+router.get('/receipts', requireAuth, function(req, res) {
+  var rows = db.prepare(
+    "SELECT r.id, r.lead_id, r.service, r.vehicle, r.service_date, r.total, r.payment_method, r.sent_at, "
+    + "l.first_name, l.last_name, l.email "
+    + "FROM receipts r LEFT JOIN leads l ON l.id = r.lead_id "
+    + "WHERE r.sent_at IS NOT NULL "
+    + "ORDER BY r.sent_at DESC"
+  ).all();
+
+  var totalRevenue = rows.reduce(function(s, r) { return s + (r.total || 0); }, 0);
+  var totalCount   = rows.length;
+  var now = new Date();
+  var monthPfx = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  var thisMonthRows = rows.filter(function(r) { return (r.sent_at || '').slice(0, 7) === monthPfx; });
+  var thisMonthRev  = thisMonthRows.reduce(function(s, r) { return s + (r.total || 0); }, 0);
+
+  var cards = rows.length === 0
+    ? '<div class="empty" id="rcptEmpty"><div style="margin-bottom:10px;">' + icon('document') + '</div>No receipts sent yet.</div>'
+    : '<div id="rcptEmpty" style="display:none;padding:32px;text-align:center;color:#888;">No receipts match your search.</div>'
+      + rows.map(function(r) {
+          var name = ((r.first_name || '') + ' ' + (r.last_name || '')).trim() || 'Unknown customer';
+          var searchText = (name + ' ' + (r.service || '') + ' ' + (r.vehicle || '') + ' ' + (r.email || '')).toLowerCase();
+          var dateStr = r.service_date || (r.sent_at || '').slice(0, 10);
+          var svcs = (r.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+          return '<div class="card rcpt-card" data-search="' + esc(searchText) + '" onclick="window.location=\'/admin/quote/' + r.lead_id + '\';" style="cursor:pointer;border-left:3px solid var(--cta);">'
+            + '<div class="row-sb">'
+            + '<div class="lead-name">' + esc(name) + '</div>'
+            + '<span style="font-size:1rem;font-weight:700;color:#0a1f3d;">$' + money(r.total || 0) + '</span>'
+            + '</div>'
+            + (r.vehicle ? '<div class="lead-meta" style="margin-top:3px;">' + esc(r.vehicle) + '</div>' : '')
+            + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'
+            + svcs.map(function(s) { return '<span style="background:#eef3ff;color:#1a4fc4;border-radius:6px;padding:3px 8px;font-size:0.78rem;font-weight:600;">' + esc(s) + '</span>'; }).join('')
+            + '</div>'
+            + '<div style="display:flex;gap:18px;margin-top:10px;font-size:0.82rem;color:#555;flex-wrap:wrap;">'
+            + '<span>' + esc(r.payment_method || 'Unknown payment') + '</span>'
+            + '<span>Sent ' + shortDate(r.sent_at) + '</span>'
+            + (dateStr ? '<span>Service date ' + esc(dateStr) + '</span>' : '')
+            + '</div>'
+            + '</div>';
+        }).join('');
+
+  res.send(page('Receipts',
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Receipts</h1>'
+    + '<span style="color:#aaa;font-size:0.83rem;" id="rcptCount">' + totalCount + ' total</span>'
+    + '</div>'
+    + '<div class="stat-grid" style="margin-bottom:14px;">'
+    + statBox('$' + money(totalRevenue), 'Total Revenue')
+    + statBox(totalCount, 'Receipts Sent')
+    + statBox('$' + money(thisMonthRev), 'This Month')
+    + statBox(thisMonthRows.length, 'Jobs This Month')
+    + '</div>'
+    + '<input type="text" id="rcptSearch" placeholder="Search by customer, service, or vehicle..." '
+    + 'style="width:100%;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;box-sizing:border-box;margin-bottom:14px;" autocomplete="off">'
+    + '<div id="rcptList">' + cards + '</div>'
+    + '<script>(function(){'
+    + 'var inp=document.getElementById("rcptSearch");'
+    + 'var count=document.getElementById("rcptCount");'
+    + 'var empty=document.getElementById("rcptEmpty");'
+    + 'var total=' + totalCount + ';'
+    + 'if(!inp)return;'
+    + 'inp.addEventListener("input",function(){'
+    +   'var q=inp.value.trim().toLowerCase();'
+    +   'var cards=document.querySelectorAll(".rcpt-card");'
+    +   'var shown=0;'
+    +   'cards.forEach(function(el){'
+    +     'var match=!q||el.dataset.search.indexOf(q)!==-1;'
+    +     'el.style.display=match?"":"none";'
+    +     'if(match)shown++;'
+    +   '});'
+    +   'if(count)count.textContent=q?(shown+" of "+total+" total"):(total+" total");'
+    +   'if(empty)empty.style.display=(shown===0&&q)?"block":"none";'
+    + '});'
+    + '})();</script>',
+    req
+  ));
+});
 // ─── Phase 8A: Pricing & Tiers settings ────────────────────────────────────────
 
 router.get('/settings/pricing', requireAuth, function(req, res) {
