@@ -4798,8 +4798,9 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
     + '</div>'
-    + '<div class="form-group" style="margin-top:14px;margin-bottom:0;"><label>Service address</label>'
-    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Customer service address" autocomplete="off"></div>'
+    + '<div class="form-group" style="margin-top:14px;margin-bottom:0;">'
+    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Service address" autocomplete="off" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
+    + '</div>'
     + '</div>'
 
     + '<div class="card">'
