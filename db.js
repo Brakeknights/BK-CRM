@@ -170,6 +170,7 @@ addQuoteCol('scheduling_notes',    'TEXT');
 addQuoteCol('quote_followup_sent', 'INTEGER DEFAULT 0');
 addQuoteCol('reminder_24h_sent',   'INTEGER DEFAULT 0');
 addQuoteCol('reminder_2h_sent',    'INTEGER DEFAULT 0');
+addQuoteCol('line_items',          'TEXT');
 addQuoteCol('alt_times_sent',      'INTEGER DEFAULT 0');
 addQuoteCol('alt_token1',          'TEXT');
 addQuoteCol('alt_date1',           'TEXT');
