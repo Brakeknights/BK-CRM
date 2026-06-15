@@ -2866,23 +2866,25 @@ router.get('/quick', requireAuth, function(req, res) {
     : '';
 
   var QQ_POSITION_SVCS = {
-    'Caliper Replacement':      { prefix: 'Caliper',    positions: ['Front Left', 'Front Right', 'Rear Left', 'Rear Right'] },
-    'Brake Hose Replacement':   { prefix: 'Brake Hose', positions: ['Front Left', 'Front Right', 'Rear Left', 'Rear Right'] }
+    'Caliper Replacement':      { prefix: 'Caliper',    label: 'Caliper',    positions: ['Front Left', 'Front Right', 'Rear Left', 'Rear Right'] },
+    'Brake Hose Replacement':   { prefix: 'Brake Hose', label: 'Brake Hose', positions: ['Front Left', 'Front Right', 'Rear Left', 'Rear Right'] }
   };
 
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
         var posCfg = QQ_POSITION_SVCS[s];
-        var posDiv = posCfg
-          ? '<div class="qq-svc-positions" data-parent="' + esc(s) + '" style="display:none;padding:4px 0 6px 20px;">'
+        if (posCfg) {
+          return '<div class="svc-pos-group" style="margin:4px 0 8px;">'
+            + '<div style="font-size:0.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;padding:4px 0 6px;">' + esc(posCfg.label) + '</div>'
+            + '<div style="padding-left:4px;">'
             + posCfg.positions.map(function(pos) {
                 return '<label class="svc-check-item" style="margin-bottom:3px;">'
                   + '<input type="checkbox" class="qq-svc-pos-cb" data-parent="' + esc(s) + '" data-prefix="' + esc(posCfg.prefix) + '" data-pos="' + esc(pos) + '" onchange="qqPosCbChange(this)">'
                   + '<span class="svc-box"></span>' + esc(pos) + '</label>';
               }).join('')
-            + '</div>'
-          : '';
-        return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qqSvcCbChange(this)"><span class="svc-box"></span>' + esc(s) + '</label>' + posDiv;
+            + '</div></div>';
+        }
+        return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qqSvcCbChange(this)"><span class="svc-box"></span>' + esc(s) + '</label>';
       }).join('')
     + '</div>'
     + '<input type="hidden" name="service" id="qsvcHidden" value="">';
@@ -3092,12 +3094,8 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
     + 'function qqGetAllServiceNames(){'
     +   'var names=[];'
-    +   'document.querySelectorAll(".qsvc-cb:checked").forEach(function(cb){'
-    +     'var posDiv=document.querySelector(".qq-svc-positions[data-parent=\'"+cb.value+"\']");'
-    +     'if(posDiv){'
-    +       'posDiv.querySelectorAll(".qq-svc-pos-cb:checked").forEach(function(pos){names.push(pos.getAttribute("data-prefix")+" - "+pos.getAttribute("data-pos"));});'
-    +     '}else{names.push(cb.value);}'
-    +   '});'
+    +   'document.querySelectorAll(".qsvc-cb:checked").forEach(function(cb){names.push(cb.value);});'
+    +   'document.querySelectorAll(".qq-svc-pos-cb:checked").forEach(function(pos){names.push(pos.getAttribute("data-prefix")+" - "+pos.getAttribute("data-pos"));});'
     +   'return names;'
     + '}'
     + 'function qqUpdateServiceHidden(){'
@@ -3220,7 +3218,6 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'function qUpdateFullService(){qqUpdateServiceHidden();qRenderTags();}'
     + 'function qClearServices(){'
     +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;});'
-    +   'document.querySelectorAll(".qq-svc-positions").forEach(function(d){d.style.display="none";});'
     +   'document.querySelectorAll(".qq-svc-pos-cb").forEach(function(c){c.checked=false;});'
     +   'document.getElementById("qqSvcPriceRows").innerHTML="";'
     +   'document.getElementById("qss").value="0.00";'
