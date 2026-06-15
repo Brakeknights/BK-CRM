@@ -28,7 +28,7 @@ const fs = require('fs');
 // If DB_PATH is not set, we fall back to sensible defaults so the app can still
 // boot during local development.
 // ---------------------------------------------------------------------------
-const dbPath = process.env.DB_PATH || (
+const dbPath = (process.env.DB_PATH || '').trim() || (
   process.env.NODE_ENV === 'production'
     // On the server, bk-phone sits next to the CRM folder, and the database
     // lives one level above both (so deploys never wipe it).

@@ -20,14 +20,16 @@ const crypto = require('crypto');
 // Settings, all read from environment variables (.env). Nothing secret is ever
 // written into the code itself.
 // ---------------------------------------------------------------------------
-const TELNYX_API_KEY = process.env.TELNYX_API_KEY || '';
+// .trim() on every value guards against stray spaces/newlines pasted into the
+// hosting panel's environment-variable fields.
+const TELNYX_API_KEY = (process.env.TELNYX_API_KEY || '').trim();
 // Your Brake Knights number that texts are sent from (E.164, e.g. +17034230486).
-const TELNYX_NUMBER = process.env.TELNYX_NUMBER || process.env.TELNYX_PHONE_NUMBER || '';
+const TELNYX_NUMBER = (process.env.TELNYX_NUMBER || process.env.TELNYX_PHONE_NUMBER || '').trim();
 // The Messaging Profile your number is attached to.
-const TELNYX_MESSAGING_PROFILE_ID = process.env.TELNYX_MESSAGING_PROFILE_ID || '';
+const TELNYX_MESSAGING_PROFILE_ID = (process.env.TELNYX_MESSAGING_PROFILE_ID || '').trim();
 // Telnyx's public key, used only to verify incoming webhooks. Optional for now;
 // you'll paste it into .env when you grab it from the portal.
-const TELNYX_PUBLIC_KEY = process.env.TELNYX_PUBLIC_KEY || '';
+const TELNYX_PUBLIC_KEY = (process.env.TELNYX_PUBLIC_KEY || '').trim();
 
 const TELNYX_API_BASE = 'https://api.telnyx.com/v2';
 

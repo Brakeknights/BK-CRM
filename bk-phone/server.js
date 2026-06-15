@@ -27,8 +27,10 @@ const PORT = process.env.PORT || 3001;
 const isProd = process.env.NODE_ENV === 'production';
 
 // --- Auth settings ---------------------------------------------------------
-const PHONE_PASSWORD = process.env.PHONE_PASSWORD || '';
-const SESSION_SECRET = process.env.PHONE_SESSION_SECRET || '';
+// .trim() guards against stray spaces/newlines accidentally pasted into the
+// hosting panel's environment-variable fields (a very common gotcha).
+const PHONE_PASSWORD = (process.env.PHONE_PASSWORD || '').trim();
+const SESSION_SECRET = (process.env.PHONE_SESSION_SECRET || '').trim();
 const AUTH_COOKIE = 'bkp_auth';
 const COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -142,7 +144,7 @@ app.get('/login', (req, res) => {
 
 // Handle login. Constant-time password check, then set the signed cookie.
 app.post('/login', (req, res) => {
-  const given = String(req.body.password || '');
+  const given = String(req.body.password || '').trim();
   const expected = PHONE_PASSWORD;
   let ok = false;
   if (expected && given.length === expected.length) {
