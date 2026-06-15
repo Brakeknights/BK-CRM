@@ -187,10 +187,9 @@ app.get('/health', (_req, res) => res.json({ ok: true, app: 'bk-phone' }));
 // screens and the API that return customer conversations, sits behind
 // requireAuth. These are filled in by routes/sms.js in the next file.
 // ---------------------------------------------------------------------------
-// --- SMS ROUTES MOUNT (added in File 4: routes/sms.js) ---
-// const sms = require('./routes/sms');
-// app.use('/webhooks/telnyx', sms.webhook);   // public, signature-verified
-// app.use('/', requireAuth, sms.app);         // password-gated UI + API
+const sms = require('./routes/sms');
+app.use('/webhooks/telnyx', sms.webhook);   // public, signature-verified
+app.use('/', requireAuth, sms.app);         // password-gated UI + API
 
 app.listen(PORT, () => {
   console.log(`[bk-phone] running on port ${PORT} (${isProd ? 'production' : 'development'})`);
