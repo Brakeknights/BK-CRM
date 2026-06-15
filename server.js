@@ -71,6 +71,7 @@ app.use(session({
 // 301 redirects for old blog posts and old-format location URLs from previous site
 const OLD_REDIRECTS = {
   '/benefits-and-drawbacks-of-mobile-mechanics':                                        '/blog',
+  '/four-common-services-offered-at-auto-repair-centers-that-we-bring-to-your-location': '/blog',
   '/havent-changed-your-brake-fluid-in-years-what-is-happening-to-your-brakes':        '/blog',
   '/diy-brake-pad-replacement-when-to-roll-up-your-sleeves-and-when-to-call-the-pros': '/blog',
   '/getting-back-on-the-road-how-long-will-it-take':                                   '/blog',
