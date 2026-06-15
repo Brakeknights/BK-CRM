@@ -1,0 +1,10 @@
+# Secrets — never commit the real environment file
+.env
+
+# Dependencies (installed per-environment)
+node_modules/
+
+# Local test databases
+*.db
+*.db-shm
+*.db-wal

@@ -108,9 +108,13 @@ function handleStatus(payload) {
 // PROTECTED: app screens + API (mounted behind requireAuth in server.js)
 // ===========================================================================
 
-// The two HTML screens (built in Files 6 & 7).
+// The HTML screens.
 app.get('/', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
 app.get('/thread/:id', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'thread.html')));
+app.get('/settings', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'settings.html')));
+
+// Small bit of app config the Settings screen reads (the business number).
+app.get('/api/config', (_req, res) => res.json({ number: telnyx.TELNYX_NUMBER || '' }));
 
 // --- API: list every conversation (newest first) for the main screen --------
 app.get('/api/threads', (_req, res) => {

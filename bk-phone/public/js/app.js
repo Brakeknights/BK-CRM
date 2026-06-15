@@ -114,3 +114,11 @@ const BKP = (() => {
     toast,
   };
 })();
+
+// Register the service worker so the app installs to the home screen and loads
+// instantly. Silent if unsupported.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}

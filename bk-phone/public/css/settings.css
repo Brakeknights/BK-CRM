@@ -1,0 +1,29 @@
+/* bk-phone / settings.css — styles only for the Settings screen */
+
+.settings-section { padding: 14px 16px 0; }
+.settings-label {
+  font-size: 0.6875rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-faint); margin: 8px 4px;
+}
+.settings-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.settings-row {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 14px 16px; min-height: 52px;
+  color: var(--text); font-size: 0.9375rem; text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row:not(.static):hover { background: var(--surface-2); }
+.settings-row:not(.static):active { background: var(--surface-3); }
+.settings-value { color: var(--text-dim); font-weight: 500; }
+
+.acct-logo { width: 40px; height: 40px; border-radius: 9px; }
+.settings-row.static { cursor: default; justify-content: flex-start; }
+.acct-name { font-weight: 600; font-size: 1rem; }
+.acct-sub { color: var(--text-dim); font-size: 0.8125rem; margin-top: 1px; }
+
+.settings-hint { color: var(--text-faint); font-size: 0.75rem; margin: 8px 6px 0; }
+.settings-version { text-align: center; color: var(--text-faint); font-size: 0.75rem; padding: 28px 0 20px; }
