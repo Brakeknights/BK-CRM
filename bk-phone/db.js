@@ -179,6 +179,14 @@ function markThreadRead(threadId) {
   markThreadReadStmt.run(threadId);
 }
 
+// Set/refresh a conversation's display name (used when the CRM match is found).
+const setThreadNameStmt = db.prepare(`
+  UPDATE comm_threads SET contact_name = ? WHERE id = ?
+`);
+function setThreadName(threadId, name) {
+  setThreadNameStmt.run(name, threadId);
+}
+
 // --- Messages --------------------------------------------------------------
 
 // All messages in a conversation, oldest first (so they read top-to-bottom).
@@ -234,6 +242,7 @@ module.exports = {
   getOrCreateThread,
   touchThread,
   markThreadRead,
+  setThreadName,
   // messages
   listMessagesByThread: (threadId) => listMessagesByThread.all(threadId),
   insertMessage,

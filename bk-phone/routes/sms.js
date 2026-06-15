@@ -19,6 +19,7 @@ const express = require('express');
 const path = require('path');
 const dbm = require('../db');
 const telnyx = require('../telnyx');
+const crm = require('../crm');
 
 const webhook = express.Router();
 const app = express.Router();
@@ -72,7 +73,9 @@ function handleInbound(payload) {
   const text = payload.text || '';
   if (!from) return;
 
-  const thread = dbm.getOrCreateThread(from, null, to || telnyx.TELNYX_NUMBER);
+  // Match the number to a CRM customer so the conversation shows their name.
+  const match = crm.lookupByPhone(from);
+  const thread = dbm.getOrCreateThread(from, match && match.name, to || telnyx.TELNYX_NUMBER);
   dbm.insertMessage({
     thread_id: thread.id,
     direction: 'inbound',
@@ -111,7 +114,16 @@ app.get('/thread/:id', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'thread
 
 // --- API: list every conversation (newest first) for the main screen --------
 app.get('/api/threads', (_req, res) => {
-  res.json({ threads: dbm.listThreads() });
+  const threads = dbm.listThreads();
+  // Self-heal: if a conversation has no name yet (e.g. the customer was added to
+  // the CRM after they first texted), fill it in now.
+  for (const t of threads) {
+    if (!t.contact_name) {
+      const match = crm.lookupByPhone(t.contact_phone);
+      if (match && match.name) { dbm.setThreadName(t.id, match.name); t.contact_name = match.name; }
+    }
+  }
+  res.json({ threads });
 });
 
 // --- API: one conversation + its messages (and mark it read) ----------------
@@ -120,7 +132,14 @@ app.get('/api/threads/:id', (req, res) => {
   if (!thread) return res.status(404).json({ error: 'Conversation not found' });
   const messages = dbm.listMessagesByThread(thread.id);
   dbm.markThreadRead(thread.id); // opening a conversation clears its unread badge
-  res.json({ thread, messages });
+
+  // Customer match powers the name + one-tap "View Profile" link in the header.
+  const profile = crm.lookupByPhone(thread.contact_phone);
+  if (profile && profile.name && !thread.contact_name) {
+    dbm.setThreadName(thread.id, profile.name);
+    thread.contact_name = profile.name;
+  }
+  res.json({ thread, messages, profile: profile || null });
 });
 
 // --- API: send a reply inside an existing conversation ----------------------
