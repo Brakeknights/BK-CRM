@@ -842,7 +842,7 @@ function page(title, body, req) {
     + 'function fmtPhoneInput(el){var v=el.value.replace(/\\D/g,"").slice(0,10);if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);else if(v.length>=4)v=v.slice(0,3)+"-"+v.slice(3);el.value=v;}'
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
-    + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="1")els[i].classList.remove("collapsed");else if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
+    + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
     + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
     + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
@@ -888,6 +888,44 @@ function page(title, body, req) {
       +   '});'
       + '}'
     ) : '')
+    // Form draft autosave. Saves every named field of a form to localStorage as the
+    // owner types and restores it on next load, so the 30-min idle logout never costs
+    // unsaved work: the owner re-authenticates and resumes the exact same draft. Drafts
+    // older than 24h are discarded. The optional after() hook lets each form re-derive
+    // its widget state (service checkboxes, tier buttons, totals) without re-pulling
+    // prices from the pricing table, so manual price overrides are preserved.
+    + 'window.bkAutosave=function(form,key,after){'
+    +   'if(!form)return;var SK="bkdraft_"+key;var MAX=24*60*60*1000;'
+    +   'function flds(){return form.querySelectorAll("input[name],select[name],textarea[name]");}'
+    +   'function save(){try{var d={};flds().forEach(function(el){var n=el.name;if(!n)return;if(el.type==="checkbox"){if(!d[n])d[n]=[];if(el.checked)d[n].push(el.value);}else if(el.type==="radio"){if(el.checked)d[n]=el.value;}else{d[n]=el.value;}});localStorage.setItem(SK,JSON.stringify({savedAt:Date.now(),data:d}));}catch(_){}}'
+    +   'function restore(){try{var raw=localStorage.getItem(SK);if(!raw)return;var b=JSON.parse(raw);if(!b||!b.data)return;if(b.savedAt&&Date.now()-b.savedAt>MAX){localStorage.removeItem(SK);return;}var d=b.data;flds().forEach(function(el){var n=el.name;if(!(n in d))return;if(el.type==="checkbox"){el.checked=(d[n]||[]).indexOf(el.value)>=0;}else if(el.type==="radio"){el.checked=(d[n]===el.value);}else{el.value=d[n];}});form.querySelectorAll("[data-veh-cascade]").forEach(function(box){var p=box.getAttribute("data-veh-cascade");var y=document.getElementById(p+"-year"),mk=document.getElementById(p+"-make"),hid=document.getElementById(p+"-model-hid");if(window.bkVehFill)window.bkVehFill(p,{year:y?y.value:"",make:mk?mk.value:"",model:hid?hid.value:""});});if(typeof after==="function"){try{after(d);}catch(_){}}}catch(_){}}'
+    +   'var t;function deb(){clearTimeout(t);t=setTimeout(save,400);}'
+    +   'form.addEventListener("input",deb);form.addEventListener("change",deb);'
+    +   'form.addEventListener("submit",function(){try{localStorage.removeItem(SK);}catch(_){}});'
+    +   'restore();'
+    + '};'
+    + 'window.bkClearDraft=function(key){try{localStorage.removeItem("bkdraft_"+key);}catch(_){}};'
+    // Auto-init: any form tagged data-autosave is wired here (this runs at end of body,
+    // so every form and its helper scripts are already defined). An optional
+    // data-autosave-after names a global finalizer the form's own script defines.
+    + '(function(){try{document.querySelectorAll("form[data-autosave]").forEach(function(f){var fn=f.getAttribute("data-autosave-after");var after=(fn&&window[fn])?window[fn]:null;bkAutosave(f,f.getAttribute("data-autosave"),after);});}catch(_){}})();'
+    // Idle guard: auto-log-out after 30 min of no interaction, and verify the session
+    // the instant the tab regains focus after being away. This is the safety net for
+    // "I came back hours later" — instead of letting a stale form attempt an action
+    // (Send Quote, etc.) on a dead session, it sends the owner to a clean login.
+    + '(function(){'
+    +   'var IDLE_MS=30*60*1000;var t;'
+    +   'function expire(){window.location.href="/admin/logout";}'
+    +   'function reset(){clearTimeout(t);t=setTimeout(expire,IDLE_MS);}'
+    +   '["mousedown","keydown","touchstart","scroll","click"].forEach(function(ev){document.addEventListener(ev,reset,{passive:true});});'
+    +   'reset();'
+    +   'document.addEventListener("visibilitychange",function(){'
+    +     'if(document.visibilityState!=="visible")return;'
+    +     'fetch("/admin/session-status",{headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();}).then(function(d){'
+    +       'if(!d||!d.authed){window.location.href="/admin/login?error=expired";}else{reset();}'
+    +     '}).catch(function(){});'
+    +   '});'
+    + '})();'
     + '</script>'
     + '</body></html>';
 }
@@ -917,6 +955,8 @@ router.get('/login', function(req, res) {
   var errorHtml = '';
   if (req.query.error === 'locked') {
     errorHtml = '<div class="alert alert-error">Too many failed attempts. Try again in a few minutes.</div>';
+  } else if (req.query.error === 'expired') {
+    errorHtml = '<div class="alert" style="background:#eef3ff;color:#1a4a7a;border:1px solid #c5d6ef;">You were signed out after 30 minutes of inactivity. Please sign in again to continue.</div>';
   } else if (req.query.error) {
     errorHtml = '<div class="alert alert-error">Incorrect password. Try again.</div>';
   }
@@ -987,6 +1027,16 @@ router.post('/login', express.urlencoded({ extended: false }), function(req, res
   }
   loginFails.set(ip, next);
   res.redirect('/admin/login?error=' + (next.lockedUntil > now ? 'locked' : '1'));
+});
+
+// Lightweight session check for the client-side idle guard. Deliberately NOT behind
+// requireAuth so it returns JSON (never a redirect): the browser polls this when the
+// tab regains focus to learn whether the session is still alive. Reading the session
+// also refreshes the rolling 30-min window when it is valid, which is correct (the
+// owner just returned and is active). Returns no customer data.
+router.get('/session-status', function(req, res) {
+  res.set('Cache-Control', 'no-store');
+  res.json({ authed: !!(req.session && req.session.adminAuthed) });
 });
 
 router.get('/logout', function(req, res) {
@@ -1470,15 +1520,24 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var effectivePricing = getEffectivePricing();
   var serviceNames = Object.keys(effectivePricing);
+  var QTY_SVCS = ['Brake Hose Replacement', 'Caliper Replacement'];
   var currentServices = currentService ? currentService.split(', ').map(function(s) { return s.trim(); }) : [];
+  var qtyOpts = '<option value="1">&times;1</option><option value="2">&times;2</option><option value="3">&times;3</option><option value="4">&times;4</option>';
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
         var checked = currentServices.indexOf(s) !== -1 ? ' checked' : '';
-        return '<label class="svc-check-item"><input type="checkbox" class="svc-cb" value="' + esc(s) + '"' + checked + ' onchange="updatePrices()"><span class="svc-box"></span>' + esc(s) + '</label>';
+        var hasQty = QTY_SVCS.indexOf(s) !== -1;
+        var qtyEl = hasQty
+          ? '<select class="svc-qty" data-for="' + esc(s) + '" onchange="svcQtyChange(this)"'
+            + (checked ? '' : ' style="display:none;"')
+            + ' style="margin-left:8px;padding:3px 6px;border:1px solid #dde3ea;border-radius:5px;font-size:0.82rem;background:#fff;">' + qtyOpts + '</select>'
+          : '';
+        return '<label class="svc-check-item"><input type="checkbox" class="svc-cb" value="' + esc(s) + '"' + checked + ' onchange="svcCbChange(this)"><span class="svc-box"></span>' + esc(s) + qtyEl + '</label>';
       }).join('')
     + '</div>'
     + '<input type="hidden" name="service" id="svcHidden" value="' + esc(currentService) + '">';
 
+  var existingLineItems = q.line_items ? JSON.parse(q.line_items) : null;
   var pricingJson = JSON.stringify(effectivePricing);
   var noEmail = !lead.email;
   // Build Quote opens by default only at the quoting stages; later stages keep it
@@ -1695,7 +1754,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Build Quote form
     + '<div data-section="build-quote">'
     + collapseOpen('buildquote', 'Build Quote', buildQuoteOpen)
-    + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf">'
+    + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf" data-autosave="quote-' + lead.id + '" data-autosave-after="bkQuoteAfter">'
 
     + '<div class="form-group"><label>Service <span style="color:#bbb;font-weight:400;">(select all that apply)</span></label>'
     + serviceCheckboxes
@@ -1715,15 +1774,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '</div>'
     + '<input type="hidden" name="tier" id="tierVal" value="' + esc(currentTier) + '"></div>'
 
-    // Price breakdown — internal section (parts + labor visible to admin only)
+    // Price breakdown — per-service rows (JS-managed)
     + '<div class="price-section">'
     + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
-    + '<div class="price-row">'
-    + '<span class="price-label">Parts</span>'
-    + '<input class="price-input" type="number" name="parts" id="parts" min="0" step="1" value="' + Math.round(Number(q.price_parts)||0) + '" oninput="calc()" onfocus="this.select()"></div>'
-    + '<div class="price-row">'
-    + '<span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
-    + '<input class="price-input" type="number" name="labor" id="labor" min="0" step="1" value="' + Math.round(Number(q.price_labor)||0) + '" oninput="calc()" onfocus="this.select()"></div>'
+    + '<div id="svcPriceRows"></div>'
     + '<div class="price-row">'
     + '<span class="price-label">Shop Supplies</span>'
     + '<input class="price-input" type="number" name="shopSupplies" id="ss" min="0" step="1" value="' + Math.round(Number(q.shop_supplies)||0) + '" oninput="calc()" onfocus="this.select()"></div>'
@@ -1740,8 +1794,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div class="tier-toggle" style="margin:0;">'
     + '<button type="button" class="tier-btn active" id="btnCombined" onclick="setLineItems(\'combined\')">Combined</button>'
     + '<button type="button" class="tier-btn" id="btnSeparate" onclick="setLineItems(\'separate\')">Separate</button>'
+    + '<button type="button" class="tier-btn" id="btnPerItem" onclick="setLineItems(\'peritem\')">Per Item</button>'
     + '</div></div>'
     + '<input type="hidden" name="lineItems" id="lineItemsVal" value="combined">'
+    + '<div id="liPerItemRows"></div>'
     + '<div class="price-row" id="liCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
     + '<div class="price-row" id="liPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="partsOnlyDisplay">$' + money(q.price_parts || 0) + '</span></div>'
     + '<div class="price-row" id="liLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="laborOnlyDisplay">$' + money(q.price_labor || 0) + '</span></div>'
@@ -1750,8 +1806,11 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
     + '</div>'
 
-    + '<input type="hidden" name="taxAmt"   id="taxH"   value="' + fmt(q.tax)   + '">'
-    + '<input type="hidden" name="totalAmt" id="totalH" value="' + fmt(q.total) + '">'
+    + '<input type="hidden" name="parts"        id="partsH"        value="' + fmt(q.price_parts) + '">'
+    + '<input type="hidden" name="labor"        id="laborH"        value="' + fmt(q.price_labor) + '">'
+    + '<input type="hidden" name="lineItems_json" id="lineItemsJsonH" value="' + esc(q.line_items || '[]') + '">'
+    + '<input type="hidden" name="taxAmt"       id="taxH"          value="' + fmt(q.tax)   + '">'
+    + '<input type="hidden" name="totalAmt"     id="totalH"        value="' + fmt(q.total) + '">'
 
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
     + '<button type="button" class="btn btn-outline" onclick="togglePreview()" id="prevBtn">Preview Email</button>'
@@ -1782,78 +1841,111 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'lineItems=v;document.getElementById("lineItemsVal").value=v;'
     +   'document.getElementById("btnCombined").classList.toggle("active",v==="combined");'
     +   'document.getElementById("btnSeparate").classList.toggle("active",v==="separate");'
+    +   'document.getElementById("btnPerItem").classList.toggle("active",v==="peritem");'
     +   'document.getElementById("liCombinedRow").style.display=v==="combined"?"":"none";'
     +   'document.getElementById("liPartsRow").style.display=v==="separate"?"":"none";'
     +   'document.getElementById("liLaborRow").style.display=v==="separate"?"":"none";'
+    +   'document.getElementById("liPerItemRows").style.display=v==="peritem"?"":"none";'
     + '}'
 
     + 'function renderTags(){'
-    +   'var names=Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;});'
+    +   'var names=svcNamesWithQty();'
     +   'var box=document.getElementById("svcTags");'
     +   'box.innerHTML=names.map(function(n){'
-    +     'var title=n.replace(/\\b\\w/g,function(c){return c.toUpperCase();});'
-    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'removeTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+title+"</span>";'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'removeTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
     +   '}).join("");'
     + '}'
 
+    + 'function svcNamesWithQty(){'
+    +   'return Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(cb){'
+    +     'var qty=1;var qs=cb.closest("label")&&cb.closest("label").querySelector(".svc-qty");'
+    +     'if(qs&&qs.offsetParent!==null)qty=parseInt(qs.value)||1;'
+    +     'return qty>1?cb.value+" ×"+qty:cb.value;'
+    +   '});'
+    + '}'
+
+    + 'function svcBaseName(n){return n.replace(/\\s*×\\d+$/,"");}'
+
     + 'function removeTag(btn){'
-    +   'var val=btn.getAttribute("data-val");'
-    +   'var cb=Array.from(document.querySelectorAll(".svc-cb")).find(function(c){return c.value===val;});'
-    +   'if(cb){cb.checked=false;}'
-    +   'updatePrices();'
+    +   'var val=btn.getAttribute("data-val");var base=svcBaseName(val);'
+    +   'var cb=Array.from(document.querySelectorAll(".svc-cb")).find(function(c){return c.value===base;});'
+    +   'if(cb){cb.checked=false;var qs=cb.closest("label")&&cb.closest("label").querySelector(".svc-qty");if(qs)qs.style.display="none";}'
+    +   'syncPriceRows();renderTags();updateServiceHints(svcNamesWithQty());calc();'
+    + '}'
+
+    + 'function svcCbChange(cb){'
+    +   'var qs=cb.closest("label")&&cb.closest("label").querySelector(".svc-qty");'
+    +   'if(qs)qs.style.display=cb.checked?"inline-block":"none";'
+    +   'if(cb.checked)addPriceRow(cb.value,1);'
+    +   'else removePriceRow(cb.value);'
+    +   'renderTags();updateServiceHints(svcNamesWithQty());calc();'
+    + '}'
+
+    + 'function svcQtyChange(sel){'
+    +   'var baseName=sel.getAttribute("data-for");'
+    +   'var row=document.querySelector("#svcPriceRows .svc-price-row[data-base=\'"+baseName+"\']");'
+    +   'if(row){var qty=parseInt(sel.value)||1;row.querySelector(".svc-price-title").textContent=qty>1?baseName+" ×"+qty:baseName;}'
+    +   'renderTags();calc();'
+    + '}'
+
+    + 'function addPriceRow(svcName,qty){'
+    +   'if(document.querySelector("#svcPriceRows .svc-price-row[data-base=\'"+svcName+"\']"))return;'
+    +   'var p=PRICING[svcName];var td=p&&(p[tier]||p.standard);'
+    +   'var dParts=td?td.parts:0;var dLabor=td?td.labor:0;var dSS=td?td.shopSupplies:0;'
+    +   'var row=document.createElement("div");row.className="svc-price-row";row.setAttribute("data-base",svcName);'
+    +   'var label=qty>1?svcName+" ×"+qty:svcName;'
+    +   'row.innerHTML="<div class=\'svc-price-title\' style=\'font-size:0.82rem;font-weight:700;color:#0a1f3d;padding:6px 0 4px;\'>"+label+"</div>"'
+    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input svc-parts-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+dParts.toFixed(2)+"\' oninput=\'calc()\' onfocus=\'this.select()\'></div>"'
+    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input svc-labor-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+dLabor.toFixed(2)+"\' oninput=\'calc()\' onfocus=\'this.select()\'></div>"'
+    +     '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
+    +   'if(dSS>0){var curSS=parseFloat(document.getElementById("ss").value)||0;document.getElementById("ss").value=(curSS+dSS).toFixed(2);}'
+    +   'document.getElementById("svcPriceRows").appendChild(row);'
+    + '}'
+
+    + 'function removePriceRow(svcName){'
+    +   'var row=document.querySelector("#svcPriceRows .svc-price-row[data-base=\'"+svcName+"\']");'
+    +   'if(row)row.parentNode.removeChild(row);'
+    + '}'
+
+    + 'function syncPriceRows(){'
+    +   'var checked=Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;});'
+    +   'Array.from(document.querySelectorAll("#svcPriceRows .svc-price-row")).forEach(function(r){'
+    +     'if(checked.indexOf(r.getAttribute("data-base"))===-1)r.parentNode.removeChild(r);'
+    +   '});'
     + '}'
 
     + 'function clearServices(){'
-    +   'document.querySelectorAll(".svc-cb").forEach(function(cb){cb.checked=false;});'
+    +   'document.querySelectorAll(".svc-cb").forEach(function(cb){cb.checked=false;var qs=cb.closest("label")&&cb.closest("label").querySelector(".svc-qty");if(qs)qs.style.display="none";});'
     +   'document.getElementById("svcHidden").value="";'
-    +   'document.getElementById("parts").value="0.00";'
-    +   'document.getElementById("labor").value="0.00";'
+    +   'document.getElementById("svcPriceRows").innerHTML="";'
     +   'document.getElementById("ss").value="0.00";'
-    +   'renderTags();'
-    +   'updateServiceHints([]);'
-    +   'calc();'
+    +   'renderTags();updateServiceHints([]);calc();'
     + '}'
 
     + 'function updatePrices(){'
-    +   'var cbs=document.querySelectorAll(".svc-cb:checked");'
-    +   'var names=Array.from(cbs).map(function(c){return c.value;});'
+    +   'var names=svcNamesWithQty();'
     +   'document.getElementById("svcHidden").value=names.join(", ");'
-    +   'var totParts=0,totLabor=0,totSS=0;'
-    +   'names.forEach(function(svc){'
-    +     'if(!PRICING[svc])return;'
-    +     'var p=PRICING[svc][tier]||PRICING[svc].standard;' // fall back to standard when tier missing
-    +     'if(!p)return;'
-    +     'totParts+=p.parts;totLabor+=p.labor;totSS+=p.shopSupplies;'
-    +   '});'
-    +   'renderTags();'
-    +   'updateServiceHints(names);'
-    +   'if(names.length===0)return;'
-    +   'document.getElementById("parts").value=totParts.toFixed(2);'
-    +   'document.getElementById("labor").value=totLabor.toFixed(2);'
-    +   'document.getElementById("ss").value=totSS.toFixed(2);'
-    +   'calc();'
+    +   'renderTags();updateServiceHints(names);'
     + '}'
 
-    // Shows custom-quote reminders and any service-specific notes (e.g. inspection fee policy)
     + 'function updateServiceHints(names){'
     +   'var msgs=[];'
-    +   'var custom=names.filter(function(n){return PRICING[n]&&PRICING[n].customQuote;});'
-    +   'if(custom.length){msgs.push("<strong>Custom quote:</strong> "+custom.join(", ")+" "+(custom.length>1?"have":"has")+" no preset price. Look up the exact part(s) and enter Parts and Labor manually.");}'
-    +   'names.forEach(function(n){if(PRICING[n]&&PRICING[n].note){msgs.push(PRICING[n].note);}});'
+    +   'var custom=names.filter(function(n){var base=svcBaseName(n);return PRICING[base]&&PRICING[base].customQuote;});'
+    +   'if(custom.length){msgs.push("<strong>Custom quote:</strong> "+custom.join(", ")+" "+(custom.length>1?"have":"has")+" no preset price. Enter Parts and Labor manually below.");}'
+    +   'names.forEach(function(n){var base=svcBaseName(n);if(PRICING[base]&&PRICING[base].note){msgs.push(PRICING[base].note);}});'
     +   'var box=document.getElementById("customQuoteHint");'
     +   'if(msgs.length){box.innerHTML=msgs.join("<br><br>");box.style.display="block";}else{box.style.display="none";}'
     + '}'
 
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
 
-    // Tax is on parts + shop supplies only (not labor — Virginia law)
     + 'function calc(){'
-    +   'var parts=parseFloat(document.getElementById("parts").value)||0;'
-    +   'var labor=parseFloat(document.getElementById("labor").value)||0;'
+    +   'var parts=0,labor=0;'
+    +   'document.querySelectorAll(".svc-parts-in").forEach(function(el){parts+=parseFloat(el.value)||0;});'
+    +   'document.querySelectorAll(".svc-labor-in").forEach(function(el){labor+=parseFloat(el.value)||0;});'
     +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("tr").value)||0;'
-    +   'var tax=(parts+ss)*tr/100;'
-    +   'var total=parts+labor+ss+tax;'
+    +   'var tax=(parts+ss)*tr/100;var total=parts+labor+ss+tax;'
     +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
     +   'document.getElementById("partsOnlyDisplay").textContent="$"+money(parts);'
@@ -1861,8 +1953,21 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("ssDisplay").textContent="$"+money(ss);'
     +   'document.getElementById("taxDisplay").textContent="$"+money(tax);'
     +   'document.getElementById("totalAmt").textContent="$"+money(total);'
+    +   'document.getElementById("partsH").value=parts.toFixed(2);'
+    +   'document.getElementById("laborH").value=labor.toFixed(2);'
     +   'document.getElementById("taxH").value=tax.toFixed(2);'
     +   'document.getElementById("totalH").value=total.toFixed(2);'
+    +   'var items=Array.from(document.querySelectorAll("#svcPriceRows .svc-price-row")).map(function(r){'
+    +     'var title=r.querySelector(".svc-price-title");var base=r.getAttribute("data-base");'
+    +     'var p=parseFloat(r.querySelector(".svc-parts-in").value)||0;'
+    +     'var l=parseFloat(r.querySelector(".svc-labor-in").value)||0;'
+    +     'return {service:title?title.textContent:base,parts:p,labor:l};'
+    +   '});'
+    +   'document.getElementById("lineItemsJsonH").value=JSON.stringify(items);'
+    +   'var perItemBox=document.getElementById("liPerItemRows");'
+    +   'perItemBox.innerHTML=items.map(function(it){'
+    +     'return "<div class=\'price-row\'><span class=\'price-label\'>"+it.service+"</span><span>$"+money(it.parts+it.labor)+"</span></div>";'
+    +   '}).join("");'
     + '}'
 
     + 'function togglePreview(){'
@@ -1906,12 +2011,25 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("prevBtn").textContent="Hide Preview";'
     + '}'
 
-    // On load: if this is a brand-new quote (no saved quote yet) with a service
-    // already auto-filled from the lead, populate prices from the pricing table.
-    // Otherwise just total up the saved/edited values without overwriting them.
-    + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
-    + 'updateServiceHints(Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;}));'
-    + 'renderTags();'
+    // On load: restore per-service price rows from saved line_items JSON or pricing table defaults
+    + '(function(){'
+    +   'var saved=' + JSON.stringify(existingLineItems) + ';'
+    +   'var cbs=Array.from(document.querySelectorAll(".svc-cb:checked"));'
+    +   'if(saved&&saved.length){'
+    +     'saved.forEach(function(it){'
+    +       'var base=it.service.replace(/\\s*×\\d+$/,"");'
+    +       'var row=document.createElement("div");row.className="svc-price-row";row.setAttribute("data-base",base);'
+    +       'row.innerHTML="<div class=\'svc-price-title\' style=\'font-size:0.82rem;font-weight:700;color:#0a1f3d;padding:6px 0 4px;\'>"+it.service+"</div>"'
+    +         '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input svc-parts-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(it.parts||0).toFixed(2)+"\' oninput=\'calc()\' onfocus=\'this.select()\'></div>"'
+    +         '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input svc-labor-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(it.labor||0).toFixed(2)+"\' oninput=\'calc()\' onfocus=\'this.select()\'></div>"'
+    +         '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
+    +       'document.getElementById("svcPriceRows").appendChild(row);'
+    +     '});'
+    +   '}else if(cbs.length>0){'
+    +     'cbs.forEach(function(cb){addPriceRow(cb.value,1);});'
+    +   '}'
+    +   'calc();renderTags();updateServiceHints(svcNamesWithQty());'
+    + '})();'
     + '(function(){'
     +   'var STATUS="' + esc(lead.status) + '";'
     +   'var ORDER={'
@@ -1928,6 +2046,18 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'if(!c)return;'
     +   'order.forEach(function(n){var el=c.querySelector("[data-section=\'"+n+"\']");if(el)c.appendChild(el);});'
     + '})();'
+    // Draft restore finalizer: re-check services and reset the tier/line-item toggles
+    // from the restored fields, then recompute tax/total without re-pulling prices so
+    // any manual price overrides in the draft are kept.
+    + 'window.bkQuoteAfter=function(d){'
+    +   'var svc=(document.getElementById("svcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'document.querySelectorAll(".svc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
+    +   'tier=(document.getElementById("tierVal").value)||"standard";'
+    +   'document.getElementById("btnStd").classList.toggle("active",tier==="standard");'
+    +   'document.getElementById("btnPrem").classList.toggle("active",tier==="premium");'
+    +   'if(typeof setLineItems==="function"&&document.getElementById("lineItemsVal"))setLineItems(document.getElementById("lineItemsVal").value||"combined");'
+    +   'renderTags();updateServiceHints(svc);calc();'
+    + '};'
     + '</script>';
 
   res.send(page('Quote — ' + lead.first_name + ' ' + lead.last_name, body, req));
@@ -1951,6 +2081,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var totalAmt      = parseFloat(req.body.totalAmt)      || 0;
   var vin           = req.body.vin            || null;
   var internalNotes = req.body.internalNotes  || null;
+  var lineItemsJson = (req.body.lineItems_json || '').trim() || null;
 
   var acceptToken = crypto.randomBytes(24).toString('hex');
 
@@ -1964,9 +2095,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   ).get(lead.id).n > 0;
 
   var info = db.prepare(
-    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, accept_token, sent_at, status) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
-  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, acceptToken, lead.email ? 'sent' : 'saved');
+    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, line_items, accept_token, sent_at, status) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
+  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lineItemsJson, acceptToken, lead.email ? 'sent' : 'saved');
 
   db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
@@ -2029,7 +2160,7 @@ function buildWarrantyClause(service) {
   return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
 }
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems, isRevised) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItems, isRevised, customerNotes) {
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
   var revisedBanner = isRevised
@@ -2077,6 +2208,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
           + '<p style="color:#888;font-size:0.82rem;margin:12px 0 0;">You&rsquo;ll pick a preferred day and time. We&rsquo;ll confirm it or reach out about other openings.</p>'
           + '</div>'
         : '')
+    + (customerNotes ? '<p style="color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:8px;padding:12px 16px;line-height:1.6;margin:0 0 20px;font-size:0.88rem;">' + esc(customerNotes) + '</p>' : '')
     + buildWarrantyClause(service)
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
     + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
@@ -2182,7 +2314,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
         : '')
     + '</div>'
 
-    + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf">'
+    + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf" data-autosave="receipt-' + lead.id + '" data-autosave-after="bkReceiptAfter">'
 
     + collapseOpen('rc_service', 'Service &amp; Vehicle', true)
     + '<div class="form-group"><label>Service performed <span style="color:#bbb;font-weight:400;">(select all that apply, change if the job grew on arrival)</span></label>'
@@ -2356,6 +2488,19 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     '+"</div>";'
     +   'box.style.display="block";document.getElementById("rPrevBtn").textContent="Hide Preview";'
     + '}'
+    // Draft restore finalizer: re-check services, restore the payment "Other" box and
+    // advisory rows, then recompute the total from restored amounts (no price re-pull).
+    + 'window.bkReceiptAfter=function(d){'
+    +   'var svc=(document.getElementById("rsvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'document.querySelectorAll(".rsvc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
+    +   'rRenderTags();'
+    +   'if(typeof rPayToggle==="function")rPayToggle();'
+    +   'for(var i=2;i<=4;i++){var n=(document.querySelector("[name=custNote"+i+"]")||{}).value||"";var cu=(document.querySelector("[name=fuCustom"+i+"]")||{}).value||"";if(n||cu){var r=document.getElementById("advRow"+i);if(r)r.style.display="block";}}'
+    +   'var allVis=true;for(var j=2;j<=4;j++){var rr=document.getElementById("advRow"+j);if(rr&&rr.style.display==="none")allVis=false;}'
+    +   'if(allVis){var ab=document.getElementById("rAddAdvBtn");if(ab)ab.style.display="none";}'
+    +   'for(var k=1;k<=4;k++){if(typeof toggleCustom==="function")toggleCustom(k);}'
+    +   'if(typeof rcalc==="function")rcalc();'
+    + '};'
     + '</script>'
     + VEHICLE_CASCADE_JS
     + (process.env.GOOGLE_MAPS_API_KEY
@@ -2785,9 +2930,15 @@ router.get('/quick', requireAuth, function(req, res) {
       + '</div>'
     : '';
 
+  var QQ_QTY_SVCS = ['Brake Hose Replacement', 'Caliper Replacement'];
+  var qqQtyOpts = '<option value="1">&times;1</option><option value="2">&times;2</option><option value="3">&times;3</option><option value="4">&times;4</option>';
   var serviceCheckboxes = '<div class="svc-check-list">'
     + serviceNames.map(function(s) {
-        return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
+        var hasQty = QQ_QTY_SVCS.indexOf(s) !== -1;
+        var qtyEl = hasQty
+          ? '<select class="qq-svc-qty" data-for="' + esc(s) + '" onchange="qqSvcQtyChange(this)" style="display:none;margin-left:8px;padding:3px 6px;border:1px solid #dde3ea;border-radius:5px;font-size:0.82rem;background:#fff;">' + qqQtyOpts + '</select>'
+          : '';
+        return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qqSvcCbChange(this)"><span class="svc-box"></span>' + esc(s) + qtyEl + '</label>';
       }).join('')
     + '</div>'
     + '<input type="hidden" name="service" id="qsvcHidden" value="">';
@@ -2889,10 +3040,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + collapseOpen('qq_pricing', 'Pricing', true)
     + '<div class="price-section">'
     + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
-    + '<div class="price-row"><span class="price-label">Parts</span>'
-    + '<input class="price-input" type="number" name="parts" id="qparts" min="0" step="1" value="0" oninput="qcalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
-    + '<input class="price-input" type="number" name="labor" id="qlabor" min="0" step="1" value="0" oninput="qcalc()" onfocus="this.select()"></div>'
+    + '<div id="qqSvcPriceRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
     + '<input class="price-input" type="number" name="shopSupplies" id="qss" min="0" step="1" value="0" oninput="qcalc()" onfocus="this.select()"></div>'
     + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="qtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="qcalc()">%) on Parts + Supplies</span>'
@@ -2907,8 +3055,10 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="tier-toggle" style="margin:0;">'
     + '<button type="button" class="tier-btn active" id="qBtnCombined" onclick="qSetLineItems(\'combined\')">Combined</button>'
     + '<button type="button" class="tier-btn" id="qBtnSeparate" onclick="qSetLineItems(\'separate\')">Separate</button>'
+    + '<button type="button" class="tier-btn" id="qBtnPerItem" onclick="qSetLineItems(\'peritem\')">Per Item</button>'
     + '</div></div>'
     + '<input type="hidden" name="lineItems" id="qlineItemsVal" value="combined">'
+    + '<div id="qqliPerItemRows" style="display:none;"></div>'
     + '<div class="price-row" id="qliCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="qplDisplay">$0.00</span></div>'
     + '<div class="price-row" id="qliPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="qpartsOnlyDisplay">$0.00</span></div>'
     + '<div class="price-row" id="qliLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="qlaborOnlyDisplay">$0.00</span></div>'
@@ -2916,9 +3066,18 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="qtaxDisplay">$0.00</span></div>'
     + '<div class="price-row total-row divider-row"><span id="qTotalLabel">Total</span><span id="qtotalAmt" style="font-size:1.15rem;">$0.00</span></div>'
     + '</div>'
-    + '<input type="hidden" name="taxAmt"   id="qtaxH"   value="0.00">'
-    + '<input type="hidden" name="totalAmt" id="qtotalH" value="0.00">'
+    + '<input type="hidden" name="parts"    id="qpartsH"         value="0.00">'
+    + '<input type="hidden" name="labor"    id="qlaborH"         value="0.00">'
+    + '<input type="hidden" name="taxAmt"   id="qtaxH"           value="0.00">'
+    + '<input type="hidden" name="totalAmt" id="qtotalH"         value="0.00">'
+    + '<input type="hidden" name="lineItems_json" id="qlineItemsJsonH" value="[]">'
     + COLLAPSE_CLOSE
+
+    // Quote-only: notes shown to customer in the quote email
+    + '<div class="card qQuoteOnly">'
+    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional — included in the quote email)</span></div>'
+    + '<textarea name="quote_customer_notes" id="qCustNotes" placeholder="e.g. Parts are in stock, we can typically schedule within 1-2 business days. Reach out anytime with questions." style="width:100%;min-height:80px;padding:10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;resize:vertical;box-sizing:border-box;"></textarea>'
+    + '</div>'
 
     // Receipt-only advisories + office notes
     + collapseOpen('qq_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true, ' qReceiptOnly', 'display:none;')
@@ -2998,6 +3157,57 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
     + 'function qCustomSvcVal(){var el=document.getElementById("qCustomSvc");return el?el.value.trim():"";}'
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + 'function qqSvcNamesWithQty(){'
+    +   'return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(cb){'
+    +     'var qty=1;var qs=cb.closest("label")&&cb.closest("label").querySelector(".qq-svc-qty");'
+    +     'if(qs&&qs.offsetParent!==null)qty=parseInt(qs.value)||1;'
+    +     'return qty>1?cb.value+" \xd7"+qty:cb.value;'
+    +   '});'
+    + '}'
+    + 'function qqAddPriceRow(svcName,qty){'
+    +   'if(document.querySelector("#qqSvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']"))return;'
+    +   'var p=QPRICING[svcName];var td=p&&(p[qtier]||p.standard);'
+    +   'var dParts=td?td.parts:0;var dLabor=td?td.labor:0;var dSS=td?td.shopSupplies:0;'
+    +   'var row=document.createElement("div");row.className="svc-price-row";row.setAttribute("data-base",svcName);'
+    +   'var label=qty>1?svcName+" \xd7"+qty:svcName;'
+    +   'row.innerHTML="<div class=\'svc-price-title\' style=\'font-size:0.82rem;font-weight:700;color:#0a1f3d;padding:6px 0 4px;\'>"+label+"</div>"'
+    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input qsvc-parts-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+dParts.toFixed(2)+"\' oninput=\'qcalc()\' onfocus=\'this.select()\'></div>"'
+    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input qsvc-labor-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+dLabor.toFixed(2)+"\' oninput=\'qcalc()\' onfocus=\'this.select()\'></div>"'
+    +     '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
+    +   'if(dSS>0){var curSS=parseFloat(document.getElementById("qss").value)||0;document.getElementById("qss").value=(curSS+dSS).toFixed(2);}'
+    +   'document.getElementById("qqSvcPriceRows").appendChild(row);'
+    + '}'
+    + 'function qqRemovePriceRow(svcName){'
+    +   'var row=document.querySelector("#qqSvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']");'
+    +   'if(row)row.parentNode.removeChild(row);'
+    + '}'
+    + 'function qqSyncPriceRows(){'
+    +   'var checked=Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});'
+    +   'Array.from(document.querySelectorAll("#qqSvcPriceRows .svc-price-row")).forEach(function(r){'
+    +     'if(checked.indexOf(r.getAttribute("data-base"))===-1)r.parentNode.removeChild(r);'
+    +   '});'
+    + '}'
+    + 'function qqUpdateRowPrices(){'
+    +   'Array.from(document.querySelectorAll("#qqSvcPriceRows .svc-price-row")).forEach(function(r){'
+    +     'var base=r.getAttribute("data-base");var p=QPRICING[base];if(!p||p.customQuote)return;'
+    +     'var td=p[qtier]||p.standard;if(!td)return;'
+    +     'r.querySelector(".qsvc-parts-in").value=td.parts.toFixed(2);'
+    +     'r.querySelector(".qsvc-labor-in").value=td.labor.toFixed(2);'
+    +   '});'
+    + '}'
+    + 'function qqSvcCbChange(cb){'
+    +   'var qs=cb.closest("label")&&cb.closest("label").querySelector(".qq-svc-qty");'
+    +   'if(qs)qs.style.display=cb.checked?"inline-block":"none";'
+    +   'if(cb.checked)qqAddPriceRow(cb.value,1);'
+    +   'else qqRemovePriceRow(cb.value);'
+    +   'qqUpdateFullService();qHints();qcalc();qSaveState();'
+    + '}'
+    + 'function qqSvcQtyChange(sel){'
+    +   'var baseName=sel.getAttribute("data-for");'
+    +   'var row=document.querySelector("#qqSvcPriceRows .svc-price-row[data-base=\'"+baseName+"\']");'
+    +   'if(row){var qty=parseInt(sel.value)||1;row.querySelector(".svc-price-title").textContent=qty>1?baseName+" \xd7"+qty:baseName;}'
+    +   'qqUpdateFullService();qcalc();qSaveState();'
+    + '}'
 
     + 'function qSetMode(m){'
     +   'qmode=m;document.getElementById("qmode").value=m;'
@@ -3005,7 +3215,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qModeReceipt").classList.toggle("active",m==="receipt");'
     +   'var rec=m==="receipt";'
     +   'document.querySelectorAll(".qReceiptOnly").forEach(function(el){el.style.display=rec?"block":"none";});'
-    +   'document.querySelectorAll(".qQuoteOnly").forEach(function(el){el.style.display=rec?"none":"flex";});'
+    +   'document.querySelectorAll(".qQuoteOnly").forEach(function(el){var isCard=el.classList.contains("card");el.style.display=rec?"none":(isCard?"block":"flex");});'
     +   'document.querySelector(".qQuoteActions").style.display=rec?"none":"block";'
     +   'document.querySelector(".qReceiptActions").style.display=rec?"block":"none";'
     +   'document.getElementById("qSummaryLabel").textContent=rec?"Customer Receipt":"Customer Quote";'
@@ -3024,7 +3234,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + '}'
 
     + 'function qRenderTags(){'
-    +   'var tags=qCheckedServices().map(function(n){'
+    +   'var tags=qqSvcNamesWithQty().map(function(n){'
     +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
     +   '});'
     +   'var cv=qCustomSvcVal();'
@@ -3032,9 +3242,10 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qsvcTags").innerHTML=tags.join("");'
     + '}'
     + 'function qRemoveTag(btn){'
-    +   'var val=btn.getAttribute("data-val");'
-    +   'var cb=Array.from(document.querySelectorAll(".qsvc-cb")).find(function(c){return c.value===val;});'
-    +   'if(cb)cb.checked=false;qUpdateServices();'
+    +   'var val=btn.getAttribute("data-val");var base=val.replace(/\\s*\xd7\\d+$/,"");'
+    +   'var cb=Array.from(document.querySelectorAll(".qsvc-cb")).find(function(c){return c.value===base;});'
+    +   'if(cb){cb.checked=false;var qs=cb.closest("label")&&cb.closest("label").querySelector(".qq-svc-qty");if(qs)qs.style.display="none";}'
+    +   'qqRemovePriceRow(base);qqUpdateFullService();qHints();qcalc();'
     + '}'
     + 'function qClearCustomSvc(){'
     +   'var el=document.getElementById("qCustomSvc");if(el)el.value="";'
@@ -3046,31 +3257,22 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qCustomSvcHint").style.display=cv?"block":"none";'
     +   'qUpdateFullService();qSaveState();'
     + '}'
-    + 'function qUpdateFullService(){'
-    +   'var all=qCheckedServices().slice();var cv=qCustomSvcVal();if(cv)all.push(cv);'
+    + 'function qUpdateFullService(){qqUpdateFullService();}'
+    + 'function qqUpdateFullService(){'
+    +   'var all=qqSvcNamesWithQty().slice();var cv=qCustomSvcVal();if(cv)all.push(cv);'
     +   'document.getElementById("qsvcHidden").value=all.join(", ");'
     +   'qRenderTags();'
     + '}'
     + 'function qClearServices(){'
-    +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;});qUpdateServices();'
+    +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;var qs=cb.closest("label")&&cb.closest("label").querySelector(".qq-svc-qty");if(qs)qs.style.display="none";});'
+    +   'document.getElementById("qqSvcPriceRows").innerHTML="";'
+    +   'document.getElementById("qss").value="0.00";'
+    +   'qqUpdateFullService();qHints();qcalc();'
     + '}'
 
-    // Auto-fill the price fields from the pricing table for the checked services + tier.
-    + 'function qAutofill(){'
-    +   'var names=qCheckedServices();'
-    +   'qUpdateFullService();'
-    +   'if(names.length===0&&!qCustomSvcVal()){'
-    +     'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";qcalc();return;'
-    +   '}'
-    +   'if(names.length===0){qcalc();return;}'
-    +   'var parts=0,labor=0,ss=0;'
-    +   'names.forEach(function(s){var sv=QPRICING[s];if(!sv)return;var p=sv[qtier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
-    +   'document.getElementById("qparts").value=parts.toFixed(2);'
-    +   'document.getElementById("qlabor").value=labor.toFixed(2);'
-    +   'document.getElementById("qss").value=ss.toFixed(2);'
-    +   'qcalc();'
-    + '}'
-    + 'function qUpdateServices(){qRenderTags();qHints();qAutofill();}'
+    // Update per-service price rows when the tier toggle changes.
+    + 'function qAutofill(){qqUpdateRowPrices();qqUpdateFullService();qHints();qcalc();}'
+    + 'function qUpdateServices(){qqSyncPriceRows();qqUpdateFullService();qHints();qcalc();}'
 
     + 'function qHints(){'
     +   'var names=qCheckedServices();var msgs=[];'
@@ -3087,13 +3289,16 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'qlineItems=v;document.getElementById("qlineItemsVal").value=v;'
     +   'document.getElementById("qBtnCombined").classList.toggle("active",v==="combined");'
     +   'document.getElementById("qBtnSeparate").classList.toggle("active",v==="separate");'
+    +   'document.getElementById("qBtnPerItem").classList.toggle("active",v==="peritem");'
     +   'document.getElementById("qliCombinedRow").style.display=v==="combined"?"":"none";'
     +   'document.getElementById("qliPartsRow").style.display=v==="separate"?"":"none";'
     +   'document.getElementById("qliLaborRow").style.display=v==="separate"?"":"none";'
+    +   'document.getElementById("qqliPerItemRows").style.display=v==="peritem"?"":"none";'
     + '}'
     + 'function qcalc(){'
-    +   'var parts=parseFloat(document.getElementById("qparts").value)||0;'
-    +   'var labor=parseFloat(document.getElementById("qlabor").value)||0;'
+    +   'var parts=0,labor=0;'
+    +   'document.querySelectorAll(".qsvc-parts-in").forEach(function(el){parts+=parseFloat(el.value)||0;});'
+    +   'document.querySelectorAll(".qsvc-labor-in").forEach(function(el){labor+=parseFloat(el.value)||0;});'
     +   'var ss=parseFloat(document.getElementById("qss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("qtr").value)||0;'
     +   'var tax=(parts+ss)*tr/100;var total=parts+labor+ss+tax;'
@@ -3104,8 +3309,21 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qssDisplay").textContent="$"+money(ss);'
     +   'document.getElementById("qtaxDisplay").textContent="$"+money(tax);'
     +   'document.getElementById("qtotalAmt").textContent="$"+money(total);'
+    +   'document.getElementById("qpartsH").value=parts.toFixed(2);'
+    +   'document.getElementById("qlaborH").value=labor.toFixed(2);'
     +   'document.getElementById("qtaxH").value=tax.toFixed(2);'
     +   'document.getElementById("qtotalH").value=total.toFixed(2);'
+    +   'var qqItems=Array.from(document.querySelectorAll("#qqSvcPriceRows .svc-price-row")).map(function(r){'
+    +     'var title=r.querySelector(".svc-price-title");var base=r.getAttribute("data-base");'
+    +     'var p=parseFloat(r.querySelector(".qsvc-parts-in").value)||0;'
+    +     'var l=parseFloat(r.querySelector(".qsvc-labor-in").value)||0;'
+    +     'return {service:title?title.textContent:base,parts:p,labor:l};'
+    +   '});'
+    +   'document.getElementById("qlineItemsJsonH").value=JSON.stringify(qqItems);'
+    +   'var qpib=document.getElementById("qqliPerItemRows");'
+    +   'if(qpib)qpib.innerHTML=qqItems.map(function(it){'
+    +     'return "<div class=\'price-row\'><span class=\'price-label\'>"+it.service+"</span><span>$"+money(it.parts+it.labor)+"</span></div>";'
+    +   '}).join("");'
     + '}'
 
     + 'function qPayToggle(){'
@@ -3145,8 +3363,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+(svcs.length?svcs.join(", "):"<em style=\'color:#e07000\'>(none selected)</em>")+"</td></tr>";'
     +   'if(!rec){'
     +     'var qli=document.getElementById("qlineItemsVal").value||"combined";'
-    +     'var qparts=parseFloat(document.getElementById("qparts").value)||0;'
-    +     'var qlabor=parseFloat(document.getElementById("qlabor").value)||0;'
+    +     'var qparts=parseFloat(document.getElementById("qpartsH").value)||0;'
+    +     'var qlabor=parseFloat(document.getElementById("qlaborH").value)||0;'
     +     'var qss2=parseFloat(document.getElementById("qss").value)||0;'
     +     'var qtax=parseFloat(document.getElementById("qtaxH").value)||0;'
     +     'var qtot=parseFloat(document.getElementById("qtotalH").value)||0;'
@@ -3154,12 +3372,17 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(qli==="separate"){'
     +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts</td><td style=\'padding:5px 0;\'>$"+pmoney(qparts)+"</td></tr>";'
     +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Labor</td><td style=\'padding:5px 0;\'>$"+pmoney(qlabor)+"</td></tr>";'
+    +     '}else if(qli==="peritem"){'
+    +       'var qqItms=JSON.parse(document.getElementById("qlineItemsJsonH").value||"[]");'
+    +       'qqItms.forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.service+"</td><td style=\'padding:5px 0;\'>$"+pmoney(it.parts+it.labor)+"</td></tr>";});'
     +     '}else{'
     +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts &amp; Labor</td><td style=\'padding:5px 0;\'>$"+pmoney(qparts+qlabor)+"</td></tr>";'
     +     '}'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+pmoney(qss2)+"</td></tr>";'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+pmoney(qtax)+"</td></tr>";'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>$"+pmoney(qtot)+"</td></tr>";'
+    +     'var qcn=(document.getElementById("qCustNotes")||{}).value||"";'
+    +     'if(qcn.trim())rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Notes to customer</td><td style=\'padding:5px 0;font-style:italic;\'>"+qcn+"</td></tr>";'
     +   '}'
     +   'if(rec){'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
@@ -3185,7 +3408,9 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'if(window.bkVehFill)window.bkVehFill("qq-veh",{});'
     +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
     +   'document.getElementById("qCustomSvcHint").style.display="none";'
-    +   'document.getElementById("qparts").value="0.00";document.getElementById("qlabor").value="0.00";document.getElementById("qss").value="0.00";'
+    +   'document.getElementById("qqSvcPriceRows").innerHTML="";'
+    +   'document.getElementById("qpartsH").value="0.00";document.getElementById("qlaborH").value="0.00";document.getElementById("qss").value="0.00";'
+    +   'document.getElementById("qlineItemsJsonH").value="[]";'
     +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
     +   'var offN=document.querySelector("[name=officeNotes]");if(offN)offN.value="";'
     +   '[1,2,3,4].forEach(function(i){'
@@ -3223,9 +3448,12 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'ph:document.getElementById("qph").value,'
     +       'veh_year:document.getElementById("qq-veh-year")?(document.getElementById("qq-veh-year").value||""):"",veh_make:document.getElementById("qq-veh-make")?(document.getElementById("qq-veh-make").value||""):"",veh_model:document.getElementById("qq-veh-model-hid")?(document.getElementById("qq-veh-model-hid").value||""):"",veh:"",'
     +       'svcs:qCheckedServices(),'
+    +       'svcQtys:Array.from(document.querySelectorAll(".qq-svc-qty")).filter(function(s){return s.offsetParent!==null;}).map(function(s){return {f:s.getAttribute("data-for"),v:s.value};}),'
+    +       'svcRows:Array.from(document.querySelectorAll("#qqSvcPriceRows .svc-price-row")).map(function(r){var t=r.querySelector(".svc-price-title");return {base:r.getAttribute("data-base"),label:t?t.textContent:r.getAttribute("data-base"),parts:r.querySelector(".qsvc-parts-in").value,labor:r.querySelector(".qsvc-labor-in").value};}),'
+    +       'lineItems:qlineItems,'
     +       'customSvc:qCustomSvcVal(),'
-    +       'parts:document.getElementById("qparts").value,'
-    +       'labor:document.getElementById("qlabor").value,'
+    +       'parts:document.getElementById("qpartsH").value,'
+    +       'labor:document.getElementById("qlaborH").value,'
     +       'ss:document.getElementById("qss").value,'
     +       'tr:document.getElementById("qtr").value,'
     +       'payMethod:(document.getElementById("qpm")||{}).value||"",'
@@ -3240,7 +3468,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'function qRestoreState(){'
     +   'try{'
     +     'var s=QDRAFT;'
-    +     'if(!s){var raw=localStorage.getItem("bk_qq_state");if(!raw)return;s=JSON.parse(raw);if(s&&s.savedAt&&Date.now()-s.savedAt>30*60*1000){try{localStorage.removeItem("bk_qq_state");}catch(_){}return;}}'
+    +     'if(!s){var raw=localStorage.getItem("bk_qq_state");if(!raw)return;s=JSON.parse(raw);if(s&&s.savedAt&&Date.now()-s.savedAt>24*60*60*1000){try{localStorage.removeItem("bk_qq_state");}catch(_){}return;}}'
     +     'if(!s)return;'
     +     'if(s.mode)qSetMode(s.mode);'
     +     'if(s.tier)qSetTier(s.tier);'
@@ -3250,9 +3478,22 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(s.ph)document.getElementById("qph").value=s.ph;'
     +     'if(window.bkVehFill&&(s.veh_year||s.veh_make||s.veh_model))window.bkVehFill("qq-veh",{year:s.veh_year||"",make:s.veh_make||"",model:s.veh_model||""});'
     +     'if(s.svcs&&s.svcs.length)document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});'
+    +     'document.querySelectorAll(".qsvc-cb:checked").forEach(function(cb){var qs=cb.closest("label")&&cb.closest("label").querySelector(".qq-svc-qty");if(qs)qs.style.display="inline-block";});'
+    +     'if(s.svcQtys&&s.svcQtys.length)s.svcQtys.forEach(function(q){var el=document.querySelector(".qq-svc-qty[data-for=\'"+q.f+"\']");if(el)el.value=q.v;});'
+    +     'if(s.svcRows&&s.svcRows.length){'
+    +       's.svcRows.forEach(function(r){'
+    +         'var row=document.createElement("div");row.className="svc-price-row";row.setAttribute("data-base",r.base);'
+    +         'row.innerHTML="<div class=\'svc-price-title\' style=\'font-size:0.82rem;font-weight:700;color:#0a1f3d;padding:6px 0 4px;\'>"+r.label+"</div>"'
+    +           '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input qsvc-parts-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(r.parts||0)+"\' oninput=\'qcalc()\' onfocus=\'this.select()\'></div>"'
+    +           '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input qsvc-labor-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(r.labor||0)+"\' oninput=\'qcalc()\' onfocus=\'this.select()\'></div>"'
+    +           '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
+    +         'document.getElementById("qqSvcPriceRows").appendChild(row);'
+    +       '});'
+    +     '}else if(s.svcs&&s.svcs.length){'
+    +       'document.querySelectorAll(".qsvc-cb:checked").forEach(function(cb){var qs=cb.closest("label")&&cb.closest("label").querySelector(".qq-svc-qty");qqAddPriceRow(cb.value,qs&&qs.offsetParent!==null?parseInt(qs.value)||1:1);});'
+    +     '}'
+    +     'if(s.lineItems)qSetLineItems(s.lineItems);'
     +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
-    +     'if(s.parts!==undefined)document.getElementById("qparts").value=s.parts;'
-    +     'if(s.labor!==undefined)document.getElementById("qlabor").value=s.labor;'
     +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
     +     'if(s.tr!==undefined)document.getElementById("qtr").value=s.tr;'
     +     'if(s.payMethod&&document.getElementById("qpm"))document.getElementById("qpm").value=s.payMethod;'
@@ -3379,6 +3620,8 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var taxRate      = parseFloat(req.body.taxRate)      || 0;
   var taxAmt       = parseFloat(req.body.taxAmt)       || 0;
   var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
+  var quoteCustomerNotes = (req.body.quote_customer_notes || '').trim() || null;
+  var lineItemsJson = (req.body.lineItems_json || '').trim() || null;
 
   var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
 
@@ -3424,9 +3667,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     var acceptToken = crypto.randomBytes(24).toString('hex');
     var qStatus = action === 'quote_save' ? 'saved' : 'sent';
     var qInfo = db.prepare(
-      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, accept_token, sent_at, status) '
-      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, acceptToken,
+      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, line_items, accept_token, sent_at, status) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, lineItemsJson, acceptToken,
           null, qStatus);
     var quoteId = qInfo.lastInsertRowid;
     var acceptUrl = baseUrl + '/quote/' + quoteId + '/' + acceptToken;
@@ -3458,7 +3701,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         subject: qqRevised
           ? 'Your Updated Brake Service Quote — Brake Knights'
           : 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined', qqRevised)
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, req.body.lineItems || 'combined', qqRevised, quoteCustomerNotes)
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
@@ -3683,7 +3926,7 @@ router.get('/customers', requireAuth, function(req, res) {
     + 'if(mode==="oldest")return g(a,"data-created").localeCompare(g(b,"data-created"));'
     + 'if(mode==="visit")return g(b,"data-jobs").localeCompare(g(a,"data-jobs"))||g(b,"data-visit").localeCompare(g(a,"data-visit"));'
     + 'var da=g(a,"data-activity"),db2=g(b,"data-activity");'
-    + 'if(db2&&!da)return -1;if(da&&!db2)return 1;'
+    + 'if(db2&&!da)return 1;if(da&&!db2)return -1;'
     + 'return db2.localeCompare(da);'
     + '});'
     + 'cards.forEach(function(el){listEl.appendChild(el);});'
@@ -3706,7 +3949,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
 
   var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
     + alert
-    + '<form method="POST" action="/admin/customer/new">'
+    + '<form method="POST" action="/admin/customer/new" data-autosave="custnew">'
     + '<div class="card">'
     + '<div class="section-title">Contact</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
@@ -3717,6 +3960,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" placeholder="customer@email.com"></div>'
     + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>'
     + '<div class="card">'
     + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
@@ -3727,17 +3971,13 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
     + '<div class="card">'
-    + '<div class="section-title">Service Address <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address</label><input type="text" name="service_address" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
-    + '</div>'
-    + '<div class="card">'
     + '<div class="section-title">Additional Info</div>'
     + '<div class="form-group"><label>Tags <span style="color:#bbb;font-weight:400;">(comma-separated)</span></label><input type="text" name="tags" placeholder="Fleet, HOA, Referral..."></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Internal Notes</label><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times..."></textarea></div>'
     + '</div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-top:4px;">'
     + '<button type="submit" class="btn btn-navy" style="flex:1;">Create Customer</button>'
-    + '<a href="/admin/customer/new" class="btn btn-outline" style="width:auto;">Start Over</a>'
+    + '<a href="/admin/customer/new" class="btn btn-outline" style="width:auto;" onclick="bkClearDraft(\'custnew\')">Start Over</a>'
     + '</div>'
     + '</form>'
     + VEHICLE_CASCADE_JS;
@@ -3755,10 +3995,16 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
   var tags   = (req.body.tags   || '').trim() || null;
   var notes  = (req.body.notes  || '').trim() || null;
 
+  var homeAddress = (req.body.home_address || '').trim() || null;
+
   var result = db.prepare(
-    'INSERT INTO customers (first_name, last_name, phone, email, tags, notes) VALUES (?,?,?,?,?,?)'
-  ).run(first_name, last_name, phone, email, tags, notes);
+    'INSERT INTO customers (first_name, last_name, phone, email, home_address, tags, notes) VALUES (?,?,?,?,?,?,?)'
+  ).run(first_name, last_name, phone, email, homeAddress, tags, notes);
   var newId = result.lastInsertRowid;
+
+  if (homeAddress) {
+    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(newId, 'Home', homeAddress);
+  }
 
   var vehYear  = (req.body.veh_year  || '').trim() || null;
   var vehMake  = (req.body.veh_make  || '').trim() || null;
@@ -3769,11 +4015,6 @@ router.post('/customer/new', requireAuth, express.urlencoded({ extended: false }
     db.prepare(
       'INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)'
     ).run(newId, vehYear, vehMake, vehModel || null, vehVin || null, vehPlate || null);
-  }
-
-  var svcAddr = (req.body.service_address || '').trim();
-  if (svcAddr) {
-    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(newId, 'Service', svcAddr);
   }
 
   res.redirect('/admin/customer/' + newId + '?msg=created');
@@ -3902,8 +4143,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '<div class="info-grid">'
     + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
     + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
-    + (c.home_address ? '<span class="info-key">Home address</span><span class="info-val">' + mapsLink(c.home_address) + '</span>' : '')
-    + (addresses.length ? '<span class="info-key">Service address</span><span class="info-val">' + mapsLink(addresses[0].address) + (addresses[0].label ? ' <span style="font-size:0.78rem;color:#aaa;">(' + esc(addresses[0].label) + ')</span>' : '') + '</span>' : '')
+    + (c.home_address ? '<span class="info-key">Address</span><span class="info-val">' + mapsLink(c.home_address) + '</span>' : '')
     + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
     + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
     + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
@@ -3930,7 +4170,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '</div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" value="' + esc(c.email || '') + '" placeholder="customer@email.com"></div>'
     + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Home address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>';
 
   // Tags card (collapsible) — removable pills + free-text add + preset quick picks
@@ -4684,7 +4924,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">New Appointment</h1>'
     + fromLeadBanner
-    + '<form method="POST" action="/admin/appointments/new">'
+    + '<form method="POST" action="/admin/appointments/new" data-autosave="apptnew-' + esc(fromLeadId || 'new') + '" data-autosave-after="bkApptAfter">'
     + (fromLeadId ? '<input type="hidden" name="from_lead" value="' + esc(fromLeadId) + '">' : '')
 
     + '<div class="card">'
@@ -4715,6 +4955,9 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Email</label><input type="email" name="cust_email" placeholder="customer@email.com"></div>'
     + '</div>'
     + '</div>'
+    + '<div class="form-group" style="margin-top:14px;margin-bottom:0;">'
+    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Service address" autocomplete="off" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
+    + '</div>'
     + '</div>'
 
     + '<div class="card">'
@@ -4723,6 +4966,18 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
     + '<div class="form-group" style="margin-bottom:0;"><label>VIN <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_vin" id="apptVehVin" maxlength="17" placeholder="optional"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>License plate <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_plate" id="apptVehPlate" maxlength="10" placeholder="optional"></div>'
+    + '</div>'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Schedule</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
+    + '<input type="date" name="pref_date" id="apptDate" required></div>'
+    + '<div class="form-group"><label>Time</label>'
+    + '<select name="pref_time" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;">'
+    + timeOpts
+    + '</select></div>'
     + '</div>'
     + '</div>'
 
@@ -4775,20 +5030,6 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
 
     + '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Schedule</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
-    + '<input type="date" name="pref_date" id="apptDate" required></div>'
-    + '<div class="form-group"><label>Time</label>'
-    + '<select name="pref_time" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;">'
-    + timeOpts
-    + '</select></div>'
-    + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address</label>'
-    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Customer service address" autocomplete="off"></div>'
-    + '</div>'
-
-    + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Notes</div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Internal notes <span style="color:#bbb;font-weight:400;">(auto-filled from customer profile)</span></label>'
     + '<textarea name="notes" id="apptNotes" placeholder="Any notes for the job..."></textarea></div>'
@@ -4803,7 +5044,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div id="apptPreviewBox" style="display:none;margin-bottom:12px;"></div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-bottom:24px;">'
     + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="flex:1;">Create Appointment</button>'
-    + '<a href="/admin/appointments/new" class="btn btn-outline" style="width:auto;">Start Over</a>'
+    + '<a href="/admin/appointments/new" class="btn btn-outline" style="width:auto;" onclick="bkClearDraft(\'apptnew-' + esc(fromLeadId || 'new') + '\')">Start Over</a>'
     + '</div>'
     + '</form>'
     + '<script>(function(){'
@@ -4874,6 +5115,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'clearBtn.addEventListener("click",clearCust);'
     +   'if(hidId.value){fetch("/admin/customer/"+hidId.value+"/autofill").then(function(r){return r.json();}).then(function(d){'
     +     'if(!d||!d.ok)return;'
+    +     'if(window._apptDraftRestored)return;' // a restored draft takes precedence over profile autofill
     +     'if(d.vehicle&&window.bkVehFill)window.bkVehFill("appt-veh",d.vehicle);'
     +     'var a=document.getElementById("apptAddr");if(a&&d.address)a.value=d.address;'
     +     'if(hidEmail&&d.email)hidEmail.value=d.email;'
@@ -5001,6 +5243,25 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'box.innerHTML="<div class=\'preview-box\'><h4>Confirmation Email Preview</h4>"+rows+"</div>";'
     +   'box.style.display="block";btn.textContent="Hide Preview";'
     + '}'
+    // Draft restore finalizer: re-derive widgets from restored fields without re-pulling
+    // prices, and rebuild the selected-customer chip without a profile autofill (so the
+    // owner's restored vehicle/address/notes are not overwritten).
+    + 'window.bkApptAfter=function(d){'
+    +   'window._apptDraftRestored=true;'
+    +   'var svc=(document.getElementById("apptSvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'document.querySelectorAll(".appt-svc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
+    +   'apptTier=(document.getElementById("apptTier").value)||"standard";'
+    +   'document.getElementById("apptBtnStd").classList.toggle("active",apptTier==="standard");'
+    +   'document.getElementById("apptBtnPrem").classList.toggle("active",apptTier==="premium");'
+    +   'apptRenderTags();'
+    +   'var cid=(document.getElementById("apptCustId")||{}).value||"";'
+    +   'if(cid){var c=(typeof CUST_LIST!=="undefined")?CUST_LIST.find(function(x){return String(x.id)===String(cid);}):null;'
+    +     'if(c){var chip=document.getElementById("custPickerChip");if(chip)chip.style.display="flex";'
+    +       'var lbl=document.getElementById("custPickerLabel");if(lbl)lbl.textContent=c.label;'
+    +       'var nf=document.getElementById("apptNewCustFields");if(nf)nf.style.display="none";'
+    +       'var he=document.getElementById("apptCustEmail");if(he&&!he.value)he.value=c.email||"";}}'
+    +   'apptCalc();'
+    + '};'
     + '</script>'
     + VEHICLE_CASCADE_JS
     + mapsScript;
@@ -5274,11 +5535,8 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
   var totalJobs    = db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
   var avgJobValue  = totalJobs > 0 ? totalRevenue / totalJobs : 0;
 
-  var now2 = new Date();
-  var monthStr2 = now2.getFullYear() + '-' + String(now2.getMonth() + 1).padStart(2, '0') + '-01';
-  var revenueThisMonth2 = db.prepare(
-    "SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL AND date(sent_at) >= ?"
-  ).get(monthStr2).n;
+  // Period-filtered stats — all receipts with sent_at, used client-side for the dropdown filter
+  var allReceiptsForFilter = db.prepare("SELECT total, sent_at FROM receipts WHERE sent_at IS NOT NULL").all();
 
   // Build last-12-months list
   var revMonths = [];
@@ -5359,11 +5617,23 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
           + '</tbody></table>')
     + '</div>';
 
+  var allReceiptsJson = JSON.stringify(allReceiptsForFilter.map(function(r) {
+    return { total: r.total, d: (r.sent_at || '').slice(0, 10) };
+  }));
+
   res.send(page('Revenue',
     '<h1 style="font-size:1.2rem;font-weight:700;color:#0f172a;margin-bottom:16px;">Revenue</h1>'
     + '<div class="stat-grid" style="margin-bottom:12px;">'
     + statBox('$' + money(totalRevenue), 'All-Time Revenue')
-    + statBox('$' + money(revenueThisMonth2), 'This Month')
+    + '<div class="stat-box" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;">'
+    + '<span id="periodRevAmt" style="font-size:1.4rem;font-weight:700;color:#0a1f3d;">$0.00</span>'
+    + '<select id="periodSel" style="padding:5px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.82rem;background:#fff;color:#0a1f3d;font-weight:600;">'
+    + '<option value="today">Today</option>'
+    + '<option value="week">This Week</option>'
+    + '<option value="month" selected>This Month</option>'
+    + '<option value="year">This Year</option>'
+    + '</select>'
+    + '</div>'
     + statBox(totalJobs, 'Jobs Completed')
     + statBox('$' + money(avgJobValue), 'Avg Job Value')
     + '</div>'
@@ -5371,7 +5641,31 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
     + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:14px;">Monthly Revenue — Last 12 Months</div>'
     + barChart
     + '</div>'
-    + tableHtml,
+    + tableHtml
+    + '<script>(function(){'
+    + 'var receipts=' + allReceiptsJson + ';'
+    + 'var sel=document.getElementById("periodSel");'
+    + 'var amt=document.getElementById("periodRevAmt");'
+    + 'function pad(n){return String(n).padStart(2,"0");}'
+    + 'function calc(){'
+    +   'var now=new Date();'
+    +   'var todayStr=now.getFullYear()+"-"+pad(now.getMonth()+1)+"-"+pad(now.getDate());'
+    +   'var p=sel.value;'
+    +   'var total=receipts.filter(function(r){'
+    +     'if(p==="today")return r.d===todayStr;'
+    +     'if(p==="week"){'
+    +       'var d=new Date(now);d.setDate(d.getDate()-d.getDay());'
+    +       'var weekStart=d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());'
+    +       'return r.d>=weekStart&&r.d<=todayStr;'
+    +     '}'
+    +     'if(p==="month")return r.d.slice(0,7)===todayStr.slice(0,7);'
+    +     'if(p==="year")return r.d.slice(0,4)===todayStr.slice(0,4);'
+    +     'return true;'
+    +   '}).reduce(function(s,r){return s+r.total;},0);'
+    +   'amt.textContent="$"+total.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});'
+    + '}'
+    + 'sel.addEventListener("change",calc);calc();'
+    + '})();</script>',
     req
   ));
 });
@@ -5512,7 +5806,83 @@ router.get('/reports/services', requireAuth, function(req, res) {
 });
 
 // ─── Placeholder pages for not-yet-built sidebar items ────────────────────────
-router.get('/receipts',           requireAuth, function(req, res) { placeholderPage(req, res, 'Receipts', 'an upcoming phase'); });
+router.get('/receipts', requireAuth, function(req, res) {
+  var rows = db.prepare(
+    "SELECT r.id, r.lead_id, r.service, r.vehicle, r.service_date, r.total, r.payment_method, r.sent_at, "
+    + "l.first_name, l.last_name, l.email "
+    + "FROM receipts r LEFT JOIN leads l ON l.id = r.lead_id "
+    + "WHERE r.sent_at IS NOT NULL "
+    + "ORDER BY r.sent_at DESC"
+  ).all();
+
+  var totalRevenue = rows.reduce(function(s, r) { return s + (r.total || 0); }, 0);
+  var totalCount   = rows.length;
+  var now = new Date();
+  var monthPfx = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  var thisMonthRows = rows.filter(function(r) { return (r.sent_at || '').slice(0, 7) === monthPfx; });
+  var thisMonthRev  = thisMonthRows.reduce(function(s, r) { return s + (r.total || 0); }, 0);
+
+  var cards = rows.length === 0
+    ? '<div class="empty" id="rcptEmpty"><div style="margin-bottom:10px;">' + icon('document') + '</div>No receipts sent yet.</div>'
+    : '<div id="rcptEmpty" style="display:none;padding:32px;text-align:center;color:#888;">No receipts match your search.</div>'
+      + rows.map(function(r) {
+          var name = ((r.first_name || '') + ' ' + (r.last_name || '')).trim() || 'Unknown customer';
+          var searchText = (name + ' ' + (r.service || '') + ' ' + (r.vehicle || '') + ' ' + (r.email || '')).toLowerCase();
+          var dateStr = r.service_date || (r.sent_at || '').slice(0, 10);
+          var svcs = (r.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+          return '<div class="card rcpt-card" data-search="' + esc(searchText) + '" onclick="window.location=\'/admin/quote/' + r.lead_id + '\';" style="cursor:pointer;border-left:3px solid var(--cta);">'
+            + '<div class="row-sb">'
+            + '<div class="lead-name">' + esc(name) + '</div>'
+            + '<span style="font-size:1rem;font-weight:700;color:#0a1f3d;">$' + money(r.total || 0) + '</span>'
+            + '</div>'
+            + (r.vehicle ? '<div class="lead-meta" style="margin-top:3px;">' + esc(r.vehicle) + '</div>' : '')
+            + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'
+            + svcs.map(function(s) { return '<span style="background:#eef3ff;color:#1a4fc4;border-radius:6px;padding:3px 8px;font-size:0.78rem;font-weight:600;">' + esc(s) + '</span>'; }).join('')
+            + '</div>'
+            + '<div style="display:flex;gap:18px;margin-top:10px;font-size:0.82rem;color:#555;flex-wrap:wrap;">'
+            + '<span>' + esc(r.payment_method || 'Unknown payment') + '</span>'
+            + '<span>Sent ' + shortDate(r.sent_at) + '</span>'
+            + (dateStr ? '<span>Service date ' + esc(dateStr) + '</span>' : '')
+            + '</div>'
+            + '</div>';
+        }).join('');
+
+  res.send(page('Receipts',
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Receipts</h1>'
+    + '<span style="color:#aaa;font-size:0.83rem;" id="rcptCount">' + totalCount + ' total</span>'
+    + '</div>'
+    + '<div class="stat-grid" style="margin-bottom:14px;">'
+    + statBox('$' + money(totalRevenue), 'Total Revenue')
+    + statBox(totalCount, 'Receipts Sent')
+    + statBox('$' + money(thisMonthRev), 'This Month')
+    + statBox(thisMonthRows.length, 'Jobs This Month')
+    + '</div>'
+    + '<input type="text" id="rcptSearch" placeholder="Search by customer, service, or vehicle..." '
+    + 'style="width:100%;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;box-sizing:border-box;margin-bottom:14px;" autocomplete="off">'
+    + '<div id="rcptList">' + cards + '</div>'
+    + '<script>(function(){'
+    + 'var inp=document.getElementById("rcptSearch");'
+    + 'var count=document.getElementById("rcptCount");'
+    + 'var empty=document.getElementById("rcptEmpty");'
+    + 'var total=' + totalCount + ';'
+    + 'if(!inp)return;'
+    + 'inp.addEventListener("input",function(){'
+    +   'var q=inp.value.trim().toLowerCase();'
+    +   'var cards=document.querySelectorAll(".rcpt-card");'
+    +   'var shown=0;'
+    +   'cards.forEach(function(el){'
+    +     'var match=!q||el.dataset.search.indexOf(q)!==-1;'
+    +     'el.style.display=match?"":"none";'
+    +     'if(match)shown++;'
+    +   '});'
+    +   'if(count)count.textContent=q?(shown+" of "+total+" total"):(total+" total");'
+    +   'if(empty)empty.style.display=(shown===0&&q)?"block":"none";'
+    + '});'
+    + '})();</script>',
+    req
+  ));
+});
 // ─── Phase 8A: Pricing & Tiers settings ────────────────────────────────────────
 
 router.get('/settings/pricing', requireAuth, function(req, res) {

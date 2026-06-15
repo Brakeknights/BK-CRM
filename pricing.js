@@ -91,6 +91,11 @@ module.exports = {
       minutes: 60,
       customQuote: true,
       standard: { parts: 0, labor: 0, shopSupplies: 0 }
+    },
+    'Labor Only': {
+      minutes: 60,
+      customQuote: true,
+      standard: { parts: 0, labor: 0, shopSupplies: 0 }
     }
   }
 };
