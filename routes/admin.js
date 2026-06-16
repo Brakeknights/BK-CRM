@@ -839,7 +839,7 @@ function page(title, body, req) {
     + '<button id="deleteModalConfirm" onclick="submitDeleteForm()">Yes, Delete</button>'
     + '</div></div></div>'
     + '<script>'
-    + 'function fmtPhoneInput(el){var v=el.value.replace(/\\D/g,"").slice(0,10);if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);else if(v.length>=4)v=v.slice(0,3)+"-"+v.slice(3);el.value=v;}'
+    + 'function fmtPhoneInput(el){var v=el.value.replace(/\\D/g,"");if(v.length===11&&v.charAt(0)==="1")v=v.slice(1);v=v.slice(0,10);if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);else if(v.length>=4)v=v.slice(0,3)+"-"+v.slice(3);el.value=v;}'
     + 'document.querySelectorAll("input[type=\'tel\']").forEach(function(el){if(el.value)fmtPhoneInput(el);});'
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
