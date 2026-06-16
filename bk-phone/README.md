@@ -107,21 +107,26 @@ deploys work directly.
   until 10DLC (expected).
 - iOS stale-cache problem — **SOLVED** via `?v=N` versioned asset URLs.
 
-### 🔧 In progress — push notifications (iOS delivery)
-- Server side **proven**: `/api/push/test` reported "sent to 1 device", and the
-  device is registered + subscribed; iOS shows the app under Notifications.
-- BUT no banner appears on the phone. Last test: the "Result" popup was **hanging**
-  (server awaiting Apple's push service), which suggests the **Hostinger server may
-  be slow/unable to reach Apple's push endpoint** (`web.push.apple.com`), OR iOS is
-  delaying delivery.
-- **Next steps to try:**
-  1. Add a request **timeout** to `webpush.sendNotification` so it can't hang;
-     surface the timeout/error in the test result.
-  2. From the server (enable SSH or a temp diagnostic route), test outbound
-     connectivity to `https://web.push.apple.com` — if blocked, that's the root cause.
-  3. Confirm the notification shows when the app is **backgrounded/closed** (iOS
-     suppresses banners while the app is foreground — this is expected).
-  4. Verify VAPID public key used by the browser subscription matches the server's.
+### 🔧 Open issue — push notifications do NOT display on iOS (likely needs native app)
+- **Server side is fully proven.** `/api/push/test` returns
+  `{ready:true, total:2, sent:2, failed:0, errors:[]}` — VAPID configured, devices
+  subscribed, both pushes accepted by Apple with zero errors. (The earlier "hang"
+  was just the blocking `alert()`, not a server/Apple connectivity problem.)
+- **But NO banner ever appears on the iPhone** — tested both with the app in the
+  FOREGROUND (banners suppressed by iOS while in-app — expected) AND with the app
+  FULLY CLOSED/backgrounded (should show a banner — it does NOT).
+- **Conclusion:** the entire pipeline (subscribe → server send → Apple accept) works;
+  iOS simply isn't rendering the notification for the installed web app. This is a
+  known iOS PWA web-push limitation, not our code.
+- **Recommended path:** do NOT sink more time into PWA push debugging. Calling
+  (Phase B) requires wrapping this app in a **native shell (Capacitor)** anyway, and
+  a native build gets **native APNs push**, which is reliable. Plan to get reliable
+  notifications via the native app rather than the PWA.
+- If revisiting PWA push first, still worth checking: iOS **Focus/Do-Not-Disturb**,
+  **Notification Grouping** / **Scheduled Summary** settings, that the subscription
+  `endpoint` is a valid `web.push.apple.com` URL, prune the stale 2nd subscription,
+  and confirm the home-screen app (not Safari) on iOS 16.4+. "total: 2" = a leftover
+  subscription from the reinstall; harmless, prune later.
 
 ### Texting polish roadmap (build order)
 1. ✅ Live updates
