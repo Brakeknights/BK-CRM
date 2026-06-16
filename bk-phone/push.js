@@ -21,25 +21,33 @@ if (PUBLIC && PRIVATE) {
   console.log('[push] VAPID keys not set, notifications disabled');
 }
 
-// Send a notification to every subscribed device. Fire-and-forget; never throws.
+// Send a notification to every subscribed device. Returns a summary so callers
+// (and the Settings "test" button) can see exactly what happened. Never throws.
 async function sendToAll(payload) {
-  if (!ready) return;
+  if (!ready) return { ready: false, total: 0, sent: 0, failed: 0, errors: ['VAPID keys not configured on server'] };
+  const subs = dbm.listPushSubscriptions();
   const data = JSON.stringify(payload);
-  for (const s of dbm.listPushSubscriptions()) {
+  let sent = 0, failed = 0;
+  const errors = [];
+  for (const s of subs) {
     try {
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
         data
       );
+      sent++;
     } catch (err) {
+      failed++;
+      const detail = `${err.statusCode || '?'} ${(err.body || err.message || '').toString().slice(0, 140)}`;
+      errors.push(detail);
+      console.warn('[push] send error:', detail);
       // 404/410 = the device unsubscribed or expired, drop it.
       if (err.statusCode === 404 || err.statusCode === 410) {
         dbm.deletePushSubscription(s.endpoint);
-      } else {
-        console.warn('[push] send error:', err.statusCode || err.message);
       }
     }
   }
+  return { ready: true, total: subs.length, sent, failed, errors };
 }
 
 module.exports = {

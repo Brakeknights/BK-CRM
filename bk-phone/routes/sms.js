@@ -150,6 +150,12 @@ app.post('/api/push/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
+// Send a test notification to all subscribed devices and report the result.
+app.post('/api/push/test', async (_req, res) => {
+  const result = await push.sendToAll({ title: 'Brake Knights', body: 'Test notification — push is working ✅' });
+  res.json(result);
+});
+
 // --- API: list every conversation (newest first) for the main screen --------
 app.get('/api/threads', (_req, res) => {
   const threads = dbm.listThreads();

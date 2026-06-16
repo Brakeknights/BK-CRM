@@ -59,4 +59,22 @@
   });
 
   refreshNotif();
+
+  // Send-a-test-notification button: triggers a push and reports the result.
+  document.getElementById('notif-test').addEventListener('click', async () => {
+    try {
+      const r = await BKP.api('/api/push/test', { method: 'POST' });
+      if (!r.ready) {
+        BKP.toast('Server push not configured (VAPID keys)', true);
+      } else if (r.total === 0) {
+        BKP.toast('No devices registered — turn notifications On first', true);
+      } else if (r.sent > 0) {
+        BKP.toast(`Test sent to ${r.sent} device(s). Watch for the banner.`);
+      } else {
+        BKP.toast('Send failed: ' + (r.errors[0] || 'unknown error'), true);
+      }
+    } catch (e) {
+      BKP.toast(e.message || 'Test failed', true);
+    }
+  });
 })();
