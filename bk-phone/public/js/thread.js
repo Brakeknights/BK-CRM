@@ -163,5 +163,25 @@
     }
   }
 
+  // Live updates: quietly poll for new messages so a customer's reply shows up
+  // on its own. We skip a refresh while a message is still sending (so we never
+  // clobber an in-flight optimistic bubble), and only re-render when something
+  // actually changed (avoids flicker).
+  async function refresh() {
+    if (messages.some(m => m.pending)) return;
+    try {
+      const data = await BKP.api(`/api/threads/${threadId}`);
+      const next = data.messages || [];
+      const lastNext = next[next.length - 1];
+      const lastCur = messages[messages.length - 1];
+      const changed = next.length !== messages.length
+        || (lastNext && lastCur && lastNext.id !== lastCur.id)
+        || (lastNext && lastCur && lastNext.status !== lastCur.status);
+      if (changed) { messages = next; render(); }
+    } catch (e) { /* stay quiet on a failed poll */ }
+  }
+
   load();
+  setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 })();

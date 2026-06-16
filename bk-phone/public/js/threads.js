@@ -57,25 +57,33 @@
       </li>`;
   }
 
-  // ---- Load + draw --------------------------------------------------------
-  async function load() {
+  // ---- Render the conversation list ---------------------------------------
+  function renderThreads(threads) {
+    if (!threads.length) { emptyEl.hidden = false; listEl.hidden = true; return; }
+    emptyEl.hidden = true;
+    listEl.innerHTML = threads.map(rowHtml).join('');
+    listEl.hidden = false;
+    listEl.querySelectorAll('.thread-row').forEach(row => {
+      row.addEventListener('click', () => { window.location.href = '/thread/' + row.dataset.id; });
+    });
+  }
+
+  // ---- Load + draw (initial shows a spinner; refreshes are silent) ---------
+  async function load(initial) {
     try {
       const { threads } = await BKP.api('/api/threads');
-      loadingEl.hidden = true;
-      if (!threads.length) { emptyEl.hidden = false; return; }
-      listEl.innerHTML = threads.map(rowHtml).join('');
-      listEl.hidden = false;
-      // tap a row -> open the conversation
-      listEl.querySelectorAll('.thread-row').forEach(row => {
-        row.addEventListener('click', () => {
-          window.location.href = '/thread/' + row.dataset.id;
-        });
-      });
+      if (initial) loadingEl.hidden = true;
+      renderThreads(threads);
     } catch (e) {
-      loadingEl.hidden = true;
-      BKP.toast(e.message, true);
+      if (initial) { loadingEl.hidden = true; BKP.toast(e.message, true); }
     }
   }
 
-  load();
+  load(true);
+
+  // Live updates: refresh the list every 8s while the app is in the foreground,
+  // and immediately when the user returns to it. (Push notifications come next;
+  // this keeps the list fresh while the app is open.)
+  setInterval(() => { if (!document.hidden) load(false); }, 8000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(false); });
 })();
