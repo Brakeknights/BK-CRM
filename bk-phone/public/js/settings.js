@@ -21,6 +21,9 @@
   const notifValue = document.getElementById('notif-value');
   const notifHint = document.getElementById('notif-hint');
   let busy = false;
+  let isOn = false; // tracked synchronously so the tap handler needs no await
+                    // before requesting permission (iOS requires the permission
+                    // prompt to fire within the user gesture, no awaits first).
 
   async function refreshNotif() {
     if (!BKP.pushSupported()) {
@@ -29,19 +32,20 @@
       notifRow.disabled = true;
       return;
     }
-    const on = await BKP.pushEnabled().catch(() => false);
-    notifValue.textContent = on ? 'On' : 'Off';
+    isOn = await BKP.pushEnabled().catch(() => false);
+    notifValue.textContent = isOn ? 'On' : 'Off';
   }
 
   notifRow.addEventListener('click', async () => {
     if (busy) return;
     busy = true;
     try {
-      const on = await BKP.pushEnabled().catch(() => false);
-      if (on) {
+      if (isOn) {
         await BKP.disablePush();
         BKP.toast('Notifications turned off');
       } else {
+        // enablePush() requests permission as its very first step, so calling it
+        // directly here keeps it inside the tap gesture (iOS requirement).
         await BKP.enablePush();
         BKP.toast('Notifications on, you’ll be alerted on new texts');
       }
