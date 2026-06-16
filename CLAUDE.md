@@ -170,7 +170,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #29 ✅
+- Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #42 ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
@@ -246,6 +246,9 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Job photo feature: upload photos mid-job (from lead profile, before receipt exists) and attach to receipt email; tokenized public serve route (/photos/:token); customer profile gallery across all jobs. Storage in /data/uploads/ outside git. multer for uploads, job_photos table in SQLite.
 
 ### Completed This Session
+- [x] PR #42: Quick Quote Caliper/Brake Hose redesign — position checkboxes (Front Left, Front Right, Rear Left, Rear Right) now always visible as static labeled groups with no parent checkbox. Customer quote shows only "Caliper - Front Left" etc., never "Caliper Replacement" or combined Parts/Labor rows for the parent service. Each position gets its own price row with an independent Combined/Split P/L toggle.
+
+### Previously Completed This Session
 - [x] PR #29: Vehicle cascade dropdowns (NHTSA API, "Other" free-text fallback) applied to Quick Quote and Receipt Builder; appointments Clear Selection now zeroes prices; Preview Email button on New Appointment form; required year/make/model validation on public contact forms (index.html + contact.html).
 
 ### Previously Completed This Session
