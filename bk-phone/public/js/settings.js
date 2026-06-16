@@ -44,8 +44,9 @@
         await BKP.disablePush();
         BKP.toast('Notifications turned off');
       } else {
-        // enablePush() requests permission as its very first step, so calling it
-        // directly here keeps it inside the tap gesture (iOS requirement).
+        // Visible confirmation that the (latest) handler fired, then request
+        // permission as the very first async step (kept inside the tap gesture).
+        BKP.toast('Requesting notification permission…');
         await BKP.enablePush();
         BKP.toast('Notifications on, you’ll be alerted on new texts');
       }
