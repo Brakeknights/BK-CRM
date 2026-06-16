@@ -170,6 +170,19 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
+### 📱 BK Phone App (separate sub-project — see `bk-phone/README.md`)
+A standalone business phone app (texting now, calling later) to replace Ooma, in
+the `bk-phone/` folder. Runs as its own Hostinger Node app at
+**phone-dev.brakeknights.com**, separate from the CRM but designed to share the CRM
+database for customer matching (deferred until launch — the test app is isolated,
+no live data). **All phone code is on branch `claude/brave-fermat-bore9c`** (NOT
+merged to dev/master; never merge without owner approval). Deploys are direct
+archive uploads via the Hostinger MCP, NOT git pushes — they never touch the CRM or
+live site. **Status:** texting core + inbound + live updates working; push
+notifications in progress (iOS banner delivery). **Full status, architecture, env
+vars, deploy workflow, and roadmap are in `bk-phone/README.md` — read it first when
+continuing the phone app.**
+
 - Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #29 ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
