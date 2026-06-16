@@ -7,7 +7,7 @@
 // Bump CACHE when shell files change to retire the old cache.
 // ===========================================================================
 
-const CACHE = 'bkphone-v1';
+const CACHE = 'bkphone-v2';
 
 // Public, non-sensitive assets only. We never pre-cache pages or API responses
 // (those can contain customer data and require a login).
@@ -42,20 +42,21 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // Pages + API: network-first so data is always fresh; fall back if offline.
-  if (req.mode === 'navigate' || url.pathname.startsWith('/api/')) {
-    event.respondWith(fetch(req).catch(() => caches.match(req)));
+  // Same-origin (our pages, API, scripts, styles): NETWORK-FIRST so the app
+  // always runs the latest deployed code; fall back to cache only when offline.
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(req).then((resp) => {
+        if (resp.ok) {
+          const copy = resp.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
+        return resp;
+      }).catch(() => caches.match(req))
+    );
     return;
   }
 
-  // Static shell assets: cache-first for instant loads.
-  event.respondWith(
-    caches.match(req).then((cached) => cached || fetch(req).then((resp) => {
-      if (resp.ok && url.origin === self.location.origin) {
-        const copy = resp.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy));
-      }
-      return resp;
-    }).catch(() => cached))
-  );
+  // Cross-origin assets (e.g. Google Fonts): cache-first for speed.
+  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
