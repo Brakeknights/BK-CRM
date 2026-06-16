@@ -60,3 +60,33 @@ self.addEventListener('fetch', (event) => {
   // Cross-origin assets (e.g. Google Fonts): cache-first for speed.
   event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
+
+// ---- Push notifications ---------------------------------------------------
+// Show a notification when a new text arrives (even with the app closed).
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { /* ignore */ }
+  const title = data.title || 'New message';
+  const options = {
+    body: data.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: data.threadId ? ('thread-' + data.threadId) : undefined,
+    data: { url: data.threadId ? ('/thread/' + data.threadId) : '/' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Tapping a notification opens (or focuses) that conversation.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const c of wins) {
+        if ('focus' in c) { c.navigate(url); return c.focus(); }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
+  );
+});

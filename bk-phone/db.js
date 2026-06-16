@@ -112,6 +112,15 @@ db.exec(`
   -- (Partial index: only enforces uniqueness when telnyx_id is present.)
   CREATE UNIQUE INDEX IF NOT EXISTS idx_comm_messages_telnyx
     ON comm_messages(telnyx_id) WHERE telnyx_id IS NOT NULL;
+
+  -- Devices (browsers) that have opted in to push notifications.
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    endpoint   TEXT NOT NULL UNIQUE,   -- the browser's push endpoint URL
+    p256dh     TEXT NOT NULL,          -- encryption keys from the browser
+    auth       TEXT NOT NULL
+  );
 `);
 
 // ===========================================================================
@@ -233,6 +242,18 @@ function messageExists(telnyxId) {
   return !!messageExistsStmt.get(telnyxId);
 }
 
+// --- Push subscriptions ----------------------------------------------------
+const upsertPushSub = db.prepare(`
+  INSERT INTO push_subscriptions (endpoint, p256dh, auth)
+  VALUES (@endpoint, @p256dh, @auth)
+  ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth
+`);
+function savePushSubscription(sub) {
+  upsertPushSub.run({ endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth });
+}
+const listPushSubs = db.prepare(`SELECT * FROM push_subscriptions`);
+const deletePushSub = db.prepare(`DELETE FROM push_subscriptions WHERE endpoint = ?`);
+
 module.exports = {
   db,
   // threads
@@ -248,4 +269,8 @@ module.exports = {
   insertMessage,
   updateMessageStatus,
   messageExists,
+  // push
+  savePushSubscription,
+  listPushSubscriptions: () => listPushSubs.all(),
+  deletePushSubscription: (endpoint) => deletePushSub.run(endpoint),
 };

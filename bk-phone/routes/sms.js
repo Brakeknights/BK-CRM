@@ -20,6 +20,7 @@ const path = require('path');
 const dbm = require('../db');
 const telnyx = require('../telnyx');
 const crm = require('../crm');
+const push = require('../push');
 
 const webhook = express.Router();
 const app = express.Router();
@@ -87,9 +88,17 @@ function handleInbound(payload) {
   });
   dbm.touchThread(thread.id, preview(text), 1); // +1 unread
 
-  // FUTURE (Phase 3): look up this number in the CRM to fill the customer name,
-  // and (Phase 8E reuse) fire a push notification for the new message.
+  // Buzz every subscribed device with the new message (fire-and-forget).
+  const who = (match && match.name) || prettyPhone(from);
+  push.sendToAll({ title: who, body: preview(text), threadId: thread.id }).catch(() => {});
+
   console.log(`[sms] inbound from ${from} -> thread ${thread.id}`);
+}
+
+// Format a US number for display in a notification, e.g. (571) 555-1234.
+function prettyPhone(e164) {
+  const m = String(e164 || '').match(/^\+1(\d{3})(\d{3})(\d{4})$/);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : (e164 || 'New message');
 }
 
 // Delivery status update on a text we sent -> update that message's status.
@@ -115,6 +124,31 @@ app.get('/settings', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'settings
 
 // Small bit of app config the Settings screen reads (the business number).
 app.get('/api/config', (_req, res) => res.json({ number: telnyx.TELNYX_NUMBER || '' }));
+
+// --- Push notifications -----------------------------------------------------
+// The browser needs the public VAPID key to subscribe, and tells us whether
+// notifications are even available on the server (keys configured).
+app.get('/api/vapid', (_req, res) => {
+  res.json({ publicKey: push.publicKey || '', enabled: push.isReady() });
+});
+
+// Save a device's push subscription so we can notify it.
+app.post('/api/push/subscribe', (req, res) => {
+  const sub = req.body || {};
+  const endpoint = sub.endpoint;
+  const p256dh = sub.keys && sub.keys.p256dh;
+  const auth = sub.keys && sub.keys.auth;
+  if (!endpoint || !p256dh || !auth) return res.status(400).json({ error: 'Invalid subscription' });
+  dbm.savePushSubscription({ endpoint, p256dh, auth });
+  res.json({ ok: true });
+});
+
+// Forget a device (when the user turns notifications off).
+app.post('/api/push/unsubscribe', (req, res) => {
+  const endpoint = req.body && req.body.endpoint;
+  if (endpoint) dbm.deletePushSubscription(endpoint);
+  res.json({ ok: true });
+});
 
 // --- API: list every conversation (newest first) for the main screen --------
 app.get('/api/threads', (_req, res) => {

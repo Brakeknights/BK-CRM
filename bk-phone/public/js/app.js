@@ -106,12 +106,64 @@ const BKP = (() => {
     toastTimer = setTimeout(() => el.remove(), 3200);
   }
 
+  // ---- Push notifications -------------------------------------------------
+  function pushSupported() {
+    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  }
+
+  // Convert the VAPID public key (base64url) to the byte array the browser wants.
+  function urlB64ToUint8Array(base64) {
+    const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+    const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(b64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  // Is this device currently subscribed?
+  async function pushEnabled() {
+    if (!pushSupported() || Notification.permission !== 'granted') return false;
+    const reg = await navigator.serviceWorker.ready;
+    return !!(await reg.pushManager.getSubscription());
+  }
+
+  // Turn notifications on: ask permission, subscribe, register with the server.
+  async function enablePush() {
+    if (!pushSupported()) throw new Error('Notifications are not supported on this device');
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw new Error('Notification permission was not granted');
+
+    const cfg = await api('/api/vapid');
+    if (!cfg.enabled || !cfg.publicKey) throw new Error('Notifications are not configured on the server yet');
+
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8Array(cfg.publicKey),
+    });
+    await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(sub) });
+    return true;
+  }
+
+  // Turn notifications off on this device.
+  async function disablePush() {
+    if (!pushSupported()) return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api('/api/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+    }
+  }
+
   return {
     getTheme, setTheme, toggleTheme,
     esc, api,
     shortTime, clockTime, dayLabel,
     prettyPhone, displayName, initials,
     toast,
+    pushSupported, pushEnabled, enablePush, disablePush,
   };
 })();
 
