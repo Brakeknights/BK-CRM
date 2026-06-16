@@ -60,21 +60,15 @@
 
   refreshNotif();
 
-  // Send-a-test-notification button: triggers a push and reports the result.
+  // Send-a-test-notification button. Uses a native alert (impossible to miss,
+  // and not subject to any caching/CSS quirks) so we can see the exact result.
   document.getElementById('notif-test').addEventListener('click', async () => {
+    alert('Sending test… (build 11)');
     try {
       const r = await BKP.api('/api/push/test', { method: 'POST' });
-      if (!r.ready) {
-        BKP.toast('Server push not configured (VAPID keys)', true);
-      } else if (r.total === 0) {
-        BKP.toast('No devices registered — turn notifications On first', true);
-      } else if (r.sent > 0) {
-        BKP.toast(`Test sent to ${r.sent} device(s). Watch for the banner.`);
-      } else {
-        BKP.toast('Send failed: ' + (r.errors[0] || 'unknown error'), true);
-      }
+      alert('Result:\n' + JSON.stringify(r, null, 2));
     } catch (e) {
-      BKP.toast(e.message || 'Test failed', true);
+      alert('Error: ' + (e.message || e));
     }
   });
 })();
