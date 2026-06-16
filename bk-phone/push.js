@@ -33,7 +33,8 @@ async function sendToAll(payload) {
     try {
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-        data
+        data,
+        { TTL: 3600, urgency: 'high' } // deliver promptly; iOS throttles "normal"
       );
       sent++;
     } catch (err) {
