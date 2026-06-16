@@ -840,6 +840,7 @@ function page(title, body, req) {
     + '</div></div></div>'
     + '<script>'
     + 'function fmtPhoneInput(el){var v=el.value.replace(/\\D/g,"").slice(0,10);if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);else if(v.length>=4)v=v.slice(0,3)+"-"+v.slice(3);el.value=v;}'
+    + 'document.querySelectorAll("input[type=\'tel\']").forEach(function(el){if(el.value)fmtPhoneInput(el);});'
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
     + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
@@ -854,13 +855,31 @@ function page(title, body, req) {
     + (vapidKey ? (
         'var _VAPID_KEY=' + JSON.stringify(vapidKey) + ';'
       + 'function _b64u(b){var p="=".repeat((4-b.length%4)%4);var s=(b+p).replace(/-/g,"+").replace(/_/g,"/");var r=atob(s);var o=new Uint8Array(r.length);for(var i=0;i<r.length;i++)o[i]=r.charCodeAt(i);return o;}'
+      + 'var _pushBellIcon=' + JSON.stringify(icon('bell')) + ';'
+      + 'function _pushSetOn(btn){btn.classList.add("on");btn.title="Push notifications on (tap to disable)";btn.innerHTML=_pushBellIcon;}'
+      + 'function _pushSetOff(btn){btn.classList.remove("on");btn.title="Enable push notifications";btn.innerHTML=_pushBellIcon;}'
+      + 'function _pushSaveSub(sub,btn){'
+      +   'var j=sub.toJSON();'
+      +   'fetch("/admin/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:j.endpoint,p256dh:j.keys.p256dh,auth:j.keys.auth})})'
+      +   '.then(function(r){return r.json();})'
+      +   '.then(function(d){if(d.ok&&btn)_pushSetOn(btn);})'
+      +   '.catch(function(e){console.error("Push save error:",e);});'
+      + '}'
       + '(function(){'
       +   'if(!("serviceWorker" in navigator&&"PushManager" in window))return;'
       +   'var btn=document.getElementById("push-btn");if(!btn)return;'
       +   'navigator.serviceWorker.register("/sw.js").then(function(reg){'
       +     'reg.pushManager.getSubscription().then(function(sub){'
-      +       'if(sub){btn.classList.add("on");btn.title="Push notifications on";btn.innerHTML=' + JSON.stringify(icon('bell')) + ';}'
       +       'btn.style.display="inline-flex";'
+      +       'if(!sub)return;'
+      +       'fetch("/admin/push/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:sub.endpoint})})'
+      +       '.then(function(r){return r.json();})'
+      +       '.then(function(d){'
+      +         'if(d.found){_pushSetOn(btn);}else{'
+      +           '_pushSaveSub(sub,btn);'
+      +         '}'
+      +       '})'
+      +       '.catch(function(){_pushSetOn(btn);});'
       +     '});'
       +   '});'
       + '})();'
@@ -872,16 +891,14 @@ function page(title, body, req) {
       +       'if(sub){'
       +         'sub.unsubscribe().then(function(){'
       +           'fetch("/admin/push/unsubscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:sub.endpoint})});'
-      +           'btn.classList.remove("on");btn.title="Enable push notifications";btn.innerHTML=' + JSON.stringify(icon('bell')) + ';'
+      +           '_pushSetOff(btn);'
       +         '});'
       +       '}else{'
       +         'Notification.requestPermission().then(function(p){'
       +           'if(p!=="granted")return;'
       +           'reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:_b64u(_VAPID_KEY)}).then(function(s){'
-      +             'var j=s.toJSON();'
-      +             'fetch("/admin/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:j.endpoint,p256dh:j.keys.p256dh,auth:j.keys.auth})});'
-      +             'btn.classList.add("on");btn.title="Push notifications on (tap to disable)";btn.innerHTML=' + JSON.stringify(icon('bell')) + ';'
-      +           '}).catch(function(e){console.error("Push subscribe error",e);});'
+      +             '_pushSaveSub(s,btn);'
+      +           '}).catch(function(e){console.error("Push subscribe error:",e);});'
       +         '});'
       +       '}'
       +     '});'
@@ -948,10 +965,16 @@ router.post('/push/unsubscribe', requireAuth, express.json(), function(req, res)
   res.json({ ok: true });
 });
 
+router.post('/push/verify', requireAuth, express.json(), function(req, res) {
+  if (!req.body || !req.body.endpoint) return res.json({ found: false });
+  var row = db.prepare('SELECT id FROM push_subscriptions WHERE endpoint = ?').get(req.body.endpoint);
+  res.json({ found: !!row });
+});
+
 // ─── Auth routes ─────────────────────────────────────────────────────────────
 
 router.get('/login', function(req, res) {
-  if (req.session && req.session.adminAuthed) return res.redirect('/admin');
+  if (req.session && req.session.adminAuthed) return res.redirect('/admin/appointments');
   var errorHtml = '';
   if (req.query.error === 'locked') {
     errorHtml = '<div class="alert alert-error">Too many failed attempts. Try again in a few minutes.</div>';
@@ -1014,7 +1037,7 @@ router.post('/login', express.urlencoded({ extended: false }), function(req, res
     req.session.regenerate(function(err) {
       if (err) return res.redirect('/admin/login?error=1');
       req.session.adminAuthed = true;
-      res.redirect('/admin');
+      res.redirect('/admin/appointments');
     });
     return;
   }
@@ -4191,9 +4214,12 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   var addrList = addresses.length
     ? addresses.map(function(a) {
         return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
-          + '<div>' + (a.label ? '<div style="font-weight:600;color:#0a1f3d;font-size:0.88rem;">' + esc(a.label) + '</div>' : '')
+          + '<div style="flex:1;min-width:0;">' + (a.label ? '<div style="font-weight:600;color:#0a1f3d;font-size:0.88rem;">' + esc(a.label) + '</div>' : '')
           + '<div style="font-size:0.85rem;color:#444;">' + esc(a.address) + '</div></div>'
+          + '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">'
+          + '<button type="button" onclick="profileUseAddr(' + JSON.stringify(a.address) + ')" style="background:none;border:1px solid #4169e1;border-radius:6px;color:#4169e1;font-size:0.75rem;font-weight:600;cursor:pointer;padding:3px 9px;">Use</button>'
           + '<button type="submit" formaction="/admin/customer/' + c.id + '/address/' + a.id + '/delete" formmethod="post" onclick="return confirm(\'Remove this address?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button>'
+          + '</div>'
           + '</div>';
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No saved addresses yet.</div>';
@@ -4292,6 +4318,15 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + 'function profileAddrChange(sel){'
     +   'var w=document.getElementById("addrOtherWrap");'
     +   'if(w)w.style.display=sel.value==="Other"?"":"none";'
+    + '}'
+    + 'function profileUseAddr(addr){'
+    +   'var el=document.querySelector("[name=\'home_address\']");'
+    +   'if(!el)return;'
+    +   'el.value=addr;'
+    +   'el.scrollIntoView({behavior:"smooth",block:"center"});'
+    +   'el.focus();'
+    +   'el.style.outline="2px solid #4169e1";'
+    +   'setTimeout(function(){el.style.outline="";},1800);'
     + '}'
     + '(function(){'
     +   'var form=document.getElementById("profileSaveForm");'
