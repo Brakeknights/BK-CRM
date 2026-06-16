@@ -4426,8 +4426,11 @@ router.post('/customer/:id/save', requireAuth, express.urlencoded({ extended: fa
     var labelPreset = (req.body.addr_label_preset || 'Home').trim();
     var labelOther  = (req.body.addr_label_other  || '').trim();
     var addrLabel   = labelPreset === 'Other' ? (labelOther || 'Other') : labelPreset;
-    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)')
-      .run(c.id, addrLabel, addrAddress);
+    var dupAddr = db.prepare('SELECT id FROM customer_addresses WHERE customer_id = ? AND address = ?').get(c.id, addrAddress);
+    if (!dupAddr) {
+      db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)')
+        .run(c.id, addrLabel, addrAddress);
+    }
   }
 
   res.redirect('/admin/customer/' + c.id + '?msg=saved');
