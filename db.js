@@ -181,6 +181,16 @@ addQuoteCol('alt_time2',           'TEXT');
 addQuoteCol('alt_token3',          'TEXT');
 addQuoteCol('alt_date3',           'TEXT');
 addQuoteCol('alt_time3',           'TEXT');
+// Free-text note shown to the customer in the quote email (separate from `service`,
+// so it never affects service reporting). `line_items` (above) holds custom priced
+// line items as a JSON array of {label, amount}, taxed as parts.
+addQuoteCol('customer_notes',      'TEXT');
+
+// Receipts: custom priced line items (JSON array of {label, amount}), taxed as parts.
+// Kept separate from `service` so per-service reporting stays clean. `customer_notes`
+// already exists on receipts as the advisory array.
+const receiptCols = db.prepare("PRAGMA table_info(receipts)").all().map(c => c.name);
+if (!receiptCols.includes('custom_line_items')) db.exec("ALTER TABLE receipts ADD COLUMN custom_line_items TEXT");
 
 const leadCols = db.prepare("PRAGMA table_info(leads)").all().map(c => c.name);
 const addLeadCol = (name, def) => {

@@ -1528,6 +1528,73 @@ router.get('/', requireAuth, function(req, res) {
   ));
 });
 
+// ─── Custom line items (e.g. OEM parts upgrade) ───────────────────────────────
+// A custom line item is { label, amount }. It renders as its own priced row in the
+// customer quote/receipt email, is taxed as parts (added to the taxable base), and
+// is stored separate from `service` so it never affects per-service reporting.
+// Both the quote builder and receipt builder use these shared helpers; each page
+// defines bkRecalc() so a line-item change re-runs that form's price calc.
+
+// Parses a stored JSON array safely; always returns an array of normalized items
+// { label, amount, taxed }. taxed defaults to true unless explicitly false, so
+// items saved before the taxed/not-taxed toggle existed keep being taxed as parts.
+function parseLineItems(json) {
+  try {
+    var a = JSON.parse(json || '[]');
+    if (!Array.isArray(a)) return [];
+    return a.filter(function(it){ return it && it.label; }).map(function(it){
+      return { label: String(it.label), amount: Number(it.amount) || 0, taxed: it.taxed !== false };
+    });
+  } catch (_) { return []; }
+}
+
+// Server-rendered row used to prefill saved line items. The Taxed/Not-taxed
+// button carries its state in data-taxed; cliInit() applies its label and style
+// on page load so server and client rows look identical.
+function cliRowServer(label, amount, taxed) {
+  return '<div class="cli-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">'
+    + '<input type="text" class="cli-label" placeholder="e.g. OEM Brake Pads &amp; Rotors" value="' + esc(label || '') + '" oninput="cliChanged()" style="flex:1;min-width:140px;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;">'
+    + '<input type="number" class="cli-amount" placeholder="0" min="0" step="1" value="' + (amount != null && amount !== '' ? esc(String(amount)) : '') + '" oninput="cliChanged()" onfocus="this.select()" style="width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;">'
+    + '<button type="button" class="cli-tax" data-taxed="' + (taxed === false ? '0' : '1') + '" onclick="cliToggleTax(this)"></button>'
+    + '<button type="button" class="cli-x" onclick="cliRemove(this)" title="Remove" style="background:none;border:none;color:#c0392b;font-size:1.05rem;cursor:pointer;padding:0 4px;flex-shrink:0;">&#10005;</button>'
+    + '</div>';
+}
+
+// The form section (label + prefilled rows + Add button + hidden JSON field).
+function customLineItemsSection(items) {
+  items = Array.isArray(items) ? items : [];
+  return '<div class="form-group" style="margin-bottom:0;">'
+    + '<label>Custom line items <span style="color:#bbb;font-weight:400;">(optional — e.g. OEM parts; shows as its own priced line, taxed as parts, not counted in service reports)</span></label>'
+    + '<div id="cliRows">' + items.map(function(it){ return cliRowServer(it.label, it.amount, it.taxed); }).join('') + '</div>'
+    + '<button type="button" class="svc-clear-btn" style="margin-top:6px;" onclick="cliAdd()">+ Add line item</button>'
+    + '<input type="hidden" name="customLineItems" id="cliJson" value="' + esc(JSON.stringify(items)) + '">'
+    + '</div>';
+}
+
+// Client JS shared by both forms. cliSum() feeds each form's calc; cliChanged()
+// re-runs the page's bkRecalc(). Guarded so it is a no-op when the section is absent.
+var CLI_JS = ''
+  + 'var CLI_ON="background:#eef2ff;border:1.5px solid #c3d4f5;color:#1a3a7a;";'
+  + 'var CLI_OFF="background:#f4f4f5;border:1.5px solid #e0e0e3;color:#777;";'
+  + 'var CLI_BASE="padding:8px 9px;border-radius:8px;font-size:0.76rem;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap;width:84px;text-align:center;";'
+  + 'function cliSetTax(btn,taxed){btn.setAttribute("data-taxed",taxed?"1":"0");btn.textContent=taxed?"Taxed":"Not taxed";btn.style.cssText=CLI_BASE+(taxed?CLI_ON:CLI_OFF);}'
+  + 'function cliToggleTax(btn){cliSetTax(btn,btn.getAttribute("data-taxed")==="0");cliChanged();}'
+  + 'function cliInit(){document.querySelectorAll("#cliRows .cli-tax").forEach(function(b){cliSetTax(b,b.getAttribute("data-taxed")!=="0");});}'
+  + 'function cliRowHtml(){'
+  +   'return "<div class=\'cli-row\' style=\'display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;\'>"'
+  +     '+"<input type=\'text\' class=\'cli-label\' placeholder=\'e.g. OEM Brake Pads &amp; Rotors\' oninput=\'cliChanged()\' style=\'flex:1;min-width:140px;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;\'>"'
+  +     '+"<input type=\'number\' class=\'cli-amount\' placeholder=\'0\' min=\'0\' step=\'1\' oninput=\'cliChanged()\' onfocus=\'this.select()\' style=\'width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;\'>"'
+  +     '+"<button type=\'button\' class=\'cli-tax\' data-taxed=\'1\' onclick=\'cliToggleTax(this)\'><\\/button>"'
+  +     '+"<button type=\'button\' class=\'cli-x\' onclick=\'cliRemove(this)\' title=\'Remove\' style=\'background:none;border:none;color:#c0392b;font-size:1.05rem;cursor:pointer;padding:0 4px;flex-shrink:0;\'>&#10005;<\\/button>"'
+  +   '+"<\\/div>";'
+  + '}'
+  + 'function cliAdd(){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;document.getElementById("cliRows").appendChild(row);cliSetTax(row.querySelector(".cli-tax"),true);}'
+  + 'function cliRemove(btn){var r=btn.closest(".cli-row");if(r)r.remove();cliChanged();}'
+  + 'function cliCollect(){var items=[];document.querySelectorAll("#cliRows .cli-row").forEach(function(row){var label=(row.querySelector(".cli-label").value||"").trim();var amount=parseFloat(row.querySelector(".cli-amount").value)||0;var taxed=(row.querySelector(".cli-tax").getAttribute("data-taxed")!=="0");if(label)items.push({label:label,amount:amount,taxed:taxed});});var h=document.getElementById("cliJson");if(h)h.value=JSON.stringify(items);return items;}'
+  + 'function cliTaxedSum(){return cliCollect().reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);}'
+  + 'function cliSum(){return cliCollect().reduce(function(a,it){return a+(it.amount||0);},0);}'
+  + 'function cliChanged(){if(typeof bkRecalc==="function")bkRecalc();}';
+
 // ─── Quote tool ───────────────────────────────────────────────────────────────
 
 router.get('/quote/:id', requireAuth, function(req, res) {
@@ -1540,6 +1607,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var currentService = q.service || lead.service || '';
   var currentTier    = q.tier || 'standard';
   var currentTaxRate = q.tax_rate != null ? +(q.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
+  var currentLineItems    = parseLineItems(q.line_items);
+  var currentCustomerNotes = q.customer_notes || '';
 
   var effectivePricing = getEffectivePricing();
   var serviceNames = Object.keys(effectivePricing);
@@ -1805,6 +1874,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<span id="taxAmt">$' + money(q.tax) + '</span></div>'
     + '</div>'
 
+    // Custom line items (e.g. OEM parts) — priced rows kept out of `service` reporting
+    + '<div style="margin:4px 0 16px;">' + customLineItemsSection(currentLineItems) + '</div>'
+
     // Customer-facing totals
     + '<div class="price-section" style="margin-bottom:0;">'
     + '<div class="price-section-header">Customer Quote</div>'
@@ -1818,6 +1890,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div class="price-row" id="liCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
     + '<div class="price-row" id="liPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="partsOnlyDisplay">$' + money(q.price_parts || 0) + '</span></div>'
     + '<div class="price-row" id="liLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="laborOnlyDisplay">$' + money(q.price_labor || 0) + '</span></div>'
+    + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + money(q.shop_supplies) + '</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + money(q.tax) + '</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
@@ -1825,6 +1898,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
     + '<input type="hidden" name="taxAmt"   id="taxH"   value="' + fmt(q.tax)   + '">'
     + '<input type="hidden" name="totalAmt" id="totalH" value="' + fmt(q.total) + '">'
+
+    + '<div class="form-group" style="margin:16px 0 6px;"><label>Notes to customer <span style="color:#bbb;font-weight:400;">(optional — included in the quote email)</span></label>'
+    + '<textarea name="customerNotes" id="qbCustNotes" placeholder="e.g. Parts are in stock; we can usually schedule within 1-2 business days. Reach out anytime with questions." style="width:100%;min-height:74px;padding:10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;resize:vertical;box-sizing:border-box;">' + esc(currentCustomerNotes) + '</textarea></div>'
 
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
     + '<button type="button" class="btn btn-outline" onclick="togglePreview()" id="prevBtn">Preview Email</button>'
@@ -1919,14 +1995,20 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
 
-    // Tax is on parts + shop supplies only (not labor — Virginia law)
+    + CLI_JS
+    + 'function bkRecalc(){calc();}'
+    // Tax is on parts + shop supplies + custom line items (not labor — Virginia law)
     + 'function calc(){'
     +   'var parts=parseFloat(document.getElementById("parts").value)||0;'
     +   'var labor=parseFloat(document.getElementById("labor").value)||0;'
     +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("tr").value)||0;'
-    +   'var tax=(parts+ss)*tr/100;'
-    +   'var total=parts+labor+ss+tax;'
+    +   'var items=cliCollect();'
+    +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var tax=(parts+ss+cliTax)*tr/100;'
+    +   'var total=parts+labor+ss+cliAll+tax;'
+    +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
     +   'document.getElementById("partsOnlyDisplay").textContent="$"+money(parts);'
@@ -1966,11 +2048,13 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+(durTxt?"<p style=\'margin:0 0 12px;font-size:0.85rem;color:#555;\'>Estimated time on site: about "+durTxt+"</p>":"")'
     +     '+"<table style=\'width:100%;margin:12px 0;font-size:0.88rem;border-collapse:collapse;\'>"'
     +     '+(lineItems==="separate"?"<tr><td>Parts</td><td style=\'text-align:right;\'>$"+money(parts)+"</td></tr><tr><td>Labor</td><td style=\'text-align:right;\'>$"+money(labor)+"</td></tr>":"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>")'
+    +     '+cliCollect().map(function(it){return "<tr><td>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'text-align:right;\'>$"+money(it.amount)+"</td></tr>";}).join("")'
     +     '+"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>"'
     +     '+"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>"'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
     +     '+"</table>"'
     +     '+svcNames.map(function(s){return PRICING[s]&&PRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;font-size:0.85rem;\'>"+n+"</p>";}).join("")'
+    +     '+((((document.getElementById("qbCustNotes")||{}).value||"").trim())?("<p style=\'color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:6px;padding:10px 12px;font-size:0.86rem;\'>"+document.getElementById("qbCustNotes").value.trim().replace(/</g,"&lt;")+"</p>"):"")'
     +     '+"<p>Includes all parts and labor. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong>.</p>"'
     +     '+"<p style=\'margin-top:8px;\'>We come to your home or office. No shop visit needed.</p>"'
     +     '+"<p style=\'margin-top:8px;\'>Reply to this email or call/text <strong>703-977-4475</strong> to confirm.</p>"'
@@ -1982,6 +2066,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // On load: if this is a brand-new quote (no saved quote yet) with a service
     // already auto-filled from the lead, populate prices from the pricing table.
     // Otherwise just total up the saved/edited values without overwriting them.
+    + 'cliInit();'
     + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
     + 'updateServiceHints(Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;}));'
     + 'renderTags();'
@@ -2011,6 +2096,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("btnStd").classList.toggle("active",tier==="standard");'
     +   'document.getElementById("btnPrem").classList.toggle("active",tier==="premium");'
     +   'if(typeof setLineItems==="function"&&document.getElementById("lineItemsVal"))setLineItems(document.getElementById("lineItemsVal").value||"combined");'
+    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
     +   'renderTags();updateServiceHints(svc);calc();'
     + '};'
     + '</script>';
@@ -2036,6 +2122,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var totalAmt      = parseFloat(req.body.totalAmt)      || 0;
   var vin           = req.body.vin            || null;
   var internalNotes = req.body.internalNotes  || null;
+  var lineItems     = parseLineItems(req.body.customLineItems);
+  var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
+  var customerNotes = (req.body.customerNotes || '').trim() || null;
 
   var acceptToken = crypto.randomBytes(24).toString('hex');
 
@@ -2049,9 +2138,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   ).get(lead.id).n > 0;
 
   var info = db.prepare(
-    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, accept_token, sent_at, status) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
-  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, acceptToken, lead.email ? 'sent' : 'saved');
+    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, line_items, customer_notes, accept_token, sent_at, status) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
+  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lineItemsJson, customerNotes, acceptToken, lead.email ? 'sent' : 'saved');
 
   db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
@@ -2085,7 +2174,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       subject: isRevisedQuote
         ? 'Your Updated Brake Service Quote — Brake Knights'
         : 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, null, isRevisedQuote)
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, null, isRevisedQuote, customerNotes, lineItems)
     });
 
     res.redirect('/admin/quote/' + lead.id + '?msg=quote_sent');
@@ -2114,7 +2203,7 @@ function buildWarrantyClause(service) {
   return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
 }
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes, customLineItems) {
   var partsLabor  = parts + labor;
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
   var revisedBanner = isRevised
@@ -2150,6 +2239,9 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
               : '<tr><td style="padding:6px 0;">' + esc(it.service) + '</td><td style="text-align:right;">$' + money(it.parts + it.labor) + '</td></tr>';
           }).join('')
         : '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(partsLabor) + '</td></tr>')
+    + (Array.isArray(customLineItems) ? customLineItems.map(function(it) {
+        return '<tr><td style="padding:6px 0;">' + esc(it.label) + '</td><td style="text-align:right;">$' + money(it.amount) + '</td></tr>';
+      }).join('') : '')
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(shopSupplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(tax) + '</td></tr>'
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total</td>'
@@ -2236,6 +2328,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   var total     = partsLabor + shopSupplies + tax;
   var receiptTier = quote.tier === 'premium' ? 'premium' : 'standard';
   var taxPct    = quote.tax_rate != null ? +(quote.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
+  // Prefill any custom line items (e.g. OEM parts) carried over from the quote.
+  var rcLineItems = parseLineItems(quote.line_items);
 
   // Service picker mirrors the quote tool: a multi-select of every service so the
   // owner can change/add what was actually done if the job grew on arrival.
@@ -2313,10 +2407,12 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<input class="price-input" type="number" name="labor" id="rlabor" min="0" step="1" value="' + (Math.round(Number(quote.price_labor) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
     + '<input class="price-input" type="number" name="shopSupplies" id="rss" min="0" step="1" value="' + (Math.round(Number(shopSupplies) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
+    + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="rtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="rcalc()">%) on Parts + Supplies</span>'
     + '<span id="rtaxAmt">$' + money(tax) + '</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total Paid</span><span id="rtotal" style="font-size:1.15rem;">$' + money(total) + '</span></div>'
     + '</div>'
+    + '<div style="margin-top:14px;">' + customLineItemsSection(rcLineItems) + '</div>'
     + '<input type="hidden" name="tax" id="rtaxH" value="' + fmt(tax) + '">'
     + '<input type="hidden" name="total" id="rtotalH" value="' + fmt(total) + '">'
     + COLLAPSE_CLOSE
@@ -2340,14 +2436,20 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + 'var RPRICING=' + rPricingJson + ';'
     + 'var rtier="' + esc(receiptTier) + '";'
     + 'function rmoney(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
-    // Tax is on parts + shop supplies only (not labor — Virginia law), mirroring the quote builder
+    + CLI_JS
+    + 'function bkRecalc(){rcalc();}'
+    // Tax is on parts + shop supplies + custom line items (not labor — Virginia law)
     + 'function rcalc(){'
     +   'var parts=parseFloat(document.getElementById("rparts").value)||0;'
     +   'var labor=parseFloat(document.getElementById("rlabor").value)||0;'
     +   'var ss=parseFloat(document.getElementById("rss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("rtr").value)||0;'
-    +   'var tax=(parts+ss)*tr/100;'
-    +   'var t=parts+labor+ss+tax;'
+    +   'var items=cliCollect();'
+    +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var tax=(parts+ss+cliTax)*tr/100;'
+    +   'var t=parts+labor+ss+cliAll+tax;'
+    +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+rmoney(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("rtaxAmt").textContent="$"+rmoney(tax);'
     +   'document.getElementById("rtotal").textContent="$"+rmoney(t);'
     +   'document.getElementById("rtaxH").value=tax.toFixed(2);'
@@ -2415,9 +2517,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var v=document.querySelector("[name=fuTime"+i+"]").value;'
     +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
     + '}'
-    + 'rRenderTags();rPayToggle();'
+    + 'rRenderTags();rPayToggle();cliInit();'
     // Auto-fill prices from pricing table on page load if all price fields are 0
-    + 'if(!(parseFloat(document.getElementById("rparts").value)||parseFloat(document.getElementById("rlabor").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();'
+    + 'if(!(parseFloat(document.getElementById("rparts").value)||parseFloat(document.getElementById("rlabor").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();else rcalc();'
     + 'function bkAddAdvisory(pfx){'
     +   'for(var i=2;i<=4;i++){'
     +     'var r=document.getElementById((pfx||"")+"advRow"+i)||document.getElementById("advRow"+i);'
@@ -2448,6 +2550,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     '+(svcs.length?"<div><strong>Service:</strong> "+svcs.join(", ")+"</div>":"")'
     +     '+(veh?"<div style=\'margin-top:4px;\'><strong>Vehicle:</strong> "+veh+"</div>":"")'
     +     '+(svcDate?"<div style=\'margin-top:4px;\'><strong>Date:</strong> "+svcDate+"</div>":"")'
+    +     '+cliCollect().map(function(it){return "<div style=\'margin-top:4px;\'><strong>"+it.label.replace(/</g,"&lt;")+":</strong> $"+rmoney(it.amount)+"</div>";}).join("")'
     +     '+"<div style=\'margin-top:4px;\'><strong>Total:</strong> "+tot+"</div>"'
     +     '+(pm?"<div style=\'margin-top:4px;\'><strong>Payment:</strong> "+pm+"</div>":"")'
     +     '+"</div>"'
@@ -2467,6 +2570,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var allVis=true;for(var j=2;j<=4;j++){var rr=document.getElementById("advRow"+j);if(rr&&rr.style.display==="none")allVis=false;}'
     +   'if(allVis){var ab=document.getElementById("rAddAdvBtn");if(ab)ab.style.display="none";}'
     +   'for(var k=1;k<=4;k++){if(typeof toggleCustom==="function")toggleCustom(k);}'
+    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
     +   'if(typeof rcalc==="function")rcalc();'
     + '};'
     + '</script>'
@@ -2494,7 +2598,10 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var partsLabor   = parts + labor;
   var shopSupplies = parseFloat(req.body.shopSupplies) || 0;
   var tax          = parseFloat(req.body.tax)          || 0;
-  var total        = partsLabor + shopSupplies + tax;
+  var lineItems    = parseLineItems(req.body.customLineItems);
+  var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
+  var cliSum       = lineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
+  var total        = partsLabor + shopSupplies + cliSum + tax;
   var payment      = (req.body.paymentMethod || '').trim();
   if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
   var officeNotes  = (req.body.officeNotes || '').trim() || null;
@@ -2515,9 +2622,9 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id);
 
   var info = db.prepare(
-    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, total, payment, JSON.stringify(notes), officeNotes);
+    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, total, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
   var receiptId = info.lastInsertRowid;
 
   followups.forEach(function(f) {
@@ -2648,6 +2755,9 @@ function buildReceiptEmail(lead, r, notes) {
     + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Payment</p>'
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
     + '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(r.parts_labor) + '</td></tr>'
+    + parseLineItems(r.custom_line_items).map(function(it) {
+        return '<tr><td style="padding:6px 0;">' + esc(it.label) + '</td><td style="text-align:right;">$' + money(it.amount) + '</td></tr>';
+      }).join('')
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(r.shop_supplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(r.tax) + '</td></tr>'
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
