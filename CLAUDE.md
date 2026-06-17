@@ -191,6 +191,28 @@ Update this section at the end of each session to stay caught up next time.
   4. Decide on Square Appointments paid plan (Plus/Premium) to turn on live auto-booking
 - Follow-up reminder testing note: the Phase 6 cron fires every 6 hours (not instantly). To test a reminder: set a follow-up date to today, then wait for the next cron run (check server logs for "follow-up cron" entries). On dev, the cron fires on the dev server; on master, it fires on the live server. Don't test on master with real customer leads.
 
+## Full Build Summary (Permanent Reference)
+
+**What it is:** A fully owned business platform for Brake Knights (mobile brake repair, Northern Virginia). Public marketing website plus a password-protected CRM/admin at `/admin`. Square is used only as payment processor and calendar backend; all customer communication (quotes, confirmations, receipts, follow-ups) runs through our own system. Long-term goal: white-label and resell to other service businesses.
+
+**Tech stack:** Node.js (>=22) + Express 4, `better-sqlite3` (synchronous SQLite, WAL), `express-session` with custom SQLite store, `nodemailer` (Hostinger SMTP), Square SDK v44, Node `crypto` for accept tokens. Frontend is plain server-rendered HTML/CSS/JS (no framework, no build step), self-hosted Font Awesome, Google Maps + Places for address autocomplete. Single SQLite file (`data/brakeknights.db`): tables `leads`, `quotes`, `lead_history`, `receipts`, `followups`, `sessions`, `push_subscriptions`, plus pricing/vehicle-mapping foundation tables. Hostinger git auto-deploy: `dev` → dev.brakeknights.com, `master` → brakeknights.com.
+
+**Phases built:**
+- **Phase 1 — Public website:** 45 pages (homepage, about, contact, services, 6 service-detail, 32 location, legal, blog). Contact form → owner notification + branded customer confirmation. Full SEO (schema, canonical, OG/Twitter, sitemap, robots), mobile menu, Google Reviews, job photos.
+- **Phase 2 — Square CRM foundation:** Contact form auto-creates/finds Square customer; `square_customer_id` stored on lead.
+- **Phase 3 + 4 — Quote tool & booking:** Owner quote builder (service/tier, live price auto-fill), tokenized accept link, customer accept page (inline calendar), Approve/Deny, confirmation email with .ics links, T-24h/T-2h reminder cron.
+- **Phase 5 — Receipts:** Post-job receipt builder (service, vehicle, date, address, payment, up to 4 advisories, office notes), branded receipt email, lead auto-completes, advisories carry timed follow-ups.
+- **Phase 6 — Follow-up automation:** `followups` table + 6h cron fires owner/customer reminders; `/admin/followups` dashboard (Due/Upcoming/Sent), reschedule/done/cancel, topbar badge, ad-hoc reminders; receipt/profile refinements.
+- **Phase 7 / 7A / 7B / 7C — Full CRM:** Quick Quote/Receipt generator (`/admin/quick`, three outcomes: calculator-only / Send / copyable link); customer profiles (`customers` table, auto-link by email/phone, list + full profile with vehicles, addresses, notes, tags, job history, follow-ups, lifetime stats); dashboard + revenue/conversions/services reports.
+- **Phase 8 (in progress):** NHTSA year/make/model cascading dropdowns site-wide, Appointments tab, Eastern Time timestamps, Square customer import, foundation tables for per-vehicle pricing.
+- **Phase 8E/8F — Push notifications:** Bell icon, service worker, VAPID keys, `push_subscriptions`, fires on every new lead. Live in production.
+
+**Security (Rule #1):** Production secret guard, hardened session cookies, login brute-force lockout + constant-time compare + session regeneration, site-wide security headers (HSTS in prod), parameterized SQL everywhere, `esc()` escaping, all admin routes behind `requireAuth`, tokenized customer links as the only public data path, DB + `.env` gitignored.
+
+**Status:** Phases 1-7 + 8E/8F live; Phase 8 (automated quotes) in progress. dev and master in sync.
+
+**Next:** Phase 8 automated quotes (needs per-vehicle pricing matrix finalized first), Phase 6C Square webhook auto-trigger, Phase 9 white-label, Square Appointments paid plan to unblock live auto-booking.
+
 ## Pre-Launch Checklist (Before Merging to Master)
 
 ### Functional
