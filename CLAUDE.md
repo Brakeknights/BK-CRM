@@ -170,7 +170,7 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
-- Last working branch: `claude/laughing-babbage-2dowpy` — merged to master via PR #29 ✅
+- Last working branch: `claude/blissful-feynman-f0raph` — merged to master via PR #44 ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
@@ -246,6 +246,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Job photo feature: upload photos mid-job (from lead profile, before receipt exists) and attach to receipt email; tokenized public serve route (/photos/:token); customer profile gallery across all jobs. Storage in /data/uploads/ outside git. multer for uploads, job_photos table in SQLite.
 
 ### Completed This Session
+- [x] PR #44: CRM login → Appointments landing; saved-address auto-fill on address forms; prevent duplicate saved addresses on profile save; phone formatting fix for numbers stored with leading country code 1; push notification reliability fix. Merged to master, live. dev and master in sync.
 - [x] PR #29: Vehicle cascade dropdowns (NHTSA API, "Other" free-text fallback) applied to Quick Quote and Receipt Builder; appointments Clear Selection now zeroes prices; Preview Email button on New Appointment form; required year/make/model validation on public contact forms (index.html + contact.html).
 
 ### Previously Completed This Session
