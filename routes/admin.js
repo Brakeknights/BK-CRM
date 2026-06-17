@@ -1535,17 +1535,27 @@ router.get('/', requireAuth, function(req, res) {
 // Both the quote builder and receipt builder use these shared helpers; each page
 // defines bkRecalc() so a line-item change re-runs that form's price calc.
 
-// Parses a stored JSON array safely; always returns an array.
+// Parses a stored JSON array safely; always returns an array of normalized items
+// { label, amount, taxed }. taxed defaults to true unless explicitly false, so
+// items saved before the taxed/not-taxed toggle existed keep being taxed as parts.
 function parseLineItems(json) {
-  try { var a = JSON.parse(json || '[]'); return Array.isArray(a) ? a.filter(function(it){ return it && it.label; }) : []; }
-  catch (_) { return []; }
+  try {
+    var a = JSON.parse(json || '[]');
+    if (!Array.isArray(a)) return [];
+    return a.filter(function(it){ return it && it.label; }).map(function(it){
+      return { label: String(it.label), amount: Number(it.amount) || 0, taxed: it.taxed !== false };
+    });
+  } catch (_) { return []; }
 }
 
-// Server-rendered row used to prefill saved line items.
-function cliRowServer(label, amount) {
-  return '<div class="cli-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">'
-    + '<input type="text" class="cli-label" placeholder="e.g. OEM Brake Pads &amp; Rotors" value="' + esc(label || '') + '" oninput="cliChanged()" style="flex:1;min-width:0;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;">'
-    + '<input type="number" class="cli-amount" placeholder="0" min="0" step="1" value="' + (amount != null && amount !== '' ? esc(String(amount)) : '') + '" oninput="cliChanged()" onfocus="this.select()" style="width:96px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;">'
+// Server-rendered row used to prefill saved line items. The Taxed/Not-taxed
+// button carries its state in data-taxed; cliInit() applies its label and style
+// on page load so server and client rows look identical.
+function cliRowServer(label, amount, taxed) {
+  return '<div class="cli-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">'
+    + '<input type="text" class="cli-label" placeholder="e.g. OEM Brake Pads &amp; Rotors" value="' + esc(label || '') + '" oninput="cliChanged()" style="flex:1;min-width:140px;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;">'
+    + '<input type="number" class="cli-amount" placeholder="0" min="0" step="1" value="' + (amount != null && amount !== '' ? esc(String(amount)) : '') + '" oninput="cliChanged()" onfocus="this.select()" style="width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;">'
+    + '<button type="button" class="cli-tax" data-taxed="' + (taxed === false ? '0' : '1') + '" onclick="cliToggleTax(this)"></button>'
     + '<button type="button" class="cli-x" onclick="cliRemove(this)" title="Remove" style="background:none;border:none;color:#c0392b;font-size:1.05rem;cursor:pointer;padding:0 4px;flex-shrink:0;">&#10005;</button>'
     + '</div>';
 }
@@ -1555,7 +1565,7 @@ function customLineItemsSection(items) {
   items = Array.isArray(items) ? items : [];
   return '<div class="form-group" style="margin-bottom:0;">'
     + '<label>Custom line items <span style="color:#bbb;font-weight:400;">(optional — e.g. OEM parts; shows as its own priced line, taxed as parts, not counted in service reports)</span></label>'
-    + '<div id="cliRows">' + items.map(function(it){ return cliRowServer(it.label, it.amount); }).join('') + '</div>'
+    + '<div id="cliRows">' + items.map(function(it){ return cliRowServer(it.label, it.amount, it.taxed); }).join('') + '</div>'
     + '<button type="button" class="svc-clear-btn" style="margin-top:6px;" onclick="cliAdd()">+ Add line item</button>'
     + '<input type="hidden" name="customLineItems" id="cliJson" value="' + esc(JSON.stringify(items)) + '">'
     + '</div>';
@@ -1564,16 +1574,24 @@ function customLineItemsSection(items) {
 // Client JS shared by both forms. cliSum() feeds each form's calc; cliChanged()
 // re-runs the page's bkRecalc(). Guarded so it is a no-op when the section is absent.
 var CLI_JS = ''
+  + 'var CLI_ON="background:#eef2ff;border:1.5px solid #c3d4f5;color:#1a3a7a;";'
+  + 'var CLI_OFF="background:#f4f4f5;border:1.5px solid #e0e0e3;color:#777;";'
+  + 'var CLI_BASE="padding:8px 9px;border-radius:8px;font-size:0.76rem;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap;width:84px;text-align:center;";'
+  + 'function cliSetTax(btn,taxed){btn.setAttribute("data-taxed",taxed?"1":"0");btn.textContent=taxed?"Taxed":"Not taxed";btn.style.cssText=CLI_BASE+(taxed?CLI_ON:CLI_OFF);}'
+  + 'function cliToggleTax(btn){cliSetTax(btn,btn.getAttribute("data-taxed")==="0");cliChanged();}'
+  + 'function cliInit(){document.querySelectorAll("#cliRows .cli-tax").forEach(function(b){cliSetTax(b,b.getAttribute("data-taxed")!=="0");});}'
   + 'function cliRowHtml(){'
-  +   'return "<div class=\'cli-row\' style=\'display:flex;gap:8px;margin-bottom:8px;align-items:center;\'>"'
-  +     '+"<input type=\'text\' class=\'cli-label\' placeholder=\'e.g. OEM Brake Pads &amp; Rotors\' oninput=\'cliChanged()\' style=\'flex:1;min-width:0;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;\'>"'
-  +     '+"<input type=\'number\' class=\'cli-amount\' placeholder=\'0\' min=\'0\' step=\'1\' oninput=\'cliChanged()\' onfocus=\'this.select()\' style=\'width:96px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;\'>"'
+  +   'return "<div class=\'cli-row\' style=\'display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;\'>"'
+  +     '+"<input type=\'text\' class=\'cli-label\' placeholder=\'e.g. OEM Brake Pads &amp; Rotors\' oninput=\'cliChanged()\' style=\'flex:1;min-width:140px;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;\'>"'
+  +     '+"<input type=\'number\' class=\'cli-amount\' placeholder=\'0\' min=\'0\' step=\'1\' oninput=\'cliChanged()\' onfocus=\'this.select()\' style=\'width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;\'>"'
+  +     '+"<button type=\'button\' class=\'cli-tax\' data-taxed=\'1\' onclick=\'cliToggleTax(this)\'><\\/button>"'
   +     '+"<button type=\'button\' class=\'cli-x\' onclick=\'cliRemove(this)\' title=\'Remove\' style=\'background:none;border:none;color:#c0392b;font-size:1.05rem;cursor:pointer;padding:0 4px;flex-shrink:0;\'>&#10005;<\\/button>"'
   +   '+"<\\/div>";'
   + '}'
-  + 'function cliAdd(){var w=document.createElement("div");w.innerHTML=cliRowHtml();document.getElementById("cliRows").appendChild(w.firstChild);}'
+  + 'function cliAdd(){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;document.getElementById("cliRows").appendChild(row);cliSetTax(row.querySelector(".cli-tax"),true);}'
   + 'function cliRemove(btn){var r=btn.closest(".cli-row");if(r)r.remove();cliChanged();}'
-  + 'function cliCollect(){var items=[];document.querySelectorAll("#cliRows .cli-row").forEach(function(row){var label=(row.querySelector(".cli-label").value||"").trim();var amount=parseFloat(row.querySelector(".cli-amount").value)||0;if(label)items.push({label:label,amount:amount});});var h=document.getElementById("cliJson");if(h)h.value=JSON.stringify(items);return items;}'
+  + 'function cliCollect(){var items=[];document.querySelectorAll("#cliRows .cli-row").forEach(function(row){var label=(row.querySelector(".cli-label").value||"").trim();var amount=parseFloat(row.querySelector(".cli-amount").value)||0;var taxed=(row.querySelector(".cli-tax").getAttribute("data-taxed")!=="0");if(label)items.push({label:label,amount:amount,taxed:taxed});});var h=document.getElementById("cliJson");if(h)h.value=JSON.stringify(items);return items;}'
+  + 'function cliTaxedSum(){return cliCollect().reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);}'
   + 'function cliSum(){return cliCollect().reduce(function(a,it){return a+(it.amount||0);},0);}'
   + 'function cliChanged(){if(typeof bkRecalc==="function")bkRecalc();}';
 
@@ -1986,9 +2004,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("tr").value)||0;'
     +   'var items=cliCollect();'
-    +   'var cli=items.reduce(function(a,it){return a+(it.amount||0);},0);'
-    +   'var tax=(parts+ss+cli)*tr/100;'
-    +   'var total=parts+labor+ss+cli+tax;'
+    +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var tax=(parts+ss+cliTax)*tr/100;'
+    +   'var total=parts+labor+ss+cliAll+tax;'
     +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
@@ -2047,6 +2066,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // On load: if this is a brand-new quote (no saved quote yet) with a service
     // already auto-filled from the lead, populate prices from the pricing table.
     // Otherwise just total up the saved/edited values without overwriting them.
+    + 'cliInit();'
     + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
     + 'updateServiceHints(Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;}));'
     + 'renderTags();'
@@ -2076,7 +2096,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("btnStd").classList.toggle("active",tier==="standard");'
     +   'document.getElementById("btnPrem").classList.toggle("active",tier==="premium");'
     +   'if(typeof setLineItems==="function"&&document.getElementById("lineItemsVal"))setLineItems(document.getElementById("lineItemsVal").value||"combined");'
-    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");c.appendChild(row);});}}}catch(e){}'
+    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
     +   'renderTags();updateServiceHints(svc);calc();'
     + '};'
     + '</script>';
@@ -2425,9 +2445,10 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var ss=parseFloat(document.getElementById("rss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("rtr").value)||0;'
     +   'var items=cliCollect();'
-    +   'var cli=items.reduce(function(a,it){return a+(it.amount||0);},0);'
-    +   'var tax=(parts+ss+cli)*tr/100;'
-    +   'var t=parts+labor+ss+cli+tax;'
+    +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var tax=(parts+ss+cliTax)*tr/100;'
+    +   'var t=parts+labor+ss+cliAll+tax;'
     +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+rmoney(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("rtaxAmt").textContent="$"+rmoney(tax);'
     +   'document.getElementById("rtotal").textContent="$"+rmoney(t);'
@@ -2496,7 +2517,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var v=document.querySelector("[name=fuTime"+i+"]").value;'
     +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
     + '}'
-    + 'rRenderTags();rPayToggle();'
+    + 'rRenderTags();rPayToggle();cliInit();'
     // Auto-fill prices from pricing table on page load if all price fields are 0
     + 'if(!(parseFloat(document.getElementById("rparts").value)||parseFloat(document.getElementById("rlabor").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();else rcalc();'
     + 'function bkAddAdvisory(pfx){'
@@ -2549,7 +2570,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var allVis=true;for(var j=2;j<=4;j++){var rr=document.getElementById("advRow"+j);if(rr&&rr.style.display==="none")allVis=false;}'
     +   'if(allVis){var ab=document.getElementById("rAddAdvBtn");if(ab)ab.style.display="none";}'
     +   'for(var k=1;k<=4;k++){if(typeof toggleCustom==="function")toggleCustom(k);}'
-    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");c.appendChild(row);});}}}catch(e){}'
+    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
     +   'if(typeof rcalc==="function")rcalc();'
     + '};'
     + '</script>'
