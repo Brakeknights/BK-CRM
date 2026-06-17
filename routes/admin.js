@@ -2235,6 +2235,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   var tax       = quote.tax || 0;
   var total     = partsLabor + shopSupplies + tax;
   var receiptTier = quote.tier === 'premium' ? 'premium' : 'standard';
+  var taxPct    = quote.tax_rate != null ? +(quote.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
 
   // Service picker mirrors the quote tool: a multi-select of every service so the
   // owner can change/add what was actually done if the job grew on arrival.
@@ -2306,14 +2307,17 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
 
     + collapseOpen('rc_amount', 'Amount Paid', true)
     + '<div class="price-section" style="margin-bottom:0;">'
-    + '<div class="price-row"><span class="price-label">Parts &amp; Labor</span>'
-    + '<input class="price-input" type="number" name="partsLabor" id="rpl" min="0" step="0.01" value="' + fmt(partsLabor) + '" oninput="rcalc()"></div>'
+    + '<div class="price-row"><span class="price-label">Parts</span>'
+    + '<input class="price-input" type="number" name="parts" id="rparts" min="0" step="1" value="' + (Math.round(Number(quote.price_parts) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
+    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
+    + '<input class="price-input" type="number" name="labor" id="rlabor" min="0" step="1" value="' + (Math.round(Number(quote.price_labor) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
-    + '<input class="price-input" type="number" name="shopSupplies" id="rss" min="0" step="0.01" value="' + fmt(shopSupplies) + '" oninput="rcalc()"></div>'
-    + '<div class="price-row"><span class="price-label">Tax</span>'
-    + '<input class="price-input" type="number" name="tax" id="rtax" min="0" step="0.01" value="' + fmt(tax) + '" oninput="rcalc()"></div>'
+    + '<input class="price-input" type="number" name="shopSupplies" id="rss" min="0" step="1" value="' + (Math.round(Number(shopSupplies) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
+    + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="rtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="rcalc()">%) on Parts + Supplies</span>'
+    + '<span id="rtaxAmt">$' + money(tax) + '</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total Paid</span><span id="rtotal" style="font-size:1.15rem;">$' + money(total) + '</span></div>'
     + '</div>'
+    + '<input type="hidden" name="tax" id="rtaxH" value="' + fmt(tax) + '">'
     + '<input type="hidden" name="total" id="rtotalH" value="' + fmt(total) + '">'
     + COLLAPSE_CLOSE
 
@@ -2334,14 +2338,19 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
 
     + '<script>'
     + 'var RPRICING=' + rPricingJson + ';'
-    + 'var RTAXRATE=' + PRICING.taxRate + ';'
     + 'var rtier="' + esc(receiptTier) + '";'
+    + 'function rmoney(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    // Tax is on parts + shop supplies only (not labor — Virginia law), mirroring the quote builder
     + 'function rcalc(){'
-    +   'var pl=parseFloat(document.getElementById("rpl").value)||0;'
+    +   'var parts=parseFloat(document.getElementById("rparts").value)||0;'
+    +   'var labor=parseFloat(document.getElementById("rlabor").value)||0;'
     +   'var ss=parseFloat(document.getElementById("rss").value)||0;'
-    +   'var tax=parseFloat(document.getElementById("rtax").value)||0;'
-    +   'var t=pl+ss+tax;'
-    +   'document.getElementById("rtotal").textContent="$"+t.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});'
+    +   'var tr=parseFloat(document.getElementById("rtr").value)||0;'
+    +   'var tax=(parts+ss)*tr/100;'
+    +   'var t=parts+labor+ss+tax;'
+    +   'document.getElementById("rtaxAmt").textContent="$"+rmoney(tax);'
+    +   'document.getElementById("rtotal").textContent="$"+rmoney(t);'
+    +   'document.getElementById("rtaxH").value=tax.toFixed(2);'
     +   'document.getElementById("rtotalH").value=t.toFixed(2);'
     + '}'
     + 'function rCheckedServices(){'
@@ -2374,9 +2383,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + 'function rAutofill(){'
     +   'var names=rCheckedServices();'
     +   'if(names.length===0){'
-    +     'document.getElementById("rpl").value="0.00";'
+    +     'document.getElementById("rparts").value="0.00";'
+    +     'document.getElementById("rlabor").value="0.00";'
     +     'document.getElementById("rss").value="0.00";'
-    +     'document.getElementById("rtax").value="0.00";'
     +     'rcalc();return;'
     +   '}'
     +   'var parts=0,labor=0,ss=0;'
@@ -2385,10 +2394,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     'var p=sv[rtier]||sv.standard;if(!p)return;'
     +     'parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;'
     +   '});'
-    +   'var tax=(parts+ss)*RTAXRATE;'
-    +   'document.getElementById("rpl").value=(parts+labor).toFixed(2);'
+    +   'document.getElementById("rparts").value=parts.toFixed(2);'
+    +   'document.getElementById("rlabor").value=labor.toFixed(2);'
     +   'document.getElementById("rss").value=ss.toFixed(2);'
-    +   'document.getElementById("rtax").value=tax.toFixed(2);'
     +   'rcalc();'
     + '}'
     + 'function rUpdateServices(){'
@@ -2409,7 +2417,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '}'
     + 'rRenderTags();rPayToggle();'
     // Auto-fill prices from pricing table on page load if all price fields are 0
-    + 'if(!(parseFloat(document.getElementById("rpl").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();'
+    + 'if(!(parseFloat(document.getElementById("rparts").value)||parseFloat(document.getElementById("rlabor").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();'
     + 'function bkAddAdvisory(pfx){'
     +   'for(var i=2;i<=4;i++){'
     +     'var r=document.getElementById((pfx||"")+"advRow"+i)||document.getElementById("advRow"+i);'
@@ -2422,7 +2430,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var box=document.getElementById("rPreviewBox");'
     +   'if(box.style.display!=="none"){box.style.display="none";document.getElementById("rPrevBtn").textContent="Preview Receipt Email";return;}'
     +   'var svcs=Array.from(document.querySelectorAll(".rsvc-cb:checked")).map(function(c){return c.value;});'
-    +   'var veh=(document.querySelector("[name=vehicle]")||{}).value||"";'
+    +   'var rcustom=(document.querySelector("[name=customService]")||{}).value.trim();'
+    +   'if(rcustom)svcs.push(rcustom);'
+    +   'var veh=[(document.querySelector("[name=veh_year]")||{}).value||"",(document.querySelector("[name=veh_make]")||{}).value||"",(document.querySelector("[name=veh_model]")||{}).value||""].filter(Boolean).join(" ");'
     +   'var svcDate=(document.querySelector("[name=serviceDate]")||{}).value||"";'
     +   'var pm=(document.getElementById("rpm")||{}).value||"";'
     +   'var tot=document.getElementById("rtotal").textContent||"$0.00";'
@@ -2479,7 +2489,9 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var vehicle      = [req.body.veh_year, req.body.veh_make, req.body.veh_model].map(function(v){return (v||'').trim();}).filter(Boolean).join(' ');
   var serviceDate  = (req.body.serviceDate || '').trim() || easternToday();
   var address      = (req.body.serviceAddress || '').trim();
-  var partsLabor   = parseFloat(req.body.partsLabor)   || 0;
+  var parts        = parseFloat(req.body.parts)        || 0;
+  var labor        = parseFloat(req.body.labor)        || 0;
+  var partsLabor   = parts + labor;
   var shopSupplies = parseFloat(req.body.shopSupplies) || 0;
   var tax          = parseFloat(req.body.tax)          || 0;
   var total        = partsLabor + shopSupplies + tax;
