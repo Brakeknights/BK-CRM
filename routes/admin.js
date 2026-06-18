@@ -644,6 +644,7 @@ var ICON_PATHS = {
   archive:     '<path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>',
   user:        '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>',
   calendar:    '<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>',
+  edit:        '<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/>',
   clock:       '<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>',
   'bell-slash': '<path stroke-linecap="round" stroke-linejoin="round" d="M9.143 17.082a24.248 24.248 0 003.844.148m-3.844-.148a23.856 23.856 0 01-5.455-1.31A8.967 8.967 0 012.25 9c0-.06 0-.12.003-.18m5.894 8.262a24.265 24.265 0 003.844.148m-3.844-.148L9 21m-6-4.5A8.967 8.967 0 012.25 9c0-.06 0-.12.003-.18M21 21L3 3m18 0a8.967 8.967 0 011.003 3.82M21.003 8.82A8.97 8.97 0 0121.75 12c0 3.26-1.74 6.12-4.357 7.773m-1.393-1.39a23.848 23.848 0 01-4.143.699m4.143-.699L15 21m-3-3.75a3 3 0 005.714 0"/>'
 };
@@ -4848,6 +4849,7 @@ router.get('/appointments', requireAuth, function(req, res) {
       + (a.pref_location ? '<div style="font-size:0.82rem;margin-top:2px;">' + mapsLink(a.pref_location, { style: 'color:#1a6fc4;font-size:0.82rem;text-decoration:none;' }) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(a.total) + '</div>'
       + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
+      + '<a href="/admin/appointments/' + a.id + '/edit" class="btn btn-sm" style="width:auto;background:#eef6ee;color:#1a7a3a;border:1px solid #b6dcc0;text-decoration:none;" onclick="event.stopPropagation();">' + ic('edit') + 'Edit</a>'
       + '<button type="button" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">' + ic('calendar') + 'Reschedule</button>'
       + '<form method="POST" action="/admin/appointments/' + a.id + '/cancel" style="display:inline;margin:0;" onsubmit="return confirm(\'Cancel this appointment? The lead will return to the pipeline.\');">'
       + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;" onclick="event.stopPropagation();">Cancel Appt</button>'
@@ -4998,6 +5000,8 @@ router.get('/appointments', requireAuth, function(req, res) {
 
   var apptMsg = '';
   if (req.query.msg === 'rescheduled') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment rescheduled.</div>';
+  if (req.query.msg === 'appt_updated') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment updated. The customer was not emailed.</div>';
+  if (req.query.msg === 'appt_updated_email') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment updated and an updated confirmation was emailed to the customer.</div>';
   if (req.query.msg === 'cancelled') apptMsg = '<div class="alert" style="margin-bottom:14px;background:#fff8e1;border:1px solid #f0b429;color:#6b4c00;padding:10px 14px;border-radius:8px;">Appointment cancelled. Lead returned to pipeline.</div>';
   if (req.query.msg === 'blocked') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Time blocked off.</div>';
   if (req.query.msg === 'blockremoved') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Time block removed.</div>';
@@ -5083,6 +5087,66 @@ router.post('/appointments/block/:id/delete', requireAuth, function(req, res) {
   db.prepare('DELETE FROM personal_events WHERE id = ?').run(req.params.id);
   res.redirect('/admin/appointments?msg=blockremoved');
 });
+
+// Shared service multi-select + tier + pricing JS for the New and Edit appointment
+// forms. Both render the same element ids, so this single block drives both. The
+// caller defines `APPT_PRICING`, `apptTier`, and `apptLineItems` before including it.
+function apptFormJs(taxRate) {
+  return 'function apptSetTier(t){'
+    +   'apptTier=t;document.getElementById("apptTier").value=t;'
+    +   'document.getElementById("apptBtnStd").classList.toggle("active",t==="standard");'
+    +   'document.getElementById("apptBtnPrem").classList.toggle("active",t==="premium");'
+    +   'apptAutofill();'
+    + '}'
+    + 'function apptCheckedServices(){return Array.from(document.querySelectorAll(".appt-svc-cb:checked")).map(function(c){return c.value;});}'
+    + 'function apptRenderTags(){'
+    +   'var tags=apptCheckedServices().map(function(n){'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'apptRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
+    +   '});'
+    +   'document.getElementById("apptSvcTags").innerHTML=tags.join("");'
+    + '}'
+    + 'function apptRemoveTag(btn){'
+    +   'var val=btn.getAttribute("data-val");'
+    +   'var cb=Array.from(document.querySelectorAll(".appt-svc-cb")).find(function(c){return c.value===val;});'
+    +   'if(cb)cb.checked=false;apptUpdateServices();'
+    + '}'
+    + 'function apptClearServices(){document.querySelectorAll(".appt-svc-cb").forEach(function(cb){cb.checked=false;});apptUpdateServices();}'
+    + 'function apptUpdateServices(){apptRenderTags();apptAutofill();}'
+    + 'function apptAutofill(){'
+    +   'var names=apptCheckedServices();'
+    +   'document.getElementById("apptSvcHidden").value=names.join(", ");'
+    +   'if(names.length===0){document.getElementById("apptParts").value="0";document.getElementById("apptLabor").value="0";document.getElementById("apptSupplies").value="0";apptCalc();return;}'
+    +   'var parts=0,labor=0,ss=0;'
+    +   'names.forEach(function(s){var sv=APPT_PRICING[s];if(!sv)return;var p=sv[apptTier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
+    +   'document.getElementById("apptParts").value=Math.round(parts);'
+    +   'document.getElementById("apptLabor").value=Math.round(labor);'
+    +   'document.getElementById("apptSupplies").value=Math.round(ss);'
+    +   'apptCalc();'
+    + '}'
+    + 'function apptSetLineItems(v){'
+    +   'apptLineItems=v;document.getElementById("apptLineItemsVal").value=v;'
+    +   'document.getElementById("apptBtnCombined").classList.toggle("active",v==="combined");'
+    +   'document.getElementById("apptBtnSeparate").classList.toggle("active",v==="separate");'
+    +   'document.getElementById("apptLiCombinedRow").style.display=v==="combined"?"":"none";'
+    +   'document.getElementById("apptLiPartsRow").style.display=v==="separate"?"":"none";'
+    +   'document.getElementById("apptLiLaborRow").style.display=v==="separate"?"":"none";'
+    + '}'
+    + 'function apptCalc(){'
+    +   'var parts=parseFloat(document.getElementById("apptParts").value)||0;'
+    +   'var labor=parseFloat(document.getElementById("apptLabor").value)||0;'
+    +   'var ss=parseFloat(document.getElementById("apptSupplies").value)||0;'
+    +   'var tax=Math.round((parts+ss)*' + taxRate + '*100)/100;'
+    +   'var total=Math.round((parts+labor+ss+tax)*100)/100;'
+    +   'function apMon(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    +   'document.getElementById("apptTaxAmt").textContent="$"+apMon(tax);'
+    +   'document.getElementById("apptTaxDisplay").textContent="$"+apMon(tax);'
+    +   'document.getElementById("apptPlDisplay").textContent="$"+apMon(parts+labor);'
+    +   'document.getElementById("apptPartsOnlyDisplay").textContent="$"+apMon(parts);'
+    +   'document.getElementById("apptLaborOnlyDisplay").textContent="$"+apMon(labor);'
+    +   'document.getElementById("apptSsDisplay").textContent="$"+apMon(ss);'
+    +   'document.getElementById("apptTotal").textContent="$"+apMon(total);'
+    + '}';
+}
 
 router.get('/appointments/new', requireAuth, function(req, res) {
   var apptPricing = getEffectivePricing();
@@ -5278,6 +5342,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + 'var APPT_PRICING=' + pricingJson + ';'
     + 'var CUST_LIST=' + custJson + ';'
     + 'var apptTier="standard";'
+    + 'var apptLineItems="combined";'
     // Customer typeahead
     + '(function(){'
     +   'var inp=document.getElementById("custPickerInput");'
@@ -5354,61 +5419,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'if(q){var hits=CUST_LIST.filter(function(c){return c.search.indexOf(q)!==-1;}).slice(0,8);showDrop(hits);}'
     +   '});'
     + '})();'
-    + 'function apptSetTier(t){'
-    +   'apptTier=t;document.getElementById("apptTier").value=t;'
-    +   'document.getElementById("apptBtnStd").classList.toggle("active",t==="standard");'
-    +   'document.getElementById("apptBtnPrem").classList.toggle("active",t==="premium");'
-    +   'apptAutofill();'
-    + '}'
-    + 'function apptCheckedServices(){return Array.from(document.querySelectorAll(".appt-svc-cb:checked")).map(function(c){return c.value;});}'
-    + 'function apptRenderTags(){'
-    +   'var tags=apptCheckedServices().map(function(n){'
-    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'apptRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
-    +   '});'
-    +   'document.getElementById("apptSvcTags").innerHTML=tags.join("");'
-    + '}'
-    + 'function apptRemoveTag(btn){'
-    +   'var val=btn.getAttribute("data-val");'
-    +   'var cb=Array.from(document.querySelectorAll(".appt-svc-cb")).find(function(c){return c.value===val;});'
-    +   'if(cb)cb.checked=false;apptUpdateServices();'
-    + '}'
-    + 'function apptClearServices(){document.querySelectorAll(".appt-svc-cb").forEach(function(cb){cb.checked=false;});apptUpdateServices();}'
-    + 'function apptUpdateServices(){apptRenderTags();apptAutofill();}'
-    + 'function apptAutofill(){'
-    +   'var names=apptCheckedServices();'
-    +   'document.getElementById("apptSvcHidden").value=names.join(", ");'
-    +   'if(names.length===0){document.getElementById("apptParts").value="0";document.getElementById("apptLabor").value="0";document.getElementById("apptSupplies").value="0";apptCalc();return;}'
-    +   'var parts=0,labor=0,ss=0;'
-    +   'names.forEach(function(s){var sv=APPT_PRICING[s];if(!sv)return;var p=sv[apptTier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
-    +   'document.getElementById("apptParts").value=Math.round(parts);'
-    +   'document.getElementById("apptLabor").value=Math.round(labor);'
-    +   'document.getElementById("apptSupplies").value=Math.round(ss);'
-    +   'apptCalc();'
-    + '}'
-    + 'var apptLineItems="combined";'
-    + 'function apptSetLineItems(v){'
-    +   'apptLineItems=v;document.getElementById("apptLineItemsVal").value=v;'
-    +   'document.getElementById("apptBtnCombined").classList.toggle("active",v==="combined");'
-    +   'document.getElementById("apptBtnSeparate").classList.toggle("active",v==="separate");'
-    +   'document.getElementById("apptLiCombinedRow").style.display=v==="combined"?"":"none";'
-    +   'document.getElementById("apptLiPartsRow").style.display=v==="separate"?"":"none";'
-    +   'document.getElementById("apptLiLaborRow").style.display=v==="separate"?"":"none";'
-    + '}'
-    + 'function apptCalc(){'
-    +   'var parts=parseFloat(document.getElementById("apptParts").value)||0;'
-    +   'var labor=parseFloat(document.getElementById("apptLabor").value)||0;'
-    +   'var ss=parseFloat(document.getElementById("apptSupplies").value)||0;'
-    +   'var tax=Math.round((parts+ss)*' + taxRate + '*100)/100;'
-    +   'var total=Math.round((parts+labor+ss+tax)*100)/100;'
-    +   'function apMon(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
-    +   'document.getElementById("apptTaxAmt").textContent="$"+apMon(tax);'
-    +   'document.getElementById("apptTaxDisplay").textContent="$"+apMon(tax);'
-    +   'document.getElementById("apptPlDisplay").textContent="$"+apMon(parts+labor);'
-    +   'document.getElementById("apptPartsOnlyDisplay").textContent="$"+apMon(parts);'
-    +   'document.getElementById("apptLaborOnlyDisplay").textContent="$"+apMon(labor);'
-    +   'document.getElementById("apptSsDisplay").textContent="$"+apMon(ss);'
-    +   'document.getElementById("apptTotal").textContent="$"+apMon(total);'
-    + '}'
+    + apptFormJs(taxRate)
     + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
     + 'function apptPreview(){'
     +   'var box=document.getElementById("apptPreviewBox"),btn=document.getElementById("apptPreviewBtn");'
@@ -5489,6 +5500,85 @@ router.get('/appointments/new', requireAuth, function(req, res) {
 
   res.send(page('New Appointment', body, req));
 });
+
+// Branded appointment confirmation email body. Shared by New Appointment and
+// Edit Appointment. Pass isUpdate=true to show the "appointment updated" banner
+// (used when the owner edits a booked appointment and re-sends the confirmation).
+function appointmentEmailHtml(o) {
+  var WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function fmtApptDate(val) {
+    if (!val) return '-';
+    var m2 = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
+    if (!m2) return val;
+    var dt = new Date(+m2[1], +m2[2] - 1, +m2[3]);
+    return WEEKDAYS[dt.getDay()] + ', ' + MONTHS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+  }
+  var parts = o.parts || 0, labor = o.labor || 0, supplies = o.supplies || 0, tax = o.tax || 0, total = o.total || 0;
+  var calendarUrl = o.baseUrl + '/quote/' + o.quoteId + '/' + o.token + '/calendar.ics';
+  var gcalUrl = '';
+  var apptStartRfc = toEasternRfc3339(o.pref_date, o.pref_time);
+  if (apptStartRfc) {
+    var apptMins = totalServiceMinutes(o.service) || 60;
+    var gStart = new Date(apptStartRfc);
+    var gEnd = new Date(gStart.getTime() + apptMins * 60000);
+    gcalUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+      + '&text=' + encodeURIComponent('Brake Knights - ' + (o.service || 'Brake Service'))
+      + '&dates=' + icsUtcStamp(gStart) + '/' + icsUtcStamp(gEnd)
+      + '&details=' + encodeURIComponent('Mobile brake service. Total: $' + money(total) + '. Questions? Call or text 703-977-4475.')
+      + '&location=' + encodeURIComponent(o.pref_location || '');
+  }
+  var headline  = o.isUpdate ? 'Your appointment has been updated' : 'Your appointment is confirmed!';
+  var introLine = o.isUpdate
+    ? 'Greetings ' + esc(o.firstName) + ', the details of your service appointment have changed. Your latest appointment details are below.'
+    : 'Greetings ' + esc(o.firstName) + ', your service appointment has been confirmed. See you then!';
+  var updateBanner = o.isUpdate
+    ? '<div style="background:#eaf2ff;border:1px solid #b9d2ff;border-left:4px solid #4169e1;border-radius:8px;padding:12px 16px;margin:0 0 20px;">'
+      + '<p style="margin:0;color:#1a3a7a;font-size:0.9rem;font-weight:700;">This updates your earlier appointment</p>'
+      + '<p style="margin:4px 0 0;color:#3a5280;font-size:0.85rem;line-height:1.5;">Please use the details below. They replace anything we sent you previously.</p>'
+      + '</div>'
+    : '';
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
+    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
+    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service - Northern Virginia</p></div>'
+    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+    + '<h2 style="color:#1a7a3a;margin:0 0 16px;">' + headline + '</h2>'
+    + updateBanner
+    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">' + introLine + '</p>'
+    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
+    + '<tr><td style="padding:5px 0;color:#888;width:100px;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(o.service || 'Brake Service') + '</td></tr>'
+    + (o.vehicle ? '<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">' + esc(o.vehicle) + '</td></tr>' : '')
+    + (o.lineItems === 'separate'
+        ? (parts + labor > 0
+            ? '<tr><td style="padding:5px 0;color:#888;">Parts</td><td style="padding:5px 0;">$' + money(parts) + '</td></tr>'
+              + '<tr><td style="padding:5px 0;color:#888;">Labor</td><td style="padding:5px 0;">$' + money(labor) + '</td></tr>'
+            : '')
+        : (parts + labor > 0 ? '<tr><td style="padding:5px 0;color:#888;">Parts &amp; Labor</td><td style="padding:5px 0;">$' + money(parts + labor) + '</td></tr>' : ''))
+    + (supplies > 0 ? '<tr><td style="padding:5px 0;color:#888;">Shop Supplies</td><td style="padding:5px 0;">$' + money(supplies) + '</td></tr>' : '')
+    + (tax > 0 ? '<tr><td style="padding:5px 0;color:#888;">Tax</td><td style="padding:5px 0;color:#888;">$' + money(tax) + '</td></tr>' : '')
+    + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;color:#0a1f3d;">Total</td><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
+    + '<tr><td style="padding:10px 0 0;color:#888;">Date</td><td style="padding:10px 0 0;">' + esc(fmtApptDate(o.pref_date)) + '</td></tr>'
+    + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(o.pref_time || '-') + '</td></tr>'
+    + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(o.pref_location || '-') + '</td></tr>'
+    + '</table></div>'
+    + '<div style="text-align:center;margin:0 0 24px;">'
+    + (gcalUrl ? '<a href="' + gcalUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">Add to Google Calendar</a>' : '')
+    + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">Apple / Outlook (.ics)</a>'
+    + '</div>'
+    + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair.</p>'
+    + '<div style="text-align:center;margin:0 0 24px;">'
+    + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
+    + '<a href="' + o.baseUrl + '/quote/' + o.quoteId + '/' + o.token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'
+    + '<a href="' + o.baseUrl + '/quote/' + o.quoteId + '/' + o.token + '?action=cancel" style="display:inline-block;background:#fff;border:2px solid #c0392b;color:#c0392b;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Cancel Appointment</a>'
+    + '</div>'
+    + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
+    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+    + '</div></div>'
+    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
+}
 
 router.post('/appointments/new', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var customerId = (req.body.customer_id || '').trim();
@@ -5593,72 +5683,244 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
     try {
       var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
       var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
-      var calendarUrl = baseUrl + '/quote/' + quoteResult.lastInsertRowid + '/' + token + '/calendar.ics';
-      var WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-      var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-      function fmtApptDate(val) {
-        if (!val) return '-';
-        var m2 = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val);
-        if (!m2) return val;
-        var dt = new Date(+m2[1], +m2[2] - 1, +m2[3]);
-        return WEEKDAYS[dt.getDay()] + ', ' + MONTHS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
-      }
-      var gcalUrl = '';
-      var apptStartRfc = toEasternRfc3339(pref_date, pref_time);
-      if (apptStartRfc) {
-        var apptMins = totalServiceMinutes(service) || 60;
-        var gStart = new Date(apptStartRfc);
-        var gEnd = new Date(gStart.getTime() + apptMins * 60000);
-        gcalUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
-          + '&text=' + encodeURIComponent('Brake Knights - ' + (service || 'Brake Service'))
-          + '&dates=' + icsUtcStamp(gStart) + '/' + icsUtcStamp(gEnd)
-          + '&details=' + encodeURIComponent('Mobile brake service. Total: $' + money(total) + '. Questions? Call or text 703-977-4475.')
-          + '&location=' + encodeURIComponent(pref_location || '');
-      }
-      var html = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
-        + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
-        + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
-        + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service - Northern Virginia</p></div>'
-        + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
-        + '<h2 style="color:#1a7a3a;margin:0 0 16px;">Your appointment is confirmed!</h2>'
-        + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Greetings ' + esc(cust.first_name) + ', your service appointment has been confirmed. See you then!</p>'
-        + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
-        + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
-        + '<tr><td style="padding:5px 0;color:#888;width:100px;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(service || 'Brake Service') + '</td></tr>'
-        + (vehicle ? '<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">' + esc(vehicle) + '</td></tr>' : '')
-        + (lineItems === 'separate'
-            ? (parts + labor > 0
-                ? '<tr><td style="padding:5px 0;color:#888;">Parts</td><td style="padding:5px 0;">$' + money(parts) + '</td></tr>'
-                  + '<tr><td style="padding:5px 0;color:#888;">Labor</td><td style="padding:5px 0;">$' + money(labor) + '</td></tr>'
-                : '')
-            : (parts + labor > 0 ? '<tr><td style="padding:5px 0;color:#888;">Parts &amp; Labor</td><td style="padding:5px 0;">$' + money(parts + labor) + '</td></tr>' : ''))
-        + (supplies > 0 ? '<tr><td style="padding:5px 0;color:#888;">Shop Supplies</td><td style="padding:5px 0;">$' + money(supplies) + '</td></tr>' : '')
-        + (tax > 0 ? '<tr><td style="padding:5px 0;color:#888;">Tax</td><td style="padding:5px 0;color:#888;">$' + money(tax) + '</td></tr>' : '')
-        + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;color:#0a1f3d;">Total</td><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
-        + '<tr><td style="padding:10px 0 0;color:#888;">Date</td><td style="padding:10px 0 0;">' + esc(fmtApptDate(pref_date)) + '</td></tr>'
-        + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(pref_time || '-') + '</td></tr>'
-        + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(pref_location || '-') + '</td></tr>'
-        + '</table></div>'
-        + '<div style="text-align:center;margin:0 0 24px;">'
-        + (gcalUrl ? '<a href="' + gcalUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">Add to Google Calendar</a>' : '')
-        + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">Apple / Outlook (.ics)</a>'
-        + '</div>'
-        + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair.</p>'
-        + '<div style="text-align:center;margin:0 0 24px;">'
-        + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
-        + '<a href="' + baseUrl + '/quote/' + quoteResult.lastInsertRowid + '/' + token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'
-        + '<a href="' + baseUrl + '/quote/' + quoteResult.lastInsertRowid + '/' + token + '?action=cancel" style="display:inline-block;background:#fff;border:2px solid #c0392b;color:#c0392b;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Cancel Appointment</a>'
-        + '</div>'
-        + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
-        + '<p style="color:#fff;font-weight:700;margin:0 0 8px;">Questions? Call or text:</p>'
-        + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
-        + '</div></div>'
-        + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Sterling, VA &middot; brakeknights.com</div></div>';
+      var html = appointmentEmailHtml({
+        firstName: cust.first_name, service: service, vehicle: vehicle,
+        parts: parts, labor: labor, supplies: supplies, tax: tax, total: total, lineItems: lineItems,
+        pref_date: pref_date, pref_time: pref_time, pref_location: pref_location,
+        baseUrl: baseUrl, quoteId: quoteResult.lastInsertRowid, token: token, isUpdate: false
+      });
       await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: cust.email, cc: 'greetings@brakeknights.com', subject: 'Your appointment is confirmed - Brake Knights', html: html });
     } catch (err) { console.error('Appointment confirmation email error:', err.message); }
   }
 
   res.redirect('/admin/quote/' + leadId + '?msg=appt_created');
+});
+
+// ─── Edit a booked appointment (full details, optional updated email) ─────────
+router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.lead_id);
+  if (!lead) return res.redirect('/admin/appointments');
+  var q = db.prepare("SELECT * FROM quotes WHERE lead_id = ? AND status = 'approved' ORDER BY id DESC LIMIT 1").get(lead.id);
+  if (!q) return res.redirect('/admin/quote/' + lead.id);
+
+  var apptPricing = getEffectivePricing();
+  var serviceNames = Object.keys(apptPricing);
+  var pricingJson = JSON.stringify(apptPricing);
+  var taxRate = PRICING.taxRate;
+  var taxPctLabel = (taxRate * 100).toFixed(0);
+
+  // Split the saved service string: known services pre-check boxes; anything not in
+  // the pricing table goes into the custom-service field so it is preserved.
+  var svcList = (q.service || '').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+  var checkedSet = {};
+  svcList.forEach(function(s){ if (apptPricing[s]) checkedSet[s] = true; });
+  var customSvc = svcList.filter(function(s){ return !apptPricing[s]; }).join(', ');
+  var svcHiddenVal = svcList.filter(function(s){ return !!apptPricing[s]; }).join(', ');
+
+  var serviceCheckboxes = '<div class="svc-check-list">'
+    + serviceNames.map(function(s) {
+        return '<label class="svc-check-item"><input type="checkbox" class="appt-svc-cb" value="' + esc(s) + '"' + (checkedSet[s] ? ' checked' : '') + ' onchange="apptUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
+      }).join('')
+    + '</div>'
+    + '<input type="hidden" name="service" id="apptSvcHidden" value="' + esc(svcHiddenVal) + '">';
+
+  // Vehicle: best-effort split of the lead's free-text vehicle for the cascade.
+  var vehParts = String(lead.vehicle || '').trim().split(/\s+/).filter(Boolean);
+  var prefYear = '', prefMake = '', prefModel = '';
+  if (vehParts.length && /^(19|20)\d{2}$/.test(vehParts[0])) prefYear = vehParts.shift();
+  if (vehParts.length) prefMake = vehParts.shift();
+  prefModel = vehParts.join(' ');
+
+  var tier = q.tier === 'premium' ? 'premium' : 'standard';
+  var parts = Math.round(Number(q.price_parts) || 0);
+  var labor = Math.round(Number(q.price_labor) || 0);
+  var supplies = Math.round(Number(q.shop_supplies) || 0);
+
+  var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
+  var mapsScript = mapsKey
+    ? '<script async defer src="https://maps.googleapis.com/maps/api/js?key=' + esc(mapsKey) + '&libraries=places&callback=apptInitMaps"></script>'
+    : '';
+
+  var alert = '';
+  if (req.query.err === 'name') alert = '<div class="alert alert-error">Customer first and last name are required.</div>';
+
+  var inputStyle = 'width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;';
+
+  var body = '<a href="/admin/appointments" class="back-link">&#8592; Appointments</a>'
+    + alert
+    + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:4px;">Edit Appointment</h1>'
+    + '<div style="color:#888;font-size:0.85rem;margin-bottom:14px;">Update any details and save. Choose whether to email the customer an updated confirmation.</div>'
+    + '<form method="POST" action="/admin/appointments/' + lead.id + '/edit">'
+
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>First name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_first" value="' + esc(lead.first_name || '') + '" style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>Last name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_last" value="' + esc(lead.last_name || '') + '" style="' + inputStyle + '"></div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Phone</label><input type="tel" name="cust_phone" value="' + esc(lead.phone || '') + '" oninput="fmtPhoneInput(this)" maxlength="12" style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>Email</label><input type="email" name="cust_email" value="' + esc(lead.email || '') + '" placeholder="customer@email.com" style="' + inputStyle + '"></div>'
+    + '</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
+    + '<input type="text" name="pref_location" id="apptAddr" value="' + esc(q.pref_location || '') + '" placeholder="Service address" autocomplete="off" style="' + inputStyle + '"></div>'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Vehicle</div>'
+    + vehicleCascadeHtml('appt-veh', {}, { year: prefYear, make: prefMake, model: prefModel })
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Schedule</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
+    + '<div class="form-group"><label>Date <span style="color:#c0392b;">*</span></label>'
+    + '<input type="date" name="pref_date" id="apptDate" value="' + esc(q.pref_date || '') + '" required style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>Time</label>'
+    + '<select name="pref_time" style="' + inputStyle + '">' + ownerTimeOptions(q.pref_time || '') + '</select></div>'
+    + '</div>'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Service</div>'
+    + '<div class="form-group" style="margin:0 0 14px;"><label>Tier</label>'
+    + '<div class="tier-toggle">'
+    + '<button type="button" class="tier-btn' + (tier === 'standard' ? ' active' : '') + '" id="apptBtnStd" onclick="apptSetTier(\'standard\')">Standard</button>'
+    + '<button type="button" class="tier-btn' + (tier === 'premium' ? ' active' : '') + '" id="apptBtnPrem" onclick="apptSetTier(\'premium\')">Premium</button>'
+    + '</div>'
+    + '<input type="hidden" name="tier" id="apptTier" value="' + tier + '"></div>'
+    + serviceCheckboxes
+    + '<button type="button" class="svc-clear-btn" onclick="apptClearServices()">&#10005; Clear selection</button>'
+    + '<div class="svc-tags" id="apptSvcTags"></div>'
+    + '<div class="form-group" style="margin:14px 0 6px;">'
+    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
+    + '<input type="text" name="customService" value="' + esc(customSvc) + '" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" style="' + inputStyle + '"></div>'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Pricing</div>'
+    + '<div class="price-section">'
+    + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
+    + '<div class="price-row"><span class="price-label">Parts</span>'
+    + '<input class="price-input" type="number" name="price_parts" id="apptParts" min="0" step="1" value="' + parts + '" oninput="apptCalc()" onfocus="this.select()"></div>'
+    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
+    + '<input class="price-input" type="number" name="price_labor" id="apptLabor" min="0" step="1" value="' + labor + '" oninput="apptCalc()" onfocus="this.select()"></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
+    + '<input class="price-input" type="number" name="shop_supplies" id="apptSupplies" min="0" step="1" value="' + supplies + '" oninput="apptCalc()" onfocus="this.select()"></div>'
+    + '<div class="price-row tax-row"><span class="price-label">VA Tax (' + taxPctLabel + '%) on Parts + Supplies</span>'
+    + '<span id="apptTaxAmt">$0.00</span></div>'
+    + '</div>'
+    + '<div class="price-section" style="margin-bottom:0;">'
+    + '<div class="price-section-header">Customer Quote</div>'
+    + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
+    + '<span style="font-size:0.77rem;color:#888;font-weight:600;">Show pricing as:</span>'
+    + '<div class="tier-toggle" style="margin:0;">'
+    + '<button type="button" class="tier-btn active" id="apptBtnCombined" onclick="apptSetLineItems(\'combined\')">Combined</button>'
+    + '<button type="button" class="tier-btn" id="apptBtnSeparate" onclick="apptSetLineItems(\'separate\')">Separate</button>'
+    + '</div></div>'
+    + '<input type="hidden" name="lineItems" id="apptLineItemsVal" value="combined">'
+    + '<div class="price-row" id="apptLiCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="apptPlDisplay">$0.00</span></div>'
+    + '<div class="price-row" id="apptLiPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="apptPartsOnlyDisplay">$0.00</span></div>'
+    + '<div class="price-row" id="apptLiLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="apptLaborOnlyDisplay">$0.00</span></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="apptSsDisplay">$0.00</span></div>'
+    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="apptTaxDisplay">$0.00</span></div>'
+    + '<div class="price-row total-row divider-row"><span>Total</span><span id="apptTotal" style="font-size:1.15rem;">$0.00</span></div>'
+    + '</div>'
+    + '</div>'
+
+    + '<div class="card">'
+    + '<div class="section-title" style="margin-bottom:10px;">Notes</div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Internal notes</label>'
+    + '<textarea name="notes" placeholder="Any notes for the job...">' + esc(q.scheduling_notes || '') + '</textarea></div>'
+    + '</div>'
+
+    + (lead.email ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The updated confirmation can\'t be emailed.</div>')
+    + '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">'
+    + (lead.email ? '<button type="submit" name="send_email" value="1" class="btn btn-blue">Save &amp; Email Updated Confirmation</button>' : '')
+    + '<button type="submit" name="send_email" value="0" class="btn btn-navy">Save Changes (no email)</button>'
+    + '<a href="/admin/appointments" class="btn btn-outline" style="text-align:center;">Cancel</a>'
+    + '</div>'
+    + '</form>'
+
+    + '<script>'
+    + 'var APPT_PRICING=' + pricingJson + ';'
+    + 'var apptTier="' + tier + '";'
+    + 'var apptLineItems="combined";'
+    + apptFormJs(taxRate)
+    + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
+    // On load: render tags and totals from the saved values without re-pulling
+    // prices (so manual price overrides on the booked appointment are preserved).
+    + 'apptRenderTags();apptCalc();'
+    + '</script>'
+    + VEHICLE_CASCADE_JS
+    + mapsScript;
+
+  res.send(page('Edit Appointment', body, req));
+});
+
+router.post('/appointments/:lead_id/edit', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.lead_id);
+  if (!lead) return res.redirect('/admin/appointments');
+  var q = db.prepare("SELECT * FROM quotes WHERE lead_id = ? AND status = 'approved' ORDER BY id DESC LIMIT 1").get(lead.id);
+  if (!q) return res.redirect('/admin/quote/' + lead.id);
+
+  var firstName = (req.body.cust_first || '').trim();
+  var lastName  = (req.body.cust_last  || '').trim();
+  if (!firstName || !lastName) return res.redirect('/admin/appointments/' + lead.id + '/edit?err=name');
+  var phone = (req.body.cust_phone || '').trim();
+  var email = (req.body.cust_email || '').trim() || null;
+
+  var vehicle = [(req.body.veh_year || '').trim(), (req.body.veh_make || '').trim(), (req.body.veh_model || '').trim()]
+    .filter(Boolean).join(' ') || null;
+
+  var service   = (req.body.service || '').trim();
+  var customSvc = (req.body.customService || '').trim();
+  if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
+  service = service || null;
+  var tier     = (req.body.tier || 'standard').trim();
+  var lineItems = (req.body.lineItems || 'combined').trim();
+  var pref_date = (req.body.pref_date || '').trim() || null;
+  var pref_time = (req.body.pref_time || '').trim() || null;
+  var pref_location = (req.body.pref_location || '').trim() || null;
+  var notes = (req.body.notes || '').trim() || null;
+  var sendEmail = req.body.send_email === '1';
+
+  var parts    = parseFloat(req.body.price_parts)   || 0;
+  var labor    = parseFloat(req.body.price_labor)   || 0;
+  var supplies = parseFloat(req.body.shop_supplies) || 0;
+  var tax      = Math.round((parts + supplies) * PRICING.taxRate * 100) / 100;
+  var total    = Math.round((parts + labor + supplies + tax) * 100) / 100;
+
+  // Update the lead contact + vehicle + service, and the approved quote details.
+  db.prepare("UPDATE leads SET first_name = ?, last_name = ?, phone = ?, email = ?, vehicle = COALESCE(?, vehicle), service = ?, status_updated_at = datetime('now') WHERE id = ?")
+    .run(firstName, lastName, phone, email, vehicle, service, lead.id);
+  db.prepare("UPDATE quotes SET service = ?, tier = ?, price_parts = ?, price_labor = ?, shop_supplies = ?, tax_rate = ?, tax = ?, total = ?, pref_date = ?, pref_time = ?, pref_location = ?, scheduling_notes = ? WHERE id = ?")
+    .run(service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, pref_date, pref_time, pref_location, notes, q.id);
+
+  // Keep the linked customer record's contact info in sync.
+  if (lead.customer_id) {
+    db.prepare('UPDATE customers SET first_name = ?, last_name = ?, phone = COALESCE(NULLIF(?,\'\'), phone), email = COALESCE(?, email) WHERE id = ?')
+      .run(firstName, lastName, phone, email, lead.customer_id);
+  }
+
+  logHistory(lead.id, 'Appointment updated', [service, pref_date, pref_time].filter(Boolean).join(' - ') + (sendEmail ? ' (customer emailed)' : ''));
+
+  if (sendEmail && email && process.env.SMTP_PASS) {
+    try {
+      var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+      var html = appointmentEmailHtml({
+        firstName: firstName, service: service, vehicle: vehicle,
+        parts: parts, labor: labor, supplies: supplies, tax: tax, total: total, lineItems: lineItems,
+        pref_date: pref_date, pref_time: pref_time, pref_location: pref_location,
+        baseUrl: baseUrl, quoteId: q.id, token: q.accept_token, isUpdate: true
+      });
+      await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: email, cc: 'greetings@brakeknights.com', subject: 'Your appointment has been updated - Brake Knights', html: html });
+    } catch (err) { console.error('Appointment update email error:', err.message); }
+    return res.redirect('/admin/appointments?msg=appt_updated_email');
+  }
+
+  res.redirect('/admin/appointments?msg=appt_updated');
 });
 
 // ─── Placeholder for not-yet-built sidebar items ──────────────────────────────
