@@ -1644,16 +1644,24 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var allQuotes = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
   var existing = allQuotes[0] || {};
-  // True once a quote has actually gone out on this lead. When set, the Send action
-  // splits into "Update this quote" vs "Send as a separate quote" (its own new lead).
+  // True once a quote has actually gone out on this lead. When set, the owner can
+  // either edit that quote ("Update") or start a fresh, separate quote ("New").
   var hasSentQuote = allQuotes.some(function(qq) { return !!qq.sent_at; });
-  var q = existing;
-  var currentService = q.service || lead.service || '';
+  // "New separate quote" mode (?new=1): start from a clean slate so picking services
+  // pulls today's pricing, rather than carrying the prior quote's (possibly stale)
+  // numbers. Only meaningful once a quote already exists; the customer's vehicle is
+  // kept since it's the same car. This mode saves its draft under a separate key.
+  var newQuote = req.query.new === '1' && hasSentQuote;
+  var q = newQuote ? {} : existing;
+  var currentService = newQuote ? '' : (q.service || lead.service || '');
   var currentTier    = q.tier || 'standard';
   var currentTaxRate = q.tax_rate != null ? +(q.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
-  var currentLineItems    = parseLineItems(q.line_items);
-  var currentCustomerNotes = q.customer_notes || '';
-  var currentDiscount     = Math.round(Number(q.discount) || 0);
+  var currentLineItems    = newQuote ? [] : parseLineItems(q.line_items);
+  var currentCustomerNotes = newQuote ? '' : (q.customer_notes || '');
+  var currentDiscount     = newQuote ? 0 : Math.round(Number(q.discount) || 0);
+  // Which send action this page is set up for, used by the single Send button below.
+  var sendMode = newQuote ? 'separate' : (hasSentQuote ? 'update' : 'new');
+  var autosaveKey = 'quote-' + lead.id + (newQuote ? '-new' : '');
 
   // Best-effort split of the lead's free-text vehicle ("2018 Honda Accord") into
   // year / make / model to pre-select the cascade dropdowns. The make must match a
@@ -1887,7 +1895,19 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Build Quote form
     + '<div data-section="build-quote">'
     + collapseOpen('buildquote', 'Build Quote', buildQuoteOpen)
-    + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf" data-autosave="quote-' + lead.id + '" data-autosave-after="bkQuoteAfter">'
+    // Mode toggle (only once a quote already exists): edit the saved quote, or start
+    // a clean new/separate quote for the same customer that pulls today's pricing.
+    + (hasSentQuote
+        ? '<div class="tier-toggle" style="margin-bottom:6px;">'
+          + '<a href="/admin/quote/' + lead.id + '" class="tier-btn' + (newQuote ? '' : ' active') + '" style="text-align:center;text-decoration:none;line-height:1.2;display:flex;align-items:center;justify-content:center;">Edit existing quote</a>'
+          + '<a href="/admin/quote/' + lead.id + '?new=1" class="tier-btn' + (newQuote ? ' active' : '') + '" style="text-align:center;text-decoration:none;line-height:1.2;display:flex;align-items:center;justify-content:center;">New separate quote</a>'
+          + '</div>'
+          + '<div style="font-size:0.8rem;color:#888;margin-bottom:12px;line-height:1.5;">'
+          + (newQuote
+              ? 'Starting a <strong>new separate quote</strong> for this customer. Pick services to pull today&rsquo;s pricing. Sending creates its own lead so both quotes track separately.'
+              : 'Editing the quote you already sent. Sending again <strong>updates</strong> this same quote.')
+          + '</div>'
+        : '')
 
     + '<div class="form-group"><label>Service <span style="color:#bbb;font-weight:400;">(select all that apply)</span></label>'
     + serviceCheckboxes
@@ -1959,13 +1979,12 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<textarea name="customerNotes" id="qbCustNotes" placeholder="e.g. Parts are in stock; we can usually schedule within 1-2 business days. Reach out anytime with questions." style="width:100%;min-height:74px;padding:10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;resize:vertical;box-sizing:border-box;">' + esc(currentCustomerNotes) + '</textarea></div>'
 
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
+    + '<input type="hidden" name="sendMode" value="' + sendMode + '">'
     + '<button type="button" class="btn btn-outline" onclick="togglePreview()" id="prevBtn">Preview Email</button>'
     + '<div id="previewBox" style="display:none;"></div>'
-    + (hasSentQuote
-        ? '<button type="submit" name="sendMode" value="separate" class="btn btn-blue" style="margin-top:10px;">Send as a Separate Quote</button>'
-          + '<button type="submit" name="sendMode" value="update" class="btn btn-outline" style="margin-top:8px;">Update This Quote Instead</button>'
-          + '<p style="font-size:0.8rem;color:#888;margin:8px 2px 0;line-height:1.5;"><strong>Separate</strong> creates a new lead so this and the earlier quote each track through the pipeline on their own. <strong>Update</strong> replaces the current quote on this same lead.</p>'
-        : '<button type="submit" name="sendMode" value="new" class="btn btn-blue" style="margin-top:10px;">Send Quote</button>')
+    + '<button type="submit" class="btn btn-blue" style="margin-top:10px;">'
+    + (sendMode === 'separate' ? 'Send as a Separate Quote' : sendMode === 'update' ? 'Update This Quote' : 'Send Quote')
+    + '</button>'
     + '</form>'
     + COLLAPSE_CLOSE
     + '</div>'
