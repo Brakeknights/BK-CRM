@@ -3170,7 +3170,7 @@ router.get('/quick', requireAuth, function(req, res) {
     // Customer (optional for calculator-only; required to save/send)
     + collapseOpen('qq_customer', 'Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(needed to save or send)</span>', true)
     + '<input type="hidden" name="customer_id" id="qqCustId" value="">'
-    + '<div class="qReceiptOnly" style="display:none;margin-bottom:16px;">'
+    + '<div style="margin-bottom:16px;">'
     + '<div class="form-group" style="margin-bottom:6px;">'
     + '<label>Find existing customer <span style="font-weight:400;color:#bbb;">(optional — fills fields below)</span></label>'
     + '<div style="position:relative;">'
