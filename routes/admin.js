@@ -132,6 +132,97 @@ function mapsLink(addr, opts) {
   return '<a href="' + esc(url) + '" target="_blank" rel="noopener" style="' + style + '">' + esc(addr) + '</a>';
 }
 
+// ─── Shared contact-info block (canonical: customer profile look) ─────────────
+// One source of truth for how a person's contact details render, used on the
+// customer profile, the lead detail page, and anywhere a person is shown. `p`
+// has { phone, email, home_address }. Phone is always formatted with fmtPhone
+// and falls back to a gray "None on file"; same for email — so the lead page and
+// the customer profile read identically. Pass `extraRows` (pre-built info-grid
+// <span> pairs) for context-specific fields (vehicle/service on a lead, lifetime
+// dates on a customer).
+function contactInfoRows(p, extraRows) {
+  var addr = p.home_address || p.address;
+  return '<span class="info-key">Phone</span><span class="info-val">'
+      + (p.phone ? '<a href="tel:' + esc(p.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(p.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>')
+      + '</span>'
+    + '<span class="info-key">Email</span><span class="info-val">'
+      + (p.email ? esc(p.email) : '<span style="color:#bbb;">None on file</span>')
+      + '</span>'
+    + (addr ? '<span class="info-key">Address</span><span class="info-val">' + mapsLink(addr) + '</span>' : '')
+    + (extraRows || '');
+}
+
+// Call / Text / Email action buttons for a person. Identical wherever a person
+// is shown. `p` has { phone, email }.
+function contactActions(p, marginTop) {
+  return '<div style="display:flex;gap:8px;margin-top:' + (marginTop != null ? marginTop : 14) + 'px;flex-wrap:wrap;">'
+    + (p.phone ? '<a href="tel:' + esc(p.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>' : '')
+    + (p.phone ? '<a href="sms:' + esc(p.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>' : '')
+    + (p.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(p.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
+    + '</div>';
+}
+
+// ─── Canonical lead card ──────────────────────────────────────────────────────
+// One card for a lead, shown identically in the Leads list and the customer
+// profile's job history (and anywhere else a lead appears). The shell is always
+// the same: status stripe, name + status badge, customer tags, service, vehicle,
+// service address, meta line, and the shared Call/Text/Email buttons. Context
+// detail slots in: opts.management adds the pipeline tools (scheduling panel,
+// Send Receipt, status dropdown, archive/delete) on the Leads list; opts.extra
+// is raw HTML appended in the body (e.g. the job total in the profile history).
+function leadCard(l, opts) {
+  opts = opts || {};
+  var back = opts.back || '/admin';
+  var sched = (l.status === 'quote_accepted' || l.status === 'booked')
+    ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
+    : null;
+  var cust = l.customer_id ? db.prepare('SELECT tags, home_address FROM customers WHERE id = ?').get(l.customer_id) : null;
+  var addrDisplay = (sched && sched.pref_location) ? sched.pref_location : (cust && cust.home_address ? cust.home_address : null);
+  var statusOptions = ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'];
+  var statusLabels = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' };
+
+  return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;border-left:3px solid ' + (STATUS_COLOR[l.status] || STATUS_COLOR.new) + ';' + (l.archived ? 'opacity:.72;' : '') + '">'
+    + '<div class="row-sb">'
+    + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
+    + statusBadge(l.status)
+    + '</div>'
+    + (cust && cust.tags ? customerTagBadges(cust.tags) : '')
+    + '<div class="lead-service">' + esc(l.service || 'Service not specified') + '</div>'
+    + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
+    + (addrDisplay ? '<div class="lead-meta" style="margin-top:2px;">' + mapsLink(addrDisplay, { style: 'color:#1a6fc4;font-size:0.83rem;text-decoration:none;' }) + '</div>' : '')
+    + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
+    + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
+    + (opts.extra || '')
+    + (opts.management ? '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>' : '')
+    + contactActions(l, 12)
+    + (opts.management
+        ? (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-navy btn-sm" style="width:100%;margin-top:8px;text-align:center;">' + ic('receipt') + 'Send Receipt</a>')
+          + (l.archived
+              ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
+                + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/restore" style="margin:0;">'
+                + '<input type="hidden" name="back" value="' + esc(back) + '">'
+                + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">&#8634; Restore</button>'
+                + '</form></div>'
+              : '<form method="POST" action="/admin/lead/' + l.id + '/status" style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
+                + '<input type="hidden" name="back" value="' + esc(back) + '">'
+                + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
+                + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
+                + statusOptions.map(function(s) { return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + statusLabels[s] + '</option>'; }).join('')
+                + '</select></form>'
+                + '<div style="display:flex;gap:0;margin-top:8px;">'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/archive" style="flex:1;" onsubmit="return confirm(\'Archive this lead? It stays saved and can be restored from the Archived tab.\');">'
+                + '<input type="hidden" name="back" value="' + esc(back) + '">'
+                + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('archive') + 'Archive</button>'
+                + '</form>'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/delete" style="flex:1;">'
+                + '<input type="hidden" name="back" value="' + esc(back) + '">'
+                + '<button type="button" data-name="' + esc(l.first_name + ' ' + l.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('trash') + 'Delete</button>'
+                + '</form></div>')
+        : '')
+    + '</div>';
+}
+
 // Natural list join for the service line, e.g. "A, B, and C" (or "A, and B").
 function joinServices(s) {
   var a = String(s || '').split(', ').map(function(x) { return x.trim(); }).filter(Boolean);
@@ -1454,58 +1545,7 @@ router.get('/', requireAuth, function(req, res) {
   var cardsHtml = leads.length === 0
     ? '<div class="empty"><div style="margin-bottom:10px;">' + icon('clipboard') + '</div>' + emptyMsg + '</div>'
     : leads.map(function(l) {
-        var sched = (l.status === 'quote_accepted' || l.status === 'booked')
-          ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
-          : null;
-        var backVal = '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '');
-        var cust = l.customer_id ? db.prepare('SELECT tags, home_address FROM customers WHERE id = ?').get(l.customer_id) : null;
-        // Service address: prefer the accepted quote's pref_location; fall back to
-        // the customer's home address so we always have somewhere to drive to.
-        var addrDisplay = (sched && sched.pref_location) ? sched.pref_location : (cust && cust.home_address ? cust.home_address : null);
-        return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;border-left:3px solid ' + (STATUS_COLOR[l.status] || STATUS_COLOR.new) + ';' + (l.archived ? 'opacity:.72;' : '') + '">'
-          + '<div class="row-sb">'
-          + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
-          + statusBadge(l.status)
-          + '</div>'
-          + (cust && cust.tags ? customerTagBadges(cust.tags) : '')
-          + '<div class="lead-service">' + esc(l.service || 'Service not specified') + '</div>'
-          + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
-          + (addrDisplay ? '<div class="lead-meta" style="margin-top:2px;">' + mapsLink(addrDisplay, { style: 'color:#1a6fc4;font-size:0.83rem;text-decoration:none;' }) + '</div>' : '')
-          + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
-          + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
-          + '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>'
-          + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">'
-          + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('phone') + 'Call</a>'
-          + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('chat') + 'Text</a>'
-          + (l.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(l.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('envelope') + 'Email</button>' : '')
-          + '</div>'
-          + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-navy btn-sm" style="width:100%;margin-top:8px;text-align:center;">' + ic('receipt') + 'Send Receipt</a>')
-          + (l.archived
-              ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
-                + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
-                + '<form method="POST" action="/admin/lead/' + l.id + '/restore" style="margin:0;">'
-                + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">&#8634; Restore</button>'
-                + '</form></div>'
-              : '<form method="POST" action="/admin/lead/' + l.id + '/status" style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
-                + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
-                + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
-                + ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'].map(function(s) {
-                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' }[s];
-                    return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + label + '</option>';
-                  }).join('')
-                + '</select></form>'
-                + '<div style="display:flex;gap:0;margin-top:8px;">'
-                + '<form method="POST" action="/admin/lead/' + l.id + '/archive" style="flex:1;" onsubmit="return confirm(\'Archive this lead? It stays saved and can be restored from the Archived tab.\');">'
-                + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('archive') + 'Archive</button>'
-                + '</form>'
-                + '<form method="POST" action="/admin/lead/' + l.id + '/delete" style="flex:1;">'
-                + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="button" data-name="' + esc(l.first_name + ' ' + l.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('trash') + 'Delete</button>'
-                + '</form></div>')
-          + '</div>';
+        return leadCard(l, { management: true, back: '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '') });
       }).join('');
 
   var searchBar = '<form method="GET" action="/admin" style="margin-bottom:12px;display:flex;gap:8px;">'
@@ -1528,6 +1568,73 @@ router.get('/', requireAuth, function(req, res) {
   ));
 });
 
+// ─── Custom line items (e.g. OEM parts upgrade) ───────────────────────────────
+// A custom line item is { label, amount }. It renders as its own priced row in the
+// customer quote/receipt email, is taxed as parts (added to the taxable base), and
+// is stored separate from `service` so it never affects per-service reporting.
+// Both the quote builder and receipt builder use these shared helpers; each page
+// defines bkRecalc() so a line-item change re-runs that form's price calc.
+
+// Parses a stored JSON array safely; always returns an array of normalized items
+// { label, amount, taxed }. taxed defaults to true unless explicitly false, so
+// items saved before the taxed/not-taxed toggle existed keep being taxed as parts.
+function parseLineItems(json) {
+  try {
+    var a = JSON.parse(json || '[]');
+    if (!Array.isArray(a)) return [];
+    return a.filter(function(it){ return it && it.label; }).map(function(it){
+      return { label: String(it.label), amount: Number(it.amount) || 0, taxed: it.taxed !== false };
+    });
+  } catch (_) { return []; }
+}
+
+// Server-rendered row used to prefill saved line items. The Taxed/Not-taxed
+// button carries its state in data-taxed; cliInit() applies its label and style
+// on page load so server and client rows look identical.
+function cliRowServer(label, amount, taxed) {
+  return '<div class="cli-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">'
+    + '<input type="text" class="cli-label" placeholder="e.g. OEM Brake Pads &amp; Rotors" value="' + esc(label || '') + '" oninput="cliChanged()" style="flex:1;min-width:140px;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;">'
+    + '<input type="number" class="cli-amount" placeholder="0" min="0" step="1" value="' + (amount != null && amount !== '' ? esc(String(amount)) : '') + '" oninput="cliChanged()" onfocus="this.select()" style="width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;">'
+    + '<button type="button" class="cli-tax" data-taxed="' + (taxed === false ? '0' : '1') + '" onclick="cliToggleTax(this)"></button>'
+    + '<button type="button" class="cli-x" onclick="cliRemove(this)" title="Remove" style="background:none;border:none;color:#c0392b;font-size:1.05rem;cursor:pointer;padding:0 4px;flex-shrink:0;">&#10005;</button>'
+    + '</div>';
+}
+
+// The form section (label + prefilled rows + Add button + hidden JSON field).
+function customLineItemsSection(items) {
+  items = Array.isArray(items) ? items : [];
+  return '<div class="form-group" style="margin-bottom:0;">'
+    + '<label>Custom line items <span style="color:#bbb;font-weight:400;">(optional — e.g. OEM parts; shows as its own priced line, taxed as parts, not counted in service reports)</span></label>'
+    + '<div id="cliRows">' + items.map(function(it){ return cliRowServer(it.label, it.amount, it.taxed); }).join('') + '</div>'
+    + '<button type="button" class="svc-clear-btn" style="margin-top:6px;" onclick="cliAdd()">+ Add line item</button>'
+    + '<input type="hidden" name="customLineItems" id="cliJson" value="' + esc(JSON.stringify(items)) + '">'
+    + '</div>';
+}
+
+// Client JS shared by both forms. cliSum() feeds each form's calc; cliChanged()
+// re-runs the page's bkRecalc(). Guarded so it is a no-op when the section is absent.
+var CLI_JS = ''
+  + 'var CLI_ON="background:#eef2ff;border:1.5px solid #c3d4f5;color:#1a3a7a;";'
+  + 'var CLI_OFF="background:#f4f4f5;border:1.5px solid #e0e0e3;color:#777;";'
+  + 'var CLI_BASE="padding:8px 9px;border-radius:8px;font-size:0.76rem;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap;width:84px;text-align:center;";'
+  + 'function cliSetTax(btn,taxed){btn.setAttribute("data-taxed",taxed?"1":"0");btn.textContent=taxed?"Taxed":"Not taxed";btn.style.cssText=CLI_BASE+(taxed?CLI_ON:CLI_OFF);}'
+  + 'function cliToggleTax(btn){cliSetTax(btn,btn.getAttribute("data-taxed")==="0");cliChanged();}'
+  + 'function cliInit(){document.querySelectorAll("#cliRows .cli-tax").forEach(function(b){cliSetTax(b,b.getAttribute("data-taxed")!=="0");});}'
+  + 'function cliRowHtml(){'
+  +   'return "<div class=\'cli-row\' style=\'display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;\'>"'
+  +     '+"<input type=\'text\' class=\'cli-label\' placeholder=\'e.g. OEM Brake Pads &amp; Rotors\' oninput=\'cliChanged()\' style=\'flex:1;min-width:140px;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;\'>"'
+  +     '+"<input type=\'number\' class=\'cli-amount\' placeholder=\'0\' min=\'0\' step=\'1\' oninput=\'cliChanged()\' onfocus=\'this.select()\' style=\'width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;\'>"'
+  +     '+"<button type=\'button\' class=\'cli-tax\' data-taxed=\'1\' onclick=\'cliToggleTax(this)\'><\\/button>"'
+  +     '+"<button type=\'button\' class=\'cli-x\' onclick=\'cliRemove(this)\' title=\'Remove\' style=\'background:none;border:none;color:#c0392b;font-size:1.05rem;cursor:pointer;padding:0 4px;flex-shrink:0;\'>&#10005;<\\/button>"'
+  +   '+"<\\/div>";'
+  + '}'
+  + 'function cliAdd(){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;document.getElementById("cliRows").appendChild(row);cliSetTax(row.querySelector(".cli-tax"),true);}'
+  + 'function cliRemove(btn){var r=btn.closest(".cli-row");if(r)r.remove();cliChanged();}'
+  + 'function cliCollect(){var items=[];document.querySelectorAll("#cliRows .cli-row").forEach(function(row){var label=(row.querySelector(".cli-label").value||"").trim();var amount=parseFloat(row.querySelector(".cli-amount").value)||0;var taxed=(row.querySelector(".cli-tax").getAttribute("data-taxed")!=="0");if(label)items.push({label:label,amount:amount,taxed:taxed});});var h=document.getElementById("cliJson");if(h)h.value=JSON.stringify(items);return items;}'
+  + 'function cliTaxedSum(){return cliCollect().reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);}'
+  + 'function cliSum(){return cliCollect().reduce(function(a,it){return a+(it.amount||0);},0);}'
+  + 'function cliChanged(){if(typeof bkRecalc==="function")bkRecalc();}';
+
 // ─── Quote tool ───────────────────────────────────────────────────────────────
 
 router.get('/quote/:id', requireAuth, function(req, res) {
@@ -1540,6 +1647,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var currentService = q.service || lead.service || '';
   var currentTier    = q.tier || 'standard';
   var currentTaxRate = q.tax_rate != null ? +(q.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
+  var currentLineItems    = parseLineItems(q.line_items);
+  var currentCustomerNotes = q.customer_notes || '';
 
   var effectivePricing = getEffectivePricing();
   var serviceNames = Object.keys(effectivePricing);
@@ -1592,22 +1701,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + statusBadge(lead.status)
     + '</div>'
     + '<div class="info-grid">'
-    + '<span class="info-key">Phone</span><span class="info-val"><a href="tel:' + esc(lead.phone) + '" style="color:#1a6fc4;">' + esc(lead.phone) + '</a></span>'
-    + (lead.email   ? '<span class="info-key">Email</span><span class="info-val">' + esc(lead.email) + '</span>'
-                    : '<span class="info-key">Email</span><span class="info-val" style="color:#e07000;font-style:italic;">No email on file</span>')
-    + (lead.vehicle ? '<span class="info-key">Vehicle</span><span class="info-val">' + esc(lead.vehicle) + '</span>' : '')
-    + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
-    + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
-    + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : '')
+    + contactInfoRows(lead,
+        (lead.vehicle ? '<span class="info-key">Vehicle</span><span class="info-val">' + esc(lead.vehicle) + '</span>' : '')
+        + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
+        + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
+        + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : ''))
     + '</div>'
-    + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
-    + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>'
-    + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>'
-    + (lead.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(lead.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
+    + contactActions(lead, 12)
     + (['quoted','quote_accepted','new','follow_up'].indexOf(lead.status) !== -1
-        ? '<a href="/admin/appointments/new?from_lead=' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Book Appointment</a>'
+        ? '<div style="margin-top:8px;"><a href="/admin/appointments/new?from_lead=' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Book Appointment</a></div>'
         : '')
-    + '</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
     + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
@@ -1805,6 +1908,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<span id="taxAmt">$' + money(q.tax) + '</span></div>'
     + '</div>'
 
+    // Custom line items (e.g. OEM parts) — priced rows kept out of `service` reporting
+    + '<div style="margin:4px 0 16px;">' + customLineItemsSection(currentLineItems) + '</div>'
+
     // Customer-facing totals
     + '<div class="price-section" style="margin-bottom:0;">'
     + '<div class="price-section-header">Customer Quote</div>'
@@ -1818,6 +1924,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div class="price-row" id="liCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
     + '<div class="price-row" id="liPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="partsOnlyDisplay">$' + money(q.price_parts || 0) + '</span></div>'
     + '<div class="price-row" id="liLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="laborOnlyDisplay">$' + money(q.price_labor || 0) + '</span></div>'
+    + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + money(q.shop_supplies) + '</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + money(q.tax) + '</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
@@ -1825,6 +1932,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
     + '<input type="hidden" name="taxAmt"   id="taxH"   value="' + fmt(q.tax)   + '">'
     + '<input type="hidden" name="totalAmt" id="totalH" value="' + fmt(q.total) + '">'
+
+    + '<div class="form-group" style="margin:16px 0 6px;"><label>Notes to customer <span style="color:#bbb;font-weight:400;">(optional — included in the quote email)</span></label>'
+    + '<textarea name="customerNotes" id="qbCustNotes" placeholder="e.g. Parts are in stock; we can usually schedule within 1-2 business days. Reach out anytime with questions." style="width:100%;min-height:74px;padding:10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;resize:vertical;box-sizing:border-box;">' + esc(currentCustomerNotes) + '</textarea></div>'
 
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
     + '<button type="button" class="btn btn-outline" onclick="togglePreview()" id="prevBtn">Preview Email</button>'
@@ -1919,14 +2029,20 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
 
-    // Tax is on parts + shop supplies only (not labor — Virginia law)
+    + CLI_JS
+    + 'function bkRecalc(){calc();}'
+    // Tax is on parts + shop supplies + custom line items (not labor — Virginia law)
     + 'function calc(){'
     +   'var parts=parseFloat(document.getElementById("parts").value)||0;'
     +   'var labor=parseFloat(document.getElementById("labor").value)||0;'
     +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("tr").value)||0;'
-    +   'var tax=(parts+ss)*tr/100;'
-    +   'var total=parts+labor+ss+tax;'
+    +   'var items=cliCollect();'
+    +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var tax=(parts+ss+cliTax)*tr/100;'
+    +   'var total=parts+labor+ss+cliAll+tax;'
+    +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
     +   'document.getElementById("partsOnlyDisplay").textContent="$"+money(parts);'
@@ -1961,16 +2077,17 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+"<hr class=\'preview-divider\'>"'
     +     '+"<p>Greetings "+firstName+",</p>"'
     +     '+"<p style=\'margin-top:8px;\'>Here is your quote"+veh+":</p>"'
-    +     '+"<div style=\'margin:10px 0 4px;font-size:0.8rem;font-weight:700;color:#0a1f3d;text-transform:uppercase;letter-spacing:.4px;\'>Service Requested</div>"'
-    +     '+"<p style=\'margin:0 0 6px;font-size:0.92rem;font-weight:600;color:#1a2a3a;\'>"+svcLine+"</p>"'
+    +     '+(svcNames.length?("<div style=\'margin:10px 0 4px;font-size:0.8rem;font-weight:700;color:#0a1f3d;text-transform:uppercase;letter-spacing:.4px;\'>Service Requested</div>"+"<p style=\'margin:0 0 6px;font-size:0.92rem;font-weight:600;color:#1a2a3a;\'>"+svcLine+"</p>"):"")'
     +     '+(durTxt?"<p style=\'margin:0 0 12px;font-size:0.85rem;color:#555;\'>Estimated time on site: about "+durTxt+"</p>":"")'
     +     '+"<table style=\'width:100%;margin:12px 0;font-size:0.88rem;border-collapse:collapse;\'>"'
-    +     '+(lineItems==="separate"?"<tr><td>Parts</td><td style=\'text-align:right;\'>$"+money(parts)+"</td></tr><tr><td>Labor</td><td style=\'text-align:right;\'>$"+money(labor)+"</td></tr>":"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>")'
-    +     '+"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>"'
-    +     '+"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>"'
+    +     '+(lineItems==="separate"?(parts+labor>0?"<tr><td>Parts</td><td style=\'text-align:right;\'>$"+money(parts)+"</td></tr><tr><td>Labor</td><td style=\'text-align:right;\'>$"+money(labor)+"</td></tr>":""):(parts+labor>0?"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>":""))'
+    +     '+cliCollect().map(function(it){return "<tr><td>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'text-align:right;\'>$"+money(it.amount)+"</td></tr>";}).join("")'
+    +     '+(ss>0?"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>":"")'
+    +     '+(tax>0?"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>":"")'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
     +     '+"</table>"'
     +     '+svcNames.map(function(s){return PRICING[s]&&PRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;font-size:0.85rem;\'>"+n+"</p>";}).join("")'
+    +     '+((((document.getElementById("qbCustNotes")||{}).value||"").trim())?("<p style=\'color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:6px;padding:10px 12px;font-size:0.86rem;\'>"+document.getElementById("qbCustNotes").value.trim().replace(/</g,"&lt;")+"</p>"):"")'
     +     '+"<p>Includes all parts and labor. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong>.</p>"'
     +     '+"<p style=\'margin-top:8px;\'>We come to your home or office. No shop visit needed.</p>"'
     +     '+"<p style=\'margin-top:8px;\'>Reply to this email or call/text <strong>703-977-4475</strong> to confirm.</p>"'
@@ -1982,6 +2099,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // On load: if this is a brand-new quote (no saved quote yet) with a service
     // already auto-filled from the lead, populate prices from the pricing table.
     // Otherwise just total up the saved/edited values without overwriting them.
+    + 'cliInit();'
     + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
     + 'updateServiceHints(Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;}));'
     + 'renderTags();'
@@ -2011,6 +2129,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("btnStd").classList.toggle("active",tier==="standard");'
     +   'document.getElementById("btnPrem").classList.toggle("active",tier==="premium");'
     +   'if(typeof setLineItems==="function"&&document.getElementById("lineItemsVal"))setLineItems(document.getElementById("lineItemsVal").value||"combined");'
+    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
     +   'renderTags();updateServiceHints(svc);calc();'
     + '};'
     + '</script>';
@@ -2036,6 +2155,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var totalAmt      = parseFloat(req.body.totalAmt)      || 0;
   var vin           = req.body.vin            || null;
   var internalNotes = req.body.internalNotes  || null;
+  var lineItems     = parseLineItems(req.body.customLineItems);
+  var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
+  var customerNotes = (req.body.customerNotes || '').trim() || null;
 
   var acceptToken = crypto.randomBytes(24).toString('hex');
 
@@ -2049,9 +2171,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   ).get(lead.id).n > 0;
 
   var info = db.prepare(
-    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, accept_token, sent_at, status) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
-  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, acceptToken, lead.email ? 'sent' : 'saved');
+    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, line_items, customer_notes, accept_token, sent_at, status) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
+  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lineItemsJson, customerNotes, acceptToken, lead.email ? 'sent' : 'saved');
 
   db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
@@ -2085,7 +2207,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       subject: isRevisedQuote
         ? 'Your Updated Brake Service Quote — Brake Knights'
         : 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, null, isRevisedQuote)
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, null, isRevisedQuote, customerNotes, lineItems)
     });
 
     res.redirect('/admin/quote/' + lead.id + '?msg=quote_sent');
@@ -2114,8 +2236,9 @@ function buildWarrantyClause(service) {
   return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
 }
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes, customLineItems) {
   var partsLabor  = parts + labor;
+  var svcName     = joinServices(service);
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
   var revisedBanner = isRevised
     ? '<div style="background:#eaf2ff;border:1px solid #b9d2ff;border-left:4px solid #4169e1;border-radius:8px;padding:12px 16px;margin:0 0 20px;">'
@@ -2138,8 +2261,10 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
     + revisedBanner
     + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">' + introLine + '</p>'
     + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
-    + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 8px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Requested</p>'
-    + '<p style="margin:0 0 6px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">' + esc(joinServices(service)) + '</p>'
+    + (svcName
+        ? '<p style="font-weight:700;color:#0a1f3d;margin:0 0 8px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Requested</p>'
+          + '<p style="margin:0 0 6px;font-size:0.95rem;color:#1a2a3a;font-weight:600;">' + esc(svcName) + '</p>'
+        : '')
     + (totalServiceMinutes(service) ? '<p style="margin:0 0 16px;font-size:0.86rem;color:#555;">Estimated time on site: about <strong>' + formatDuration(totalServiceMinutes(service)) + '</strong>. Please pick a time that allows for it.</p>' : '')
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
     + (Array.isArray(lineItemsData) && lineItemsData.length
@@ -2149,9 +2274,12 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
                 + '<tr><td style="padding:6px 0;">' + esc(it.service) + ' — Labor</td><td style="text-align:right;">$' + money(it.labor) + '</td></tr>'
               : '<tr><td style="padding:6px 0;">' + esc(it.service) + '</td><td style="text-align:right;">$' + money(it.parts + it.labor) + '</td></tr>';
           }).join('')
-        : '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(partsLabor) + '</td></tr>')
-    + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(shopSupplies) + '</td></tr>'
-    + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(tax) + '</td></tr>'
+        : (partsLabor > 0 ? '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(partsLabor) + '</td></tr>' : ''))
+    + (Array.isArray(customLineItems) ? customLineItems.map(function(it) {
+        return '<tr><td style="padding:6px 0;">' + esc(it.label) + '</td><td style="text-align:right;">$' + money(it.amount) + '</td></tr>';
+      }).join('') : '')
+    + (shopSupplies > 0 ? '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(shopSupplies) + '</td></tr>' : '')
+    + (tax > 0 ? '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(tax) + '</td></tr>' : '')
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total</td>'
     + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
     + '</table></div>'
@@ -2236,6 +2364,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   var total     = partsLabor + shopSupplies + tax;
   var receiptTier = quote.tier === 'premium' ? 'premium' : 'standard';
   var taxPct    = quote.tax_rate != null ? +(quote.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
+  // Prefill any custom line items (e.g. OEM parts) carried over from the quote.
+  var rcLineItems = parseLineItems(quote.line_items);
 
   // Service picker mirrors the quote tool: a multi-select of every service so the
   // owner can change/add what was actually done if the job grew on arrival.
@@ -2313,10 +2443,12 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<input class="price-input" type="number" name="labor" id="rlabor" min="0" step="1" value="' + (Math.round(Number(quote.price_labor) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
     + '<input class="price-input" type="number" name="shopSupplies" id="rss" min="0" step="1" value="' + (Math.round(Number(shopSupplies) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
+    + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="rtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="rcalc()">%) on Parts + Supplies</span>'
     + '<span id="rtaxAmt">$' + money(tax) + '</span></div>'
     + '<div class="price-row total-row divider-row"><span>Total Paid</span><span id="rtotal" style="font-size:1.15rem;">$' + money(total) + '</span></div>'
     + '</div>'
+    + '<div style="margin-top:14px;">' + customLineItemsSection(rcLineItems) + '</div>'
     + '<input type="hidden" name="tax" id="rtaxH" value="' + fmt(tax) + '">'
     + '<input type="hidden" name="total" id="rtotalH" value="' + fmt(total) + '">'
     + COLLAPSE_CLOSE
@@ -2340,14 +2472,20 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + 'var RPRICING=' + rPricingJson + ';'
     + 'var rtier="' + esc(receiptTier) + '";'
     + 'function rmoney(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
-    // Tax is on parts + shop supplies only (not labor — Virginia law), mirroring the quote builder
+    + CLI_JS
+    + 'function bkRecalc(){rcalc();}'
+    // Tax is on parts + shop supplies + custom line items (not labor — Virginia law)
     + 'function rcalc(){'
     +   'var parts=parseFloat(document.getElementById("rparts").value)||0;'
     +   'var labor=parseFloat(document.getElementById("rlabor").value)||0;'
     +   'var ss=parseFloat(document.getElementById("rss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("rtr").value)||0;'
-    +   'var tax=(parts+ss)*tr/100;'
-    +   'var t=parts+labor+ss+tax;'
+    +   'var items=cliCollect();'
+    +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var tax=(parts+ss+cliTax)*tr/100;'
+    +   'var t=parts+labor+ss+cliAll+tax;'
+    +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+rmoney(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("rtaxAmt").textContent="$"+rmoney(tax);'
     +   'document.getElementById("rtotal").textContent="$"+rmoney(t);'
     +   'document.getElementById("rtaxH").value=tax.toFixed(2);'
@@ -2415,9 +2553,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var v=document.querySelector("[name=fuTime"+i+"]").value;'
     +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
     + '}'
-    + 'rRenderTags();rPayToggle();'
+    + 'rRenderTags();rPayToggle();cliInit();'
     // Auto-fill prices from pricing table on page load if all price fields are 0
-    + 'if(!(parseFloat(document.getElementById("rparts").value)||parseFloat(document.getElementById("rlabor").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();'
+    + 'if(!(parseFloat(document.getElementById("rparts").value)||parseFloat(document.getElementById("rlabor").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();else rcalc();'
     + 'function bkAddAdvisory(pfx){'
     +   'for(var i=2;i<=4;i++){'
     +     'var r=document.getElementById((pfx||"")+"advRow"+i)||document.getElementById("advRow"+i);'
@@ -2448,6 +2586,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     '+(svcs.length?"<div><strong>Service:</strong> "+svcs.join(", ")+"</div>":"")'
     +     '+(veh?"<div style=\'margin-top:4px;\'><strong>Vehicle:</strong> "+veh+"</div>":"")'
     +     '+(svcDate?"<div style=\'margin-top:4px;\'><strong>Date:</strong> "+svcDate+"</div>":"")'
+    +     '+cliCollect().map(function(it){return "<div style=\'margin-top:4px;\'><strong>"+it.label.replace(/</g,"&lt;")+":</strong> $"+rmoney(it.amount)+"</div>";}).join("")'
     +     '+"<div style=\'margin-top:4px;\'><strong>Total:</strong> "+tot+"</div>"'
     +     '+(pm?"<div style=\'margin-top:4px;\'><strong>Payment:</strong> "+pm+"</div>":"")'
     +     '+"</div>"'
@@ -2467,6 +2606,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var allVis=true;for(var j=2;j<=4;j++){var rr=document.getElementById("advRow"+j);if(rr&&rr.style.display==="none")allVis=false;}'
     +   'if(allVis){var ab=document.getElementById("rAddAdvBtn");if(ab)ab.style.display="none";}'
     +   'for(var k=1;k<=4;k++){if(typeof toggleCustom==="function")toggleCustom(k);}'
+    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
     +   'if(typeof rcalc==="function")rcalc();'
     + '};'
     + '</script>'
@@ -2494,7 +2634,10 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var partsLabor   = parts + labor;
   var shopSupplies = parseFloat(req.body.shopSupplies) || 0;
   var tax          = parseFloat(req.body.tax)          || 0;
-  var total        = partsLabor + shopSupplies + tax;
+  var lineItems    = parseLineItems(req.body.customLineItems);
+  var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
+  var cliSum       = lineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
+  var total        = partsLabor + shopSupplies + cliSum + tax;
   var payment      = (req.body.paymentMethod || '').trim();
   if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
   var officeNotes  = (req.body.officeNotes || '').trim() || null;
@@ -2515,9 +2658,9 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id);
 
   var info = db.prepare(
-    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, total, payment, JSON.stringify(notes), officeNotes);
+    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, total, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
   var receiptId = info.lastInsertRowid;
 
   followups.forEach(function(f) {
@@ -2648,6 +2791,9 @@ function buildReceiptEmail(lead, r, notes) {
     + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Payment</p>'
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
     + '<tr><td style="padding:6px 0;">Parts &amp; Labor</td><td style="text-align:right;">$' + money(r.parts_labor) + '</td></tr>'
+    + parseLineItems(r.custom_line_items).map(function(it) {
+        return '<tr><td style="padding:6px 0;">' + esc(it.label) + '</td><td style="text-align:right;">$' + money(it.amount) + '</td></tr>';
+      }).join('')
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(r.shop_supplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(r.tax) + '</td></tr>'
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
@@ -3028,10 +3174,14 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<span id="qtaxAmt">$0.00</span></div>'
     + '</div>'
 
+    // Custom line items (e.g. OEM parts) — priced rows kept out of `service` reporting
+    + '<div style="margin:4px 0 16px;">' + customLineItemsSection([]) + '</div>'
+
     // Customer-facing total
     + '<div class="price-section" style="margin-bottom:0;">'
     + '<div class="price-section-header"><span id="qSummaryLabel">Customer Quote</span></div>'
     + '<div id="qqSvcCustomerRows"></div>'
+    + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="qssDisplay">$0.00</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="qtaxDisplay">$0.00</span></div>'
     + '<div class="price-row total-row divider-row"><span id="qTotalLabel">Total</span><span id="qtotalAmt" style="font-size:1.15rem;">$0.00</span></div>'
@@ -3127,6 +3277,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
     + 'function qCustomSvcVal(){var el=document.getElementById("qCustomSvc");return el?el.value.trim():"";}'
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + CLI_JS
     + 'function qqGetAllServiceNames(){'
     +   'var names=[];'
     +   'document.querySelectorAll(".qsvc-cb:checked").forEach(function(cb){names.push(cb.value);});'
@@ -3273,13 +3424,19 @@ router.get('/quick', requireAuth, function(req, res) {
     + '}'
 
     // Tax is on parts + shop supplies only (not labor — Virginia law).
+    + 'function bkRecalc(){qcalc();}'
     + 'function qcalc(){'
     +   'var parts=0,labor=0;'
     +   'document.querySelectorAll(".qsvc-parts-in").forEach(function(el){parts+=parseFloat(el.value)||0;});'
     +   'document.querySelectorAll(".qsvc-labor-in").forEach(function(el){labor+=parseFloat(el.value)||0;});'
     +   'var ss=parseFloat(document.getElementById("qss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("qtr").value)||0;'
-    +   'var tax=(parts+ss)*tr/100;var total=parts+labor+ss+tax;'
+    +   'var cliItems=(typeof cliCollect==="function")?cliCollect():[];'
+    +   'var cliTax=cliItems.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=cliItems.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var tax=(parts+ss+cliTax)*tr/100;var total=parts+labor+ss+cliAll+tax;'
+    +   'var cdr=document.getElementById("cliDisplayRows");'
+    +   'if(cdr)cdr.innerHTML=cliItems.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("qtaxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("qssDisplay").textContent="$"+money(ss);'
     +   'document.getElementById("qtaxDisplay").textContent="$"+money(tax);'
@@ -3340,7 +3497,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;white-space:nowrap;vertical-align:top;\'>To</td><td style=\'padding:5px 0;\'>"+toLine+"</td></tr>";'
     +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Subject</td><td style=\'padding:5px 0;\'>"+(rec?"Your Brake Knights Service Receipt":"Your Brake Service Quote — Brake Knights")+"</td></tr>";'
     +   'if(veh)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Vehicle</td><td style=\'padding:5px 0;font-weight:600;\'>"+veh+"</td></tr>";'
-    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+(svcs.length?svcs.join(", "):"<em style=\'color:#e07000\'>(none selected)</em>")+"</td></tr>";'
+    +   'if(svcs.length)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+svcs.join(", ")+"</td></tr>";'
     +   'if(!rec){'
     +     'var qqi=JSON.parse(document.getElementById("qlineItemsJsonH").value||"[]");'
     +     'var qss2=parseFloat(document.getElementById("qss").value)||0;'
@@ -3359,15 +3516,17 @@ router.get('/quick', requireAuth, function(req, res) {
     +     '}else{'
     +       'var qp2=parseFloat(document.getElementById("qpartsH").value)||0;'
     +       'var ql2=parseFloat(document.getElementById("qlaborH").value)||0;'
-    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts &amp; Labor</td><td style=\'padding:5px 0;\'>$"+pmoney(qp2+ql2)+"</td></tr>";'
+    +       'if(qp2+ql2>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts &amp; Labor</td><td style=\'padding:5px 0;\'>$"+pmoney(qp2+ql2)+"</td></tr>";'
     +     '}'
-    +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+pmoney(qss2)+"</td></tr>";'
-    +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+pmoney(qtax)+"</td></tr>";'
+    +     'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+pmoney(it.amount)+"</td></tr>";});'
+    +     'if(qss2>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+pmoney(qss2)+"</td></tr>";'
+    +     'if(qtax>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+pmoney(qtax)+"</td></tr>";'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>$"+pmoney(qtot)+"</td></tr>";'
     +     'var qcn=(document.getElementById("qCustNotes")||{}).value||"";'
     +     'if(qcn.trim())rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Notes to customer</td><td style=\'padding:5px 0;font-style:italic;\'>"+qcn+"</td></tr>";'
     +   '}'
     +   'if(rec){'
+    +     'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+money(it.amount)+"</td></tr>";});'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
     +     'var pm=(document.getElementById("qpm")||{}).value||"";'
     +     'var pmo=(document.getElementById("qpmOther")||{}).value||"";'
@@ -3392,6 +3551,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
     +   'document.getElementById("qCustomSvcHint").style.display="none";'
     +   'document.getElementById("qss").value="0.00";'
+    +   'var cliC=document.getElementById("cliRows");if(cliC)cliC.innerHTML="";var cliH=document.getElementById("cliJson");if(cliH)cliH.value="[]";'
     +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
     +   'var offN=document.querySelector("[name=officeNotes]");if(offN)offN.value="";'
     +   '[1,2,3,4].forEach(function(i){'
@@ -3434,6 +3594,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'customSvc:qCustomSvcVal(),'
     +       'ss:document.getElementById("qss").value,'
     +       'tr:document.getElementById("qtr").value,'
+    +       'cli:(typeof cliCollect==="function")?cliCollect():[],'
     +       'payMethod:(document.getElementById("qpm")||{}).value||"",'
     +       'payOther:(document.getElementById("qpmOther")||{}).value||"",'
     +       'svcDate:(document.querySelector("[name=serviceDate]")||{}).value||"",'
@@ -3480,6 +3641,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
     +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
     +     'if(s.tr!==undefined)document.getElementById("qtr").value=s.tr;'
+    +     'if(Array.isArray(s.cli)){var cliC=document.getElementById("cliRows");if(cliC){cliC.innerHTML="";s.cli.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);cliC.appendChild(row);});}}'
     +     'if(s.payMethod&&document.getElementById("qpm"))document.getElementById("qpm").value=s.payMethod;'
     +     'if(s.payOther&&document.getElementById("qpmOther"))document.getElementById("qpmOther").value=s.payOther;'
     +     'var sa=document.querySelector("[name=serviceAddress]");if(s.svcAddr&&sa)sa.value=s.svcAddr;'
@@ -3606,6 +3768,8 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
   var lineItemsJson = (req.body.lineItems_json || '').trim() || null;
   var quoteCustomerNotes = (req.body.quote_customer_notes || '').trim() || null;
+  var customLineItems = parseLineItems(req.body.customLineItems);
+  var customLineItemsJson = customLineItems.length ? JSON.stringify(customLineItems) : null;
 
   var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
 
@@ -3651,9 +3815,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     var acceptToken = crypto.randomBytes(24).toString('hex');
     var qStatus = action === 'quote_save' ? 'saved' : 'sent';
     var qInfo = db.prepare(
-      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, accept_token, sent_at, status) '
-      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, acceptToken,
+      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, line_items, customer_notes, accept_token, sent_at, status) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, customLineItemsJson, quoteCustomerNotes, acceptToken,
           null, qStatus);
     var quoteId = qInfo.lastInsertRowid;
     var acceptUrl = baseUrl + '/quote/' + quoteId + '/' + acceptToken;
@@ -3685,7 +3849,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         subject: qqRevised
           ? 'Your Updated Brake Service Quote — Brake Knights'
           : 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, lineItemsJson ? (function(){try{return JSON.parse(lineItemsJson);}catch(e){return null;}})() : null, qqRevised, quoteCustomerNotes)
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, lineItemsJson ? (function(){try{return JSON.parse(lineItemsJson);}catch(e){return null;}})() : null, qqRevised, quoteCustomerNotes, customLineItems)
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
@@ -3716,9 +3880,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, totalAmt, payment, JSON.stringify(notes), officeNotes);
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, totalAmt, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
   var receiptId = rInfo.lastInsertRowid;
 
   followups.forEach(function(f) {
@@ -3861,6 +4025,7 @@ router.get('/customers', requireAuth, function(req, res) {
             + '<span>Last activity ' + shortDate(s.lastLeadDate) + '</span>'
             + (s.lastJobDate ? '<span>Last job ' + shortDate(s.lastJobDate) + '</span>' : '')
             + '</div>'
+            + contactActions(c, 11)
             + '<form method="POST" action="/admin/customer/' + c.id + '/delete" style="margin-top:10px;" onsubmit="return confirm(\'Delete this customer? Their leads will be kept but unlinked.\');">'
             + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">' + ic('trash') + 'Delete customer</button>'
             + '</form>'
@@ -4125,19 +4290,13 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   var header = '<div class="card">'
     + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
     + '<div class="info-grid">'
-    + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
-    + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
-    + (c.home_address ? '<span class="info-key">Address</span><span class="info-val">' + mapsLink(c.home_address) + '</span>' : '')
-    + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
-    + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
-    + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
+    + contactInfoRows(c,
+        '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
+        + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
+        + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : ''))
     + '</div>'
     + customerTagBadges(c.tags)
-    + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
-    + (c.phone ? '<a href="tel:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>' : '')
-    + (c.phone ? '<a href="sms:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>' : '')
-    + (c.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(c.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
-    + '</div>'
+    + contactActions(c)
     + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
     + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
     + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
@@ -4265,17 +4424,15 @@ router.get('/customer/:id', requireAuth, function(req, res) {
         var qt = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
         var totalVal = rc ? rc.total : (qt ? qt.total : null);
         var receiptSent = rc && rc.sent_at;
-        return '<a href="/admin/quote/' + l.id + '" style="text-decoration:none;color:inherit;display:block;border:1px solid #e3e9f1;border-radius:8px;padding:11px 13px;margin-bottom:8px;">'
-          + '<div class="row-sb" style="margin-bottom:4px;">'
-          + '<div style="font-weight:600;color:#1a6fc4;font-size:0.88rem;">' + esc(l.service || 'Service not specified') + '</div>'
-          + statusBadge(l.status)
-          + '</div>'
-          + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">'
-          + '<span style="font-size:0.8rem;color:#888;">' + shortDate(l.created_at) + (l.source ? ' &middot; ' + esc(l.source) : '') + '</span>'
-          + '<span style="font-size:0.85rem;color:#0a1f3d;font-weight:700;">' + (totalVal != null ? '$' + money(totalVal) : '') + '</span>'
-          + '</div>'
-          + (receiptSent ? '<div style="font-size:0.74rem;color:#1a7a3a;font-weight:700;margin-top:4px;">&#10003; Receipt sent ' + shortDate(rc.sent_at) + '</div>' : '')
-          + '</a>';
+        // Same card as the Leads list. Pipeline management tools are omitted here
+        // (this is a read-only history); the job total + receipt status slot in.
+        var extra = (totalVal != null || receiptSent)
+          ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;">'
+            + '<span style="font-size:0.74rem;color:#1a7a3a;font-weight:700;">' + (receiptSent ? '&#10003; Receipt sent ' + shortDate(rc.sent_at) : '') + '</span>'
+            + '<span style="font-size:0.9rem;color:#0a1f3d;font-weight:700;">' + (totalVal != null ? '$' + money(totalVal) : '') + '</span>'
+            + '</div>'
+          : '';
+        return leadCard(l, { management: false, extra: extra });
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;">No jobs yet.</div>';
   var jobsCard = collapsible('cust_jobs', 'Job History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + jobs.length + ')</span>', jobsHtml, true);
@@ -5225,16 +5382,18 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'var apSs=parseFloat((document.getElementById("apptSupplies")||{}).value)||0;'
     +   'var apTax=parseFloat(((document.getElementById("apptTaxAmt")||{}).textContent||"0").replace(/[^\\d.]/g,""))||0;'
     +   'function apMon2(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
-    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+(svcs.length?svcs.join(", "):"<em style=\'color:#e07000\'>(none selected)</em>")+"</td></tr>";'
+    +   'if(svcs.length)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+svcs.join(", ")+"</td></tr>";'
     +   'if(apveh)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Vehicle</td><td style=\'padding:5px 0;font-weight:600;\'>"+apveh+"</td></tr>";'
     +   'if(apptLineItems==="separate"){'
-    +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts</td><td style=\'padding:5px 0;\'>$"+apMon2(apParts)+"</td></tr>";'
-    +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Labor</td><td style=\'padding:5px 0;\'>$"+apMon2(apLabor)+"</td></tr>";'
+    +     'if(apParts+apLabor>0){'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts</td><td style=\'padding:5px 0;\'>$"+apMon2(apParts)+"</td></tr>";'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Labor</td><td style=\'padding:5px 0;\'>$"+apMon2(apLabor)+"</td></tr>";'
+    +     '}'
     +   '}else{'
-    +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts &amp; Labor</td><td style=\'padding:5px 0;\'>$"+apMon2(apParts+apLabor)+"</td></tr>";'
+    +     'if(apParts+apLabor>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts &amp; Labor</td><td style=\'padding:5px 0;\'>$"+apMon2(apParts+apLabor)+"</td></tr>";'
     +   '}'
-    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+apMon2(apSs)+"</td></tr>";'
-    +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+apMon2(apTax)+"</td></tr>";'
+    +   'if(apSs>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+apMon2(apSs)+"</td></tr>";'
+    +   'if(apTax>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+apMon2(apTax)+"</td></tr>";'
     +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
     +   'if(date)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Date &amp; Time</td><td style=\'padding:5px 0;\'>"+date+(time?" at "+time:"")+"</td></tr>";'
     +   'if(addr)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Address</td><td style=\'padding:5px 0;\'>"+addr+"</td></tr>";'
@@ -5405,11 +5564,13 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
         + '<tr><td style="padding:5px 0;color:#888;width:100px;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(service || 'Brake Service') + '</td></tr>'
         + (vehicle ? '<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">' + esc(vehicle) + '</td></tr>' : '')
         + (lineItems === 'separate'
-            ? '<tr><td style="padding:5px 0;color:#888;">Parts</td><td style="padding:5px 0;">$' + money(parts) + '</td></tr>'
-              + '<tr><td style="padding:5px 0;color:#888;">Labor</td><td style="padding:5px 0;">$' + money(labor) + '</td></tr>'
-            : '<tr><td style="padding:5px 0;color:#888;">Parts &amp; Labor</td><td style="padding:5px 0;">$' + money(parts + labor) + '</td></tr>')
-        + '<tr><td style="padding:5px 0;color:#888;">Shop Supplies</td><td style="padding:5px 0;">$' + money(supplies) + '</td></tr>'
-        + '<tr><td style="padding:5px 0;color:#888;">Tax</td><td style="padding:5px 0;color:#888;">$' + money(tax) + '</td></tr>'
+            ? (parts + labor > 0
+                ? '<tr><td style="padding:5px 0;color:#888;">Parts</td><td style="padding:5px 0;">$' + money(parts) + '</td></tr>'
+                  + '<tr><td style="padding:5px 0;color:#888;">Labor</td><td style="padding:5px 0;">$' + money(labor) + '</td></tr>'
+                : '')
+            : (parts + labor > 0 ? '<tr><td style="padding:5px 0;color:#888;">Parts &amp; Labor</td><td style="padding:5px 0;">$' + money(parts + labor) + '</td></tr>' : ''))
+        + (supplies > 0 ? '<tr><td style="padding:5px 0;color:#888;">Shop Supplies</td><td style="padding:5px 0;">$' + money(supplies) + '</td></tr>' : '')
+        + (tax > 0 ? '<tr><td style="padding:5px 0;color:#888;">Tax</td><td style="padding:5px 0;color:#888;">$' + money(tax) + '</td></tr>' : '')
         + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;color:#0a1f3d;">Total</td><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
         + '<tr><td style="padding:10px 0 0;color:#888;">Date</td><td style="padding:10px 0 0;">' + esc(fmtApptDate(pref_date)) + '</td></tr>'
         + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(pref_time || '-') + '</td></tr>'

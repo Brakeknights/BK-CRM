@@ -170,6 +170,16 @@ The long-term vision is a fully owned Brake Knights business platform. Square is
 ## Current Work in Progress
 Update this section at the end of each session to stay caught up next time.
 
+> ### ⚠️ DEPLOYMENT BROKEN — Hostinger GitHub auto-deploy is DISCONNECTED (as of 2026-06-18)
+> Around 6/16 Hostinger migrated both sites to their new "Node.js Web App" deployment system and the GitHub link did not carry over. Both `dev.brakeknights.com` and `brakeknights.com` show **"Disconnected from GitHub"** in hPanel, so **pushing to dev/master no longer auto-deploys.** Git pushes still succeed (code is safe on GitHub); Hostinger just never builds them.
+> - **Root cause is on Hostinger's side**, not GitHub: the Hostinger GitHub App still has access to Brakeknights/BK-CRM (both repos verified). Owner has an open ticket with Hostinger support (agent Marwa) to re-link / escalate to their tech team.
+> - **HOW TO DEPLOY UNTIL IT'S FIXED (use the Hostinger MCP, not git push):**
+>   1. `git archive --format=tar.gz -o /tmp/bk-master.tar.gz origin/master` (and `origin/dev` → `/tmp/bk-dev.tar.gz`). `git archive` auto-excludes node_modules/.git/.env/data so the prod DB and secrets are never touched.
+>   2. `mcp__hostinger-mcp__hosting_deployJsApplication` with domain `brakeknights.com` (or `dev.brakeknights.com`) and the archive path. Builds in ~30s.
+>   3. Verify with `hosting_listJsDeployments` (state `completed`) + a `curl` 200 check.
+> - On 2026-06-18 both sites were force-deployed current this way: master `a6edc3d`, dev `fb05c6e`. Env vars + DB confirmed intact (admin login works).
+> - **CHECK BACK:** once Hostinger reconnects GitHub, do a tiny test push and confirm it auto-builds, then auto-deploy is restored and this note can be removed.
+
 - Last working branch: `claude/blissful-feynman-f0raph` — merged to master via PR #44 ✅
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
@@ -253,6 +263,8 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
+- [ ] ⚠️ **Hostinger GitHub auto-deploy reconnect** — both sites "Disconnected from GitHub" since ~6/16 (Hostinger Node.js migration dropped the link). Ticket open with Hostinger. Until fixed, deploy via Hostinger MCP archive (see DEPLOYMENT BROKEN note at top). Once Hostinger re-links it, test a push auto-builds, then remove the note.
+- [ ] Custom line items + notes to customer on the **Quick Quote** tool (`/admin/quick`) — already shipped on the per-lead Build Quote + Receipt builder (custom priced lines with Taxed/Not-taxed toggle, taxed-as-parts, hidden from customer; free-text notes). Quick Quote still needs the same treatment for consistency.
 - [ ] Phase 6C: Square auto-trigger (Square events fire receipt + follow-up flow) — deferred, spec later
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
