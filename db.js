@@ -185,6 +185,9 @@ addQuoteCol('alt_time3',           'TEXT');
 // so it never affects service reporting). `line_items` (above) holds custom priced
 // line items as a JSON array of {label, amount}, taxed as parts.
 addQuoteCol('customer_notes',      'TEXT');
+// Flat dollar discount subtracted from the total AFTER tax (owner-entered on the
+// Build Quote form). Shown to the customer as a "Discount" line in the quote email.
+addQuoteCol('discount',            'REAL DEFAULT 0');
 
 // Receipts: custom priced line items (JSON array of {label, amount}), taxed as parts.
 // Kept separate from `service` so per-service reporting stays clean. `customer_notes`
