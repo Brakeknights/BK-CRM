@@ -132,6 +132,36 @@ function mapsLink(addr, opts) {
   return '<a href="' + esc(url) + '" target="_blank" rel="noopener" style="' + style + '">' + esc(addr) + '</a>';
 }
 
+// ─── Shared contact-info block (canonical: customer profile look) ─────────────
+// One source of truth for how a person's contact details render, used on the
+// customer profile, the lead detail page, and anywhere a person is shown. `p`
+// has { phone, email, home_address }. Phone is always formatted with fmtPhone
+// and falls back to a gray "None on file"; same for email — so the lead page and
+// the customer profile read identically. Pass `extraRows` (pre-built info-grid
+// <span> pairs) for context-specific fields (vehicle/service on a lead, lifetime
+// dates on a customer).
+function contactInfoRows(p, extraRows) {
+  var addr = p.home_address || p.address;
+  return '<span class="info-key">Phone</span><span class="info-val">'
+      + (p.phone ? '<a href="tel:' + esc(p.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(p.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>')
+      + '</span>'
+    + '<span class="info-key">Email</span><span class="info-val">'
+      + (p.email ? esc(p.email) : '<span style="color:#bbb;">None on file</span>')
+      + '</span>'
+    + (addr ? '<span class="info-key">Address</span><span class="info-val">' + mapsLink(addr) + '</span>' : '')
+    + (extraRows || '');
+}
+
+// Call / Text / Email action buttons for a person. Identical wherever a person
+// is shown. `p` has { phone, email }.
+function contactActions(p, marginTop) {
+  return '<div style="display:flex;gap:8px;margin-top:' + (marginTop != null ? marginTop : 14) + 'px;flex-wrap:wrap;">'
+    + (p.phone ? '<a href="tel:' + esc(p.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>' : '')
+    + (p.phone ? '<a href="sms:' + esc(p.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>' : '')
+    + (p.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(p.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
+    + '</div>';
+}
+
 // Natural list join for the service line, e.g. "A, B, and C" (or "A, and B").
 function joinServices(s) {
   var a = String(s || '').split(', ').map(function(x) { return x.trim(); }).filter(Boolean);
@@ -1661,22 +1691,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + statusBadge(lead.status)
     + '</div>'
     + '<div class="info-grid">'
-    + '<span class="info-key">Phone</span><span class="info-val"><a href="tel:' + esc(lead.phone) + '" style="color:#1a6fc4;">' + esc(lead.phone) + '</a></span>'
-    + (lead.email   ? '<span class="info-key">Email</span><span class="info-val">' + esc(lead.email) + '</span>'
-                    : '<span class="info-key">Email</span><span class="info-val" style="color:#e07000;font-style:italic;">No email on file</span>')
-    + (lead.vehicle ? '<span class="info-key">Vehicle</span><span class="info-val">' + esc(lead.vehicle) + '</span>' : '')
-    + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
-    + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
-    + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : '')
+    + contactInfoRows(lead,
+        (lead.vehicle ? '<span class="info-key">Vehicle</span><span class="info-val">' + esc(lead.vehicle) + '</span>' : '')
+        + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
+        + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
+        + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : ''))
     + '</div>'
-    + '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'
-    + '<a href="tel:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>'
-    + '<a href="sms:' + esc(lead.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>'
-    + (lead.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(lead.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
+    + contactActions(lead, 12)
     + (['quoted','quote_accepted','new','follow_up'].indexOf(lead.status) !== -1
-        ? '<a href="/admin/appointments/new?from_lead=' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Book Appointment</a>'
+        ? '<div style="margin-top:8px;"><a href="/admin/appointments/new?from_lead=' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Book Appointment</a></div>'
         : '')
-    + '</div>'
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
     + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
@@ -4253,19 +4277,13 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   var header = '<div class="card">'
     + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
     + '<div class="info-grid">'
-    + '<span class="info-key">Phone</span><span class="info-val">' + (c.phone ? '<a href="tel:' + esc(c.phone) + '" style="color:#1a6fc4;">' + esc(fmtPhone(c.phone)) + '</a>' : '<span style="color:#bbb;">None on file</span>') + '</span>'
-    + '<span class="info-key">Email</span><span class="info-val">' + (c.email ? esc(c.email) : '<span style="color:#bbb;">None on file</span>') + '</span>'
-    + (c.home_address ? '<span class="info-key">Address</span><span class="info-val">' + mapsLink(c.home_address) + '</span>' : '')
-    + '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
-    + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
-    + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : '')
+    + contactInfoRows(c,
+        '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
+        + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
+        + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : ''))
     + '</div>'
     + customerTagBadges(c.tags)
-    + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">'
-    + (c.phone ? '<a href="tel:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('phone') + 'Call</a>' : '')
-    + (c.phone ? '<a href="sms:' + esc(c.phone) + '" class="btn btn-outline btn-sm" style="width:auto;">' + ic('chat') + 'Text</a>' : '')
-    + (c.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(c.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;">' + ic('envelope') + 'Email</button>' : '')
-    + '</div>'
+    + contactActions(c)
     + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
     + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
     + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
