@@ -162,6 +162,67 @@ function contactActions(p, marginTop) {
     + '</div>';
 }
 
+// ─── Canonical lead card ──────────────────────────────────────────────────────
+// One card for a lead, shown identically in the Leads list and the customer
+// profile's job history (and anywhere else a lead appears). The shell is always
+// the same: status stripe, name + status badge, customer tags, service, vehicle,
+// service address, meta line, and the shared Call/Text/Email buttons. Context
+// detail slots in: opts.management adds the pipeline tools (scheduling panel,
+// Send Receipt, status dropdown, archive/delete) on the Leads list; opts.extra
+// is raw HTML appended in the body (e.g. the job total in the profile history).
+function leadCard(l, opts) {
+  opts = opts || {};
+  var back = opts.back || '/admin';
+  var sched = (l.status === 'quote_accepted' || l.status === 'booked')
+    ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
+    : null;
+  var cust = l.customer_id ? db.prepare('SELECT tags, home_address FROM customers WHERE id = ?').get(l.customer_id) : null;
+  var addrDisplay = (sched && sched.pref_location) ? sched.pref_location : (cust && cust.home_address ? cust.home_address : null);
+  var statusOptions = ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'];
+  var statusLabels = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' };
+
+  return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;border-left:3px solid ' + (STATUS_COLOR[l.status] || STATUS_COLOR.new) + ';' + (l.archived ? 'opacity:.72;' : '') + '">'
+    + '<div class="row-sb">'
+    + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
+    + statusBadge(l.status)
+    + '</div>'
+    + (cust && cust.tags ? customerTagBadges(cust.tags) : '')
+    + '<div class="lead-service">' + esc(l.service || 'Service not specified') + '</div>'
+    + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
+    + (addrDisplay ? '<div class="lead-meta" style="margin-top:2px;">' + mapsLink(addrDisplay, { style: 'color:#1a6fc4;font-size:0.83rem;text-decoration:none;' }) + '</div>' : '')
+    + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
+    + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
+    + (opts.extra || '')
+    + (opts.management ? '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>' : '')
+    + contactActions(l, 12)
+    + (opts.management
+        ? (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-navy btn-sm" style="width:100%;margin-top:8px;text-align:center;">' + ic('receipt') + 'Send Receipt</a>')
+          + (l.archived
+              ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
+                + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/restore" style="margin:0;">'
+                + '<input type="hidden" name="back" value="' + esc(back) + '">'
+                + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">&#8634; Restore</button>'
+                + '</form></div>'
+              : '<form method="POST" action="/admin/lead/' + l.id + '/status" style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
+                + '<input type="hidden" name="back" value="' + esc(back) + '">'
+                + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
+                + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
+                + statusOptions.map(function(s) { return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + statusLabels[s] + '</option>'; }).join('')
+                + '</select></form>'
+                + '<div style="display:flex;gap:0;margin-top:8px;">'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/archive" style="flex:1;" onsubmit="return confirm(\'Archive this lead? It stays saved and can be restored from the Archived tab.\');">'
+                + '<input type="hidden" name="back" value="' + esc(back) + '">'
+                + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('archive') + 'Archive</button>'
+                + '</form>'
+                + '<form method="POST" action="/admin/lead/' + l.id + '/delete" style="flex:1;">'
+                + '<input type="hidden" name="back" value="' + esc(back) + '">'
+                + '<button type="button" data-name="' + esc(l.first_name + ' ' + l.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('trash') + 'Delete</button>'
+                + '</form></div>')
+        : '')
+    + '</div>';
+}
+
 // Natural list join for the service line, e.g. "A, B, and C" (or "A, and B").
 function joinServices(s) {
   var a = String(s || '').split(', ').map(function(x) { return x.trim(); }).filter(Boolean);
@@ -1484,58 +1545,7 @@ router.get('/', requireAuth, function(req, res) {
   var cardsHtml = leads.length === 0
     ? '<div class="empty"><div style="margin-bottom:10px;">' + icon('clipboard') + '</div>' + emptyMsg + '</div>'
     : leads.map(function(l) {
-        var sched = (l.status === 'quote_accepted' || l.status === 'booked')
-          ? db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(l.id)
-          : null;
-        var backVal = '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '');
-        var cust = l.customer_id ? db.prepare('SELECT tags, home_address FROM customers WHERE id = ?').get(l.customer_id) : null;
-        // Service address: prefer the accepted quote's pref_location; fall back to
-        // the customer's home address so we always have somewhere to drive to.
-        var addrDisplay = (sched && sched.pref_location) ? sched.pref_location : (cust && cust.home_address ? cust.home_address : null);
-        return '<div class="card" onclick="if(!event.target.closest(\'a,button,select,form\')){window.location=\'/admin/quote/' + l.id + '\';}" style="cursor:pointer;border-left:3px solid ' + (STATUS_COLOR[l.status] || STATUS_COLOR.new) + ';' + (l.archived ? 'opacity:.72;' : '') + '">'
-          + '<div class="row-sb">'
-          + '<div class="lead-name">' + esc(l.first_name) + ' ' + esc(l.last_name) + '</div>'
-          + statusBadge(l.status)
-          + '</div>'
-          + (cust && cust.tags ? customerTagBadges(cust.tags) : '')
-          + '<div class="lead-service">' + esc(l.service || 'Service not specified') + '</div>'
-          + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
-          + (addrDisplay ? '<div class="lead-meta" style="margin-top:2px;">' + mapsLink(addrDisplay, { style: 'color:#1a6fc4;font-size:0.83rem;text-decoration:none;' }) + '</div>' : '')
-          + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
-          + (l.message ? '<div class="lead-note">&ldquo;' + esc(l.message) + '&rdquo;</div>' : '')
-          + '<div style="margin-top:12px;">' + schedulingPanel(l, sched, true) + '</div>'
-          + '<div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap;">'
-          + '<a href="tel:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('phone') + 'Call</a>'
-          + '<a href="sms:' + esc(l.phone) + '" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('chat') + 'Text</a>'
-          + (l.email ? '<button type="button" onclick="copyEmail(this,\'' + esc(l.email) + '\')" class="btn btn-outline btn-sm" style="width:auto;flex-shrink:0;">' + ic('envelope') + 'Email</button>' : '')
-          + '</div>'
-          + (l.archived ? '' : '<a href="/admin/receipt/' + l.id + '" class="btn btn-navy btn-sm" style="width:100%;margin-top:8px;text-align:center;">' + ic('receipt') + 'Send Receipt</a>')
-          + (l.archived
-              ? '<div style="margin-top:10px;display:flex;align-items:center;gap:8px;justify-content:space-between;">'
-                + '<span style="font-size:0.78rem;color:#aaa;">Archived' + (l.archived_at ? ' ' + timeAgo(l.archived_at) : '') + '</span>'
-                + '<form method="POST" action="/admin/lead/' + l.id + '/restore" style="margin:0;">'
-                + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">&#8634; Restore</button>'
-                + '</form></div>'
-              : '<form method="POST" action="/admin/lead/' + l.id + '/status" style="margin-top:10px;display:flex;align-items:center;gap:8px;">'
-                + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<label style="font-size:0.78rem;color:#aaa;font-weight:600;white-space:nowrap;">Status:</label>'
-                + '<select name="status" onchange="this.form.submit()" style="flex:1;padding:6px 8px;border:1.5px solid #dde3ea;border-radius:6px;font-size:0.82rem;color:#1a2a3a;background:#fff;">'
-                + ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'].map(function(s) {
-                    var label = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' }[s];
-                    return '<option value="' + s + '"' + (l.status === s ? ' selected' : '') + '>' + label + '</option>';
-                  }).join('')
-                + '</select></form>'
-                + '<div style="display:flex;gap:0;margin-top:8px;">'
-                + '<form method="POST" action="/admin/lead/' + l.id + '/archive" style="flex:1;" onsubmit="return confirm(\'Archive this lead? It stays saved and can be restored from the Archived tab.\');">'
-                + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="submit" style="width:100%;background:none;border:none;color:#888;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('archive') + 'Archive</button>'
-                + '</form>'
-                + '<form method="POST" action="/admin/lead/' + l.id + '/delete" style="flex:1;">'
-                + '<input type="hidden" name="back" value="' + backVal + '">'
-                + '<button type="button" data-name="' + esc(l.first_name + ' ' + l.last_name) + '" onclick="showDeleteConfirm(this)" style="width:100%;background:none;border:none;color:#c0392b;font-size:0.8rem;font-weight:600;cursor:pointer;padding:4px;">' + ic('trash') + 'Delete</button>'
-                + '</form></div>')
-          + '</div>';
+        return leadCard(l, { management: true, back: '/admin?status=' + status + (search ? '&q=' + encodeURIComponent(search) : '') });
       }).join('');
 
   var searchBar = '<form method="GET" action="/admin" style="margin-bottom:12px;display:flex;gap:8px;">'
@@ -4411,17 +4421,15 @@ router.get('/customer/:id', requireAuth, function(req, res) {
         var qt = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
         var totalVal = rc ? rc.total : (qt ? qt.total : null);
         var receiptSent = rc && rc.sent_at;
-        return '<a href="/admin/quote/' + l.id + '" style="text-decoration:none;color:inherit;display:block;border:1px solid #e3e9f1;border-radius:8px;padding:11px 13px;margin-bottom:8px;">'
-          + '<div class="row-sb" style="margin-bottom:4px;">'
-          + '<div style="font-weight:600;color:#1a6fc4;font-size:0.88rem;">' + esc(l.service || 'Service not specified') + '</div>'
-          + statusBadge(l.status)
-          + '</div>'
-          + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">'
-          + '<span style="font-size:0.8rem;color:#888;">' + shortDate(l.created_at) + (l.source ? ' &middot; ' + esc(l.source) : '') + '</span>'
-          + '<span style="font-size:0.85rem;color:#0a1f3d;font-weight:700;">' + (totalVal != null ? '$' + money(totalVal) : '') + '</span>'
-          + '</div>'
-          + (receiptSent ? '<div style="font-size:0.74rem;color:#1a7a3a;font-weight:700;margin-top:4px;">&#10003; Receipt sent ' + shortDate(rc.sent_at) + '</div>' : '')
-          + '</a>';
+        // Same card as the Leads list. Pipeline management tools are omitted here
+        // (this is a read-only history); the job total + receipt status slot in.
+        var extra = (totalVal != null || receiptSent)
+          ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;">'
+            + '<span style="font-size:0.74rem;color:#1a7a3a;font-weight:700;">' + (receiptSent ? '&#10003; Receipt sent ' + shortDate(rc.sent_at) : '') + '</span>'
+            + '<span style="font-size:0.9rem;color:#0a1f3d;font-weight:700;">' + (totalVal != null ? '$' + money(totalVal) : '') + '</span>'
+            + '</div>'
+          : '';
+        return leadCard(l, { management: false, extra: extra });
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;">No jobs yet.</div>';
   var jobsCard = collapsible('cust_jobs', 'Job History <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(' + jobs.length + ')</span>', jobsHtml, true);
