@@ -4023,6 +4023,7 @@ router.get('/customers', requireAuth, function(req, res) {
             + '<span>Last activity ' + shortDate(s.lastLeadDate) + '</span>'
             + (s.lastJobDate ? '<span>Last job ' + shortDate(s.lastJobDate) + '</span>' : '')
             + '</div>'
+            + contactActions(c, 11)
             + '<form method="POST" action="/admin/customer/' + c.id + '/delete" style="margin-top:10px;" onsubmit="return confirm(\'Delete this customer? Their leads will be kept but unlinked.\');">'
             + '<button type="submit" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">' + ic('trash') + 'Delete customer</button>'
             + '</form>'
