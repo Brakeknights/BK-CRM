@@ -1649,6 +1649,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var currentTaxRate = q.tax_rate != null ? +(q.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
   var currentLineItems    = parseLineItems(q.line_items);
   var currentCustomerNotes = q.customer_notes || '';
+  var currentDiscount     = Math.round(Number(q.discount) || 0);
+
+  // Best-effort split of the lead's free-text vehicle ("2018 Honda Accord") into
+  // year / make / model to pre-select the cascade dropdowns. The make must match a
+  // dropdown option to pre-select; the model is kept as a preset option regardless.
+  var vehParts = String(lead.vehicle || '').trim().split(/\s+/).filter(Boolean);
+  var prefYear = '', prefMake = '', prefModel = '';
+  if (vehParts.length && /^(19|20)\d{2}$/.test(vehParts[0])) prefYear = vehParts.shift();
+  if (vehParts.length) prefMake = vehParts.shift();
+  prefModel = vehParts.join(' ');
 
   var effectivePricing = getEffectivePricing();
   var serviceNames = Object.keys(effectivePricing);
@@ -1884,6 +1894,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
 
+    + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(shown on the customer quote)</span></label>'
+    + vehicleCascadeHtml('qbveh', {}, { year: prefYear, make: prefMake, model: prefModel })
+    + '</div>'
+
     + '<div class="form-group"><label>Tier</label>'
     + '<div class="tier-toggle">'
     + '<button type="button" class="tier-btn' + (currentTier === 'standard' ? ' active' : '') + '" id="btnStd" onclick="setTier(\'standard\')">Standard</button>'
@@ -1927,6 +1941,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + money(q.shop_supplies) + '</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + money(q.tax) + '</span></div>'
+    + '<div class="price-row"><span class="price-label">Discount <span class="price-note">(applied after tax)</span></span>'
+    + '<input class="price-input" type="number" name="discount" id="disc" min="0" step="1" value="' + currentDiscount + '" oninput="calc()" onfocus="this.select()"></div>'
     + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
     + '</div>'
 
@@ -2040,8 +2056,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var items=cliCollect();'
     +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
     +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var disc=parseFloat(document.getElementById("disc").value)||0;'
     +   'var tax=(parts+ss+cliTax)*tr/100;'
-    +   'var total=parts+labor+ss+cliAll+tax;'
+    +   'var total=parts+labor+ss+cliAll+tax-disc;'
     +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
@@ -2064,7 +2081,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
     +   'var tax=parseFloat(document.getElementById("taxH").value)||0;'
     +   'var tot=parseFloat(document.getElementById("totalH").value)||0;'
-    +   'var veh=vehicle?" for your <strong>"+vehicle+"</strong>":"";'
+    +   'var disc=parseFloat(document.getElementById("disc").value)||0;'
+    +   'var vehNow=[(document.getElementById("qbveh-year")||{}).value||"",(document.getElementById("qbveh-make")||{}).value||"",(document.getElementById("qbveh-model-hid")||{}).value||""].filter(Boolean).join(" ")||vehicle;'
+    +   'var veh=vehNow?" for your <strong>"+vehNow+"</strong>":"";'
     +   'var toLine=leadEmail||"<em style=\'color:#e07000\'>(no email on file)</em>";'
     +   'var svcLine=svcNames.length<=1?(svcNames[0]||"(no service selected)"):svcNames.slice(0,-1).join(", ")+", and "+svcNames[svcNames.length-1];'
     +   'var totMins=svcNames.reduce(function(a,n){return a+((PRICING[n]&&PRICING[n].minutes)||0);},0);'
@@ -2084,6 +2103,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+cliCollect().map(function(it){return "<tr><td>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'text-align:right;\'>$"+money(it.amount)+"</td></tr>";}).join("")'
     +     '+(ss>0?"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>":"")'
     +     '+(tax>0?"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>":"")'
+    +     '+(disc>0?"<tr><td>Discount</td><td style=\'text-align:right;\'>-$"+money(disc)+"</td></tr>":"")'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
     +     '+"</table>"'
     +     '+svcNames.map(function(s){return PRICING[s]&&PRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;font-size:0.85rem;\'>"+n+"</p>";}).join("")'
@@ -2132,7 +2152,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
     +   'renderTags();updateServiceHints(svc);calc();'
     + '};'
-    + '</script>';
+    + '</script>'
+    + VEHICLE_CASCADE_JS;
 
   res.send(page('Quote — ' + lead.first_name + ' ' + lead.last_name, body, req));
 });
@@ -2158,6 +2179,16 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var lineItems     = parseLineItems(req.body.customLineItems);
   var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
   var customerNotes = (req.body.customerNotes || '').trim() || null;
+  var discount      = parseFloat(req.body.discount)      || 0;
+
+  // Vehicle picked on the Build Quote form (year/make/model cascade). If the owner
+  // set one, save it back to the lead so it shows on the quote email and the profile.
+  var vehicle = [req.body.veh_year, req.body.veh_make, req.body.veh_model]
+    .map(function(v) { return (v || '').trim(); }).filter(Boolean).join(' ');
+  if (vehicle && vehicle !== lead.vehicle) {
+    db.prepare('UPDATE leads SET vehicle = ? WHERE id = ?').run(vehicle, lead.id);
+    lead.vehicle = vehicle;
+  }
 
   var acceptToken = crypto.randomBytes(24).toString('hex');
 
@@ -2171,9 +2202,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   ).get(lead.id).n > 0;
 
   var info = db.prepare(
-    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, line_items, customer_notes, accept_token, sent_at, status) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
-  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lineItemsJson, customerNotes, acceptToken, lead.email ? 'sent' : 'saved');
+    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, line_items, customer_notes, discount, accept_token, sent_at, status) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
+  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lineItemsJson, customerNotes, discount, acceptToken, lead.email ? 'sent' : 'saved');
 
   db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
@@ -2207,7 +2238,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       subject: isRevisedQuote
         ? 'Your Updated Brake Service Quote — Brake Knights'
         : 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, null, isRevisedQuote, customerNotes, lineItems)
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, null, isRevisedQuote, customerNotes, lineItems, discount)
     });
 
     res.redirect('/admin/quote/' + lead.id + '?msg=quote_sent');
@@ -2236,7 +2267,8 @@ function buildWarrantyClause(service) {
   return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
 }
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes, customLineItems) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes, customLineItems, discount) {
+  discount = Number(discount) || 0;
   var partsLabor  = parts + labor;
   var svcName     = joinServices(service);
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
@@ -2280,6 +2312,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
       }).join('') : '')
     + (shopSupplies > 0 ? '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(shopSupplies) + '</td></tr>' : '')
     + (tax > 0 ? '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(tax) + '</td></tr>' : '')
+    + (discount > 0 ? '<tr><td style="padding:6px 0;color:#1a7a3a;">Discount</td><td style="text-align:right;color:#1a7a3a;">-$' + money(discount) + '</td></tr>' : '')
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total</td>'
     + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
     + '</table></div>'
