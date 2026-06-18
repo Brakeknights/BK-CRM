@@ -100,7 +100,7 @@ THE WORKFLOW IS:
 
 There is NO shortcut. There is NO exception. Not even "just a small fix."
 ASKING "should I push to dev?" IS NOT ENOUGH — wait for the user to say it.
-- Current feature branch: `claude/eager-ride-SnMeU`
+- Current feature branch: `claude/continue-building-9ex1oc`
 
 ## Square Integration — Platform Build Plan
 
@@ -180,7 +180,7 @@ Update this section at the end of each session to stay caught up next time.
 > - On 2026-06-18 both sites were force-deployed current this way: master `a6edc3d`, dev `fb05c6e`. Env vars + DB confirmed intact (admin login works).
 > - **CHECK BACK:** once Hostinger reconnects GitHub, do a tiny test push and confirm it auto-builds, then auto-deploy is restored and this note can be removed.
 
-- Last working branch: `claude/blissful-feynman-f0raph` — merged to master via PR #44 ✅
+- Last working branch: `claude/continue-building-9ex1oc` — merged to master via PR #47 ✅ (force-deployed to brakeknights.com via Hostinger MCP archive; home 200, admin 302 confirmed)
 - `dev` branch → dev.brakeknights.com (auto-deploy on push) ✅
 - `master` branch → brakeknights.com (live site, auto-deploy on push) ✅ — **site is live**
 - Phases 2, 3, 4, 5, 6, 7A, 7B, 7C, 8E/8F all complete and live on master.
@@ -264,7 +264,7 @@ Update this section at the end of each session to stay caught up next time.
 
 ### Pending
 - [ ] ⚠️ **Hostinger GitHub auto-deploy reconnect** — both sites "Disconnected from GitHub" since ~6/16 (Hostinger Node.js migration dropped the link). Ticket open with Hostinger. Until fixed, deploy via Hostinger MCP archive (see DEPLOYMENT BROKEN note at top). Once Hostinger re-links it, test a push auto-builds, then remove the note.
-- [ ] Custom line items + notes to customer on the **Quick Quote** tool (`/admin/quick`) — already shipped on the per-lead Build Quote + Receipt builder (custom priced lines with Taxed/Not-taxed toggle, taxed-as-parts, hidden from customer; free-text notes). Quick Quote still needs the same treatment for consistency.
+- [x] Custom line items + notes to customer on the **Quick Quote** tool (`/admin/quick`) — shipped this session (custom priced lines with Taxed/Not-taxed toggle, hidden from customer; free-text notes). Now consistent with the per-lead Build Quote + Receipt builder. Live on master via PR #47.
 - [ ] Phase 6C: Square auto-trigger (Square events fire receipt + follow-up flow) — deferred, spec later
 - [ ] Phase 8: automated quotes (requires pricing table to be finalized)
 - [ ] Phase 9: white-label packaging for other service businesses
@@ -280,6 +280,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Job photo feature: upload photos mid-job (from lead profile, before receipt exists) and attach to receipt email; tokenized public serve route (/photos/:token); customer profile gallery across all jobs. Storage in /data/uploads/ outside git. multer for uploads, job_photos table in SQLite.
 
 ### Completed This Session
+- [x] PR #47: (1) Empty-row suppression — quote/receipt emails and ALL previews (Quick Quote, per-lead Build Quote, appointment confirmation) now only render rows with a real value; no more `Services: (none selected)` or zeroed `$0.00` Parts & Labor / Shop Supplies / Tax rows. Nonzero amounts (e.g. tax on a taxed line item) still show. Fixed in `buildQuoteEmail`, the appointment confirmation email builder, and the three preview JS blocks in `routes/admin.js`. (2) Custom line items + notes-to-customer added to the **Quick Quote** tool (`/admin/quick` → Pricing) for parity with the per-lead builders — per-line Taxed/Not-taxed toggle, hidden from the customer. (3) Card uniformity — lead-page contact info matches the customer profile; Leads-list card matches the customer-profile Job History card; Call/Text/Email actions added to customers-list cards. Merged to master, force-deployed via Hostinger MCP. dev and master in sync.
 - [x] PR #44: CRM login → Appointments landing; saved-address auto-fill on address forms; prevent duplicate saved addresses on profile save; phone formatting fix for numbers stored with leading country code 1; push notification reliability fix. Merged to master, live. dev and master in sync.
 - [x] PR #29: Vehicle cascade dropdowns (NHTSA API, "Other" free-text fallback) applied to Quick Quote and Receipt Builder; appointments Clear Selection now zeroes prices; Preview Email button on New Appointment form; required year/make/model validation on public contact forms (index.html + contact.html).
 
