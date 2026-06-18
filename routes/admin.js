@@ -2116,11 +2116,11 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+(disc>0?"<tr><td>Discount</td><td style=\'text-align:right;\'>-$"+money(disc)+"</td></tr>":"")'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
     +     '+"</table>"'
-    +     '+svcNames.map(function(s){return PRICING[s]&&PRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;font-size:0.85rem;\'>"+n+"</p>";}).join("")'
-    +     '+((((document.getElementById("qbCustNotes")||{}).value||"").trim())?("<p style=\'color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:6px;padding:10px 12px;font-size:0.86rem;\'>"+document.getElementById("qbCustNotes").value.trim().replace(/</g,"&lt;")+"</p>"):"")'
-    +     '+"<p>Includes all parts and labor. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong>.</p>"'
-    +     '+"<p style=\'margin-top:8px;\'>We come to your home or office. No shop visit needed.</p>"'
-    +     '+"<p style=\'margin-top:8px;\'>Reply to this email or call/text <strong>703-977-4475</strong> to confirm.</p>"'
+    +     '+svcNames.map(function(s){return PRICING[s]&&PRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:11px 13px;font-size:0.85rem;line-height:1.6;margin:18px 0;\'>"+n+"</p>";}).join("")'
+    +     '+((((document.getElementById("qbCustNotes")||{}).value||"").trim())?("<p style=\'color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:6px;padding:12px 14px;font-size:0.86rem;line-height:1.6;margin:18px 0;\'>"+document.getElementById("qbCustNotes").value.trim().replace(/</g,"&lt;")+"</p>"):"")'
+    +     '+"<p style=\'margin:18px 0 0;line-height:1.6;\'>Includes all parts and labor. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong>.</p>"'
+    +     '+"<p style=\'margin:16px 0 0;line-height:1.6;\'>We come to your home or office. No shop visit needed.</p>"'
+    +     '+"<p style=\'margin:16px 0 0;line-height:1.6;\'>Reply to this email or call/text <strong>703-977-4475</strong> to confirm.</p>"'
     +     '+"</div>";'
     +   'box.style.display="block";'
     +   'document.getElementById("prevBtn").textContent="Hide Preview";'
@@ -2293,9 +2293,9 @@ function buildWarrantyClause(service) {
   var partsQuality = 'All parts are <strong>premium quality, meeting or exceeding OEM manufacturer specifications</strong>.';
   var hasRotorsOrDrums = svcs.some(function(s) { return /rotor|drum/i.test(s); });
   if (hasRotorsOrDrums) {
-    return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>';
+    return '<p style="color:#444;line-height:1.6;margin:0 0 18px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty</strong> on parts and labor.</p>';
   }
-  return '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
+  return '<p style="color:#444;line-height:1.6;margin:0 0 18px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
 }
 
 function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes, customLineItems, discount) {
@@ -2360,7 +2360,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
         : '')
     + (customerNotes ? '<p style="color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:8px;padding:12px 16px;line-height:1.6;margin:0 0 20px;font-size:0.88rem;">' + esc(customerNotes) + '</p>' : '')
     + buildWarrantyClause(service)
-    + '<p style="color:#444;line-height:1.6;margin:0 0 12px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 18px;font-size:0.9rem;">Our service is fully mobile. We come directly to your home or office. No shop visit needed.</p>'
     + '<p style="color:#6b5900;background:#fffbea;border:1px solid #e8d87a;border-radius:6px;padding:10px 14px;line-height:1.55;margin:0 0 24px;font-size:0.84rem;"><strong>Inspection note:</strong> If we arrive and determine no brake service is needed, a $60 inspection fee applies. If repairs are needed, the inspection fee is applied toward the cost of the repair — no extra charge.</p>'
     + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
     + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Prefer to talk it through? Reply to this email or call/text:</p>'
@@ -5703,6 +5703,15 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
   var q = db.prepare("SELECT * FROM quotes WHERE lead_id = ? AND status = 'approved' ORDER BY id DESC LIMIT 1").get(lead.id);
   if (!q) return res.redirect('/admin/quote/' + lead.id);
 
+  // Contact info can live on the lead, the linked customer, or both (e.g. a lead
+  // created from a Quick Quote with no phone still links to a customer who has one).
+  // Prefill from the lead, then fall back to the customer record so nothing is blank.
+  var cust = lead.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(lead.customer_id) : null;
+  var preFirst = lead.first_name || (cust && cust.first_name) || '';
+  var preLast  = lead.last_name  || (cust && cust.last_name)  || '';
+  var prePhone = lead.phone      || (cust && cust.phone)      || '';
+  var preEmail = lead.email      || (cust && cust.email)      || '';
+
   var apptPricing = getEffectivePricing();
   var serviceNames = Object.keys(apptPricing);
   var pricingJson = JSON.stringify(apptPricing);
@@ -5755,12 +5764,12 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group"><label>First name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_first" value="' + esc(lead.first_name || '') + '" style="' + inputStyle + '"></div>'
-    + '<div class="form-group"><label>Last name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_last" value="' + esc(lead.last_name || '') + '" style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>First name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_first" value="' + esc(preFirst) + '" style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>Last name <span style="color:#c0392b;">*</span></label><input type="text" name="cust_last" value="' + esc(preLast) + '" style="' + inputStyle + '"></div>'
     + '</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group"><label>Phone</label><input type="tel" name="cust_phone" value="' + esc(lead.phone || '') + '" oninput="fmtPhoneInput(this)" maxlength="12" style="' + inputStyle + '"></div>'
-    + '<div class="form-group"><label>Email</label><input type="email" name="cust_email" value="' + esc(lead.email || '') + '" placeholder="customer@email.com" style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>Phone</label><input type="tel" name="cust_phone" value="' + esc(prePhone) + '" oninput="fmtPhoneInput(this)" maxlength="12" style="' + inputStyle + '"></div>'
+    + '<div class="form-group"><label>Email</label><input type="email" name="cust_email" value="' + esc(preEmail) + '" placeholder="customer@email.com" style="' + inputStyle + '"></div>'
     + '</div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
     + '<input type="text" name="pref_location" id="apptAddr" value="' + esc(q.pref_location || '') + '" placeholder="Service address" autocomplete="off" style="' + inputStyle + '"></div>'
@@ -5834,9 +5843,9 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + '<textarea name="notes" placeholder="Any notes for the job...">' + esc(q.scheduling_notes || '') + '</textarea></div>'
     + '</div>'
 
-    + (lead.email ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The updated confirmation can\'t be emailed.</div>')
+    + (preEmail ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The updated confirmation can\'t be emailed.</div>')
     + '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">'
-    + (lead.email ? '<button type="submit" name="send_email" value="1" class="btn btn-blue">Save &amp; Email Updated Confirmation</button>' : '')
+    + (preEmail ? '<button type="submit" name="send_email" value="1" class="btn btn-blue">Save &amp; Email Updated Confirmation</button>' : '')
     + '<button type="submit" name="send_email" value="0" class="btn btn-navy">Save Changes (no email)</button>'
     + '<a href="/admin/appointments" class="btn btn-outline" style="text-align:center;">Cancel</a>'
     + '</div>'
