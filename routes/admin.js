@@ -1643,6 +1643,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var allQuotes = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
   var existing = allQuotes[0] || {};
+  // True once a quote has actually gone out on this lead. When set, the Send action
+  // splits into "Update this quote" vs "Send as a separate quote" (its own new lead).
+  var hasSentQuote = allQuotes.some(function(qq) { return !!qq.sent_at; });
   var q = existing;
   var currentService = q.service || lead.service || '';
   var currentTier    = q.tier || 'standard';
@@ -1681,6 +1684,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'approved')   quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
   if (req.query.msg === 'denied')     quoteAlert = '<div class="alert alert-error" style="background:#fff8e1;color:#7a5a00;border-color:#f0d080;">Time denied. Customer notified — we\'ll reach out to reschedule.</div>';
   if (req.query.msg === 'quote_sent') quoteAlert = '<div class="alert alert-success">Quote sent to customer successfully.</div>';
+  if (req.query.msg === 'quote_sent_sep') quoteAlert = '<div class="alert alert-success">Sent as a separate quote. This is a new lead, so both quotes now track through the pipeline independently.</div>';
+  if (req.query.msg === 'quote_saved_noemail') quoteAlert = '<div class="alert alert-success">Quote saved. No email on file for this lead, so it was not emailed.</div>';
   if (req.query.msg === 'quote_err')  quoteAlert = '<div class="alert alert-error">Quote was saved but the email failed to send. Check your connection and hit Send Quote again from the form below.</div>';
   if (req.query.msg === 'receipt_sent')  quoteAlert = '<div class="alert alert-success">Receipt sent to the customer. Lead moved to Receipt.</div>';
   if (req.query.msg === 'receipt_saved') quoteAlert = '<div class="alert alert-success">Receipt saved. No email on file for this lead.</div>';
@@ -1955,7 +1960,11 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
     + '<button type="button" class="btn btn-outline" onclick="togglePreview()" id="prevBtn">Preview Email</button>'
     + '<div id="previewBox" style="display:none;"></div>'
-    + '<button type="submit" class="btn btn-blue" style="margin-top:10px;">Send Quote</button>'
+    + (hasSentQuote
+        ? '<button type="submit" name="sendMode" value="separate" class="btn btn-blue" style="margin-top:10px;">Send as a Separate Quote</button>'
+          + '<button type="submit" name="sendMode" value="update" class="btn btn-outline" style="margin-top:8px;">Update This Quote Instead</button>'
+          + '<p style="font-size:0.8rem;color:#888;margin:8px 2px 0;line-height:1.5;"><strong>Separate</strong> creates a new lead so this and the earlier quote each track through the pipeline on their own. <strong>Update</strong> replaces the current quote on this same lead.</p>'
+        : '<button type="submit" name="sendMode" value="new" class="btn btn-blue" style="margin-top:10px;">Send Quote</button>')
     + '</form>'
     + COLLAPSE_CLOSE
     + '</div>'
@@ -2181,10 +2190,31 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var customerNotes = (req.body.customerNotes || '').trim() || null;
   var discount      = parseFloat(req.body.discount)      || 0;
 
-  // Vehicle picked on the Build Quote form (year/make/model cascade). If the owner
-  // set one, save it back to the lead so it shows on the quote email and the profile.
+  // 'new'      = first quote on this lead
+  // 'update'   = revise the existing quote in place (stays this lead)
+  // 'separate' = spin off a brand-new lead so both quotes track independently
+  var sendMode = req.body.sendMode || 'new';
+
+  // Vehicle picked on the Build Quote form (year/make/model cascade).
   var vehicle = [req.body.veh_year, req.body.veh_make, req.body.veh_model]
     .map(function(v) { return (v || '').trim(); }).filter(Boolean).join(' ');
+
+  // "Send as a separate quote": clone the customer onto a brand-new lead so this
+  // quote and the earlier one each move through the pipeline on their own. The
+  // original lead is left exactly as it is. Everything below targets the new lead.
+  if (sendMode === 'separate') {
+    var newInfo = db.prepare(
+      'INSERT INTO leads (first_name, last_name, phone, email, vehicle, service, source, status, customer_id, vin, internal_notes) '
+      + "VALUES (?,?,?,?,?,?,?,'quoted',?,?,?)"
+    ).run(lead.first_name, lead.last_name, lead.phone, lead.email,
+          (vehicle || lead.vehicle || null), service || null, lead.source || 'Build Quote',
+          lead.customer_id || null, lead.vin || null, lead.internal_notes || null);
+    logHistory(lead.id, 'Separate quote started', 'New lead #' + newInfo.lastInsertRowid + ' created for a separate quote');
+    lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(newInfo.lastInsertRowid);
+    logHistory(lead.id, 'Separate quote', 'Split from lead #' + req.params.id);
+  }
+
+  // Save the chosen vehicle onto the target lead (so it shows on the email/profile).
   if (vehicle && vehicle !== lead.vehicle) {
     db.prepare('UPDATE leads SET vehicle = ? WHERE id = ?').run(vehicle, lead.id);
     lead.vehicle = vehicle;
@@ -2210,7 +2240,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
   if (lead.status !== 'quoted') sendStagePush(lead, 'quoted');
 
-  if (!lead.email) return res.redirect('/admin?msg=saved');
+  if (!lead.email) return res.redirect('/admin/quote/' + lead.id + '?msg=quote_saved_noemail');
 
   // Absolute base URL so the accept link points back to the same site that sent it
   // (dev.brakeknights.com on dev, brakeknights.com on prod) without an env var.
@@ -2241,7 +2271,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, null, isRevisedQuote, customerNotes, lineItems, discount)
     });
 
-    res.redirect('/admin/quote/' + lead.id + '?msg=quote_sent');
+    res.redirect('/admin/quote/' + lead.id + '?msg=' + (sendMode === 'separate' ? 'quote_sent_sep' : 'quote_sent'));
   } catch (err) {
     console.error('Quote email error:', err.message);
     res.redirect('/admin/quote/' + lead.id + '?msg=quote_err');
