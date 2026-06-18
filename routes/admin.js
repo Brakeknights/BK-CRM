@@ -3138,10 +3138,14 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<span id="qtaxAmt">$0.00</span></div>'
     + '</div>'
 
+    // Custom line items (e.g. OEM parts) — priced rows kept out of `service` reporting
+    + '<div style="margin:4px 0 16px;">' + customLineItemsSection([]) + '</div>'
+
     // Customer-facing total
     + '<div class="price-section" style="margin-bottom:0;">'
     + '<div class="price-section-header"><span id="qSummaryLabel">Customer Quote</span></div>'
     + '<div id="qqSvcCustomerRows"></div>'
+    + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="qssDisplay">$0.00</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="qtaxDisplay">$0.00</span></div>'
     + '<div class="price-row total-row divider-row"><span id="qTotalLabel">Total</span><span id="qtotalAmt" style="font-size:1.15rem;">$0.00</span></div>'
@@ -3237,6 +3241,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
     + 'function qCustomSvcVal(){var el=document.getElementById("qCustomSvc");return el?el.value.trim():"";}'
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + CLI_JS
     + 'function qqGetAllServiceNames(){'
     +   'var names=[];'
     +   'document.querySelectorAll(".qsvc-cb:checked").forEach(function(cb){names.push(cb.value);});'
@@ -3383,13 +3388,19 @@ router.get('/quick', requireAuth, function(req, res) {
     + '}'
 
     // Tax is on parts + shop supplies only (not labor — Virginia law).
+    + 'function bkRecalc(){qcalc();}'
     + 'function qcalc(){'
     +   'var parts=0,labor=0;'
     +   'document.querySelectorAll(".qsvc-parts-in").forEach(function(el){parts+=parseFloat(el.value)||0;});'
     +   'document.querySelectorAll(".qsvc-labor-in").forEach(function(el){labor+=parseFloat(el.value)||0;});'
     +   'var ss=parseFloat(document.getElementById("qss").value)||0;'
     +   'var tr=parseFloat(document.getElementById("qtr").value)||0;'
-    +   'var tax=(parts+ss)*tr/100;var total=parts+labor+ss+tax;'
+    +   'var cliItems=(typeof cliCollect==="function")?cliCollect():[];'
+    +   'var cliTax=cliItems.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=cliItems.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var tax=(parts+ss+cliTax)*tr/100;var total=parts+labor+ss+cliAll+tax;'
+    +   'var cdr=document.getElementById("cliDisplayRows");'
+    +   'if(cdr)cdr.innerHTML=cliItems.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("qtaxAmt").textContent="$"+money(tax);'
     +   'document.getElementById("qssDisplay").textContent="$"+money(ss);'
     +   'document.getElementById("qtaxDisplay").textContent="$"+money(tax);'
@@ -3471,6 +3482,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'var ql2=parseFloat(document.getElementById("qlaborH").value)||0;'
     +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts &amp; Labor</td><td style=\'padding:5px 0;\'>$"+pmoney(qp2+ql2)+"</td></tr>";'
     +     '}'
+    +     'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+pmoney(it.amount)+"</td></tr>";});'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+pmoney(qss2)+"</td></tr>";'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+pmoney(qtax)+"</td></tr>";'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>$"+pmoney(qtot)+"</td></tr>";'
@@ -3478,6 +3490,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(qcn.trim())rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Notes to customer</td><td style=\'padding:5px 0;font-style:italic;\'>"+qcn+"</td></tr>";'
     +   '}'
     +   'if(rec){'
+    +     'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+money(it.amount)+"</td></tr>";});'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
     +     'var pm=(document.getElementById("qpm")||{}).value||"";'
     +     'var pmo=(document.getElementById("qpmOther")||{}).value||"";'
@@ -3502,6 +3515,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
     +   'document.getElementById("qCustomSvcHint").style.display="none";'
     +   'document.getElementById("qss").value="0.00";'
+    +   'var cliC=document.getElementById("cliRows");if(cliC)cliC.innerHTML="";var cliH=document.getElementById("cliJson");if(cliH)cliH.value="[]";'
     +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
     +   'var offN=document.querySelector("[name=officeNotes]");if(offN)offN.value="";'
     +   '[1,2,3,4].forEach(function(i){'
@@ -3544,6 +3558,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'customSvc:qCustomSvcVal(),'
     +       'ss:document.getElementById("qss").value,'
     +       'tr:document.getElementById("qtr").value,'
+    +       'cli:(typeof cliCollect==="function")?cliCollect():[],'
     +       'payMethod:(document.getElementById("qpm")||{}).value||"",'
     +       'payOther:(document.getElementById("qpmOther")||{}).value||"",'
     +       'svcDate:(document.querySelector("[name=serviceDate]")||{}).value||"",'
@@ -3590,6 +3605,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
     +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
     +     'if(s.tr!==undefined)document.getElementById("qtr").value=s.tr;'
+    +     'if(Array.isArray(s.cli)){var cliC=document.getElementById("cliRows");if(cliC){cliC.innerHTML="";s.cli.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);cliC.appendChild(row);});}}'
     +     'if(s.payMethod&&document.getElementById("qpm"))document.getElementById("qpm").value=s.payMethod;'
     +     'if(s.payOther&&document.getElementById("qpmOther"))document.getElementById("qpmOther").value=s.payOther;'
     +     'var sa=document.querySelector("[name=serviceAddress]");if(s.svcAddr&&sa)sa.value=s.svcAddr;'
@@ -3716,6 +3732,8 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
   var lineItemsJson = (req.body.lineItems_json || '').trim() || null;
   var quoteCustomerNotes = (req.body.quote_customer_notes || '').trim() || null;
+  var customLineItems = parseLineItems(req.body.customLineItems);
+  var customLineItemsJson = customLineItems.length ? JSON.stringify(customLineItems) : null;
 
   var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
 
@@ -3761,9 +3779,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     var acceptToken = crypto.randomBytes(24).toString('hex');
     var qStatus = action === 'quote_save' ? 'saved' : 'sent';
     var qInfo = db.prepare(
-      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, accept_token, sent_at, status) '
-      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, acceptToken,
+      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, line_items, customer_notes, accept_token, sent_at, status) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, customLineItemsJson, quoteCustomerNotes, acceptToken,
           null, qStatus);
     var quoteId = qInfo.lastInsertRowid;
     var acceptUrl = baseUrl + '/quote/' + quoteId + '/' + acceptToken;
@@ -3795,7 +3813,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         subject: qqRevised
           ? 'Your Updated Brake Service Quote — Brake Knights'
           : 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, lineItemsJson ? (function(){try{return JSON.parse(lineItemsJson);}catch(e){return null;}})() : null, qqRevised, quoteCustomerNotes)
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, lineItemsJson ? (function(){try{return JSON.parse(lineItemsJson);}catch(e){return null;}})() : null, qqRevised, quoteCustomerNotes, customLineItems)
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
@@ -3826,9 +3844,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, totalAmt, payment, JSON.stringify(notes), officeNotes);
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, totalAmt, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
   var receiptId = rInfo.lastInsertRowid;
 
   followups.forEach(function(f) {
