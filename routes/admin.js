@@ -667,6 +667,20 @@ function ic(name) {
   return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">' + (ICON_PATHS[name] || '') + '</svg>';
 }
 
+// Notification bell, two states, drawn as one SOLID bell shape so on/off look
+// identical except color + slash. The outline Heroicons bell-slash fragments the
+// bell at small sizes and reads as broken; this keeps a clean, single silhouette.
+var SOLID_BELL_PATHS =
+    '<path d="M5.85 3.5a.75.75 0 00-1.117-1 9.719 9.719 0 00-2.348 4.876.75.75 0 001.479.248A8.219 8.219 0 015.85 3.5zM19.267 2.5a.75.75 0 10-1.118 1 8.22 8.22 0 011.987 4.124.75.75 0 001.48-.248A9.72 9.72 0 0019.266 2.5z"/>'
+  + '<path fill-rule="evenodd" d="M12 2.25A6.75 6.75 0 005.25 9v.75a8.217 8.217 0 01-2.119 5.52.75.75 0 00.298 1.206c1.544.57 3.16.99 4.831 1.243a3.75 3.75 0 107.48 0 24.583 24.583 0 004.83-1.244.75.75 0 00.298-1.205 8.217 8.217 0 01-2.118-5.52V9A6.75 6.75 0 0012 2.25zM9.75 18c0-.034 0-.067.002-.1a25.05 25.05 0 004.496 0l.002.1a2.25 2.25 0 11-4.5 0z" clip-rule="evenodd"/>';
+// ON: solid filled bell (color set by the button's .on class).
+var BELL_ON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' + SOLID_BELL_PATHS + '</svg>';
+// OFF/unsupported: same solid bell with a single clean diagonal slash. A white
+// stroke under the slash carves a crisp gap so the line reads clearly over the bell.
+var BELL_OFF = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' + SOLID_BELL_PATHS
+  + '<line x1="3.6" y1="3.2" x2="20.4" y2="20.8" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>'
+  + '<line x1="3.6" y1="3.2" x2="20.4" y2="20.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
 // Sidebar nav: [section label, [[id, label, href, icon], ...]].
 var NAV = [
   ['MAIN', [
@@ -929,7 +943,7 @@ function page(title, body, req) {
 
   var pushBtn = vapidKey
     ? '<button id="push-btn" class="push-btn" onclick="togglePush()" title="Notifications off — tap to enable" aria-label="Toggle push notifications">'
-      + icon('bell-slash') + '</button>'
+      + BELL_OFF + '</button>'
     : '';
 
   var appbar = '<header class="appbar">'
@@ -973,8 +987,8 @@ function page(title, body, req) {
       // ON = solid green bell (filled). OFF = gray bell with a slash. UNSUPPORTED =
       // faint slashed bell with guidance, for browsers that can't do push yet
       // (e.g. an iPhone Safari tab not yet added to the Home Screen).
-      + 'var _pushBellOn=' + JSON.stringify('<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5.85 3.5a.75.75 0 00-1.117-1 9.719 9.719 0 00-2.348 4.876.75.75 0 001.479.248A8.219 8.219 0 015.85 3.5zM19.267 2.5a.75.75 0 10-1.118 1 8.22 8.22 0 011.987 4.124.75.75 0 001.48-.248A9.72 9.72 0 0019.266 2.5z"/><path fill-rule="evenodd" d="M12 2.25A6.75 6.75 0 005.25 9v.75a8.217 8.217 0 01-2.119 5.52.75.75 0 00.298 1.206c1.544.57 3.16.99 4.831 1.243a3.75 3.75 0 107.48 0 24.583 24.583 0 004.83-1.244.75.75 0 00.298-1.205 8.217 8.217 0 01-2.118-5.52V9A6.75 6.75 0 0012 2.25zM9.75 18c0-.034 0-.067.002-.1a25.05 25.05 0 004.496 0l.002.1a2.25 2.25 0 11-4.5 0z" clip-rule="evenodd"/></svg>') + ';'
-      + 'var _pushBellOff=' + JSON.stringify(icon('bell-slash')) + ';'
+      + 'var _pushBellOn=' + JSON.stringify(BELL_ON) + ';'
+      + 'var _pushBellOff=' + JSON.stringify(BELL_OFF) + ';'
       + 'function _pushSetOn(btn){if(!btn)return;btn.classList.remove("unsupported");btn.classList.add("on");btn.title="Notifications on — tap to turn off";btn.innerHTML=_pushBellOn;}'
       + 'function _pushSetOff(btn){if(!btn)return;btn.classList.remove("on");btn.classList.remove("unsupported");btn.title="Notifications off — tap to enable";btn.innerHTML=_pushBellOff;}'
       + 'function _pushSetUnsupported(btn){if(!btn)return;btn.classList.remove("on");btn.classList.add("unsupported");btn.title="Notifications unavailable in this browser. On iPhone: tap Share, Add to Home Screen, then open Brake Knights from that icon.";btn.innerHTML=_pushBellOff;}'
