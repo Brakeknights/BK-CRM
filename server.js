@@ -118,6 +118,14 @@ app.use('/images', express.static(path.join(__dirname, 'public/images'), {
 app.use('/css', express.static(path.join(__dirname, 'public/css'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 }));
+// Serve the PWA manifest with the correct content-type. Some hosts (Hostinger's
+// static layer included) don't know the .webmanifest extension and fall back to
+// text/plain, which can stop iOS from treating the admin as an installable app
+// (required for web push). Setting it explicitly keeps install reliable.
+app.get('/manifest.webmanifest', (req, res) => {
+  res.type('application/manifest+json');
+  res.sendFile(path.join(__dirname, 'public', 'manifest.webmanifest'));
+});
 // redirect:false stops express.static from 301-ing a bare directory request
 // (e.g. /blog -> /blog/). That redirect fought the trailing-slash stripper above
 // and caused an infinite loop. With it off, /blog falls through to the explicit
