@@ -208,6 +208,7 @@ addLeadCol('archived',           'INTEGER DEFAULT 0');
 addLeadCol('archived_at',        'TEXT');
 addLeadCol('vin',                'TEXT');
 addLeadCol('internal_notes',     'TEXT');
+addLeadCol('interaction_notes',  'TEXT');
 addLeadCol('customer_id',        'INTEGER REFERENCES customers(id)');
 
 // ─── Backfill: approved appointments missing the quote 'approved' status ───────
