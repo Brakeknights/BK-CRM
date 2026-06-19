@@ -3321,7 +3321,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</form>'
 
     + '<script>'
-    + 'var QPRICING=' + pricingJson + ';'
+    + 'var qPRICING=' + pricingJson + ';'
     + 'var QDRAFT=' + draftJson + ';'
     + 'var QQCUSTS=' + qqCustJson + ';'
     + 'var qtier="standard";var qmode="quote";'
