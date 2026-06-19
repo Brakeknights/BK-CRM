@@ -188,6 +188,9 @@ addQuoteCol('customer_notes',      'TEXT');
 // Flat dollar discount subtracted from the total AFTER tax (owner-entered on the
 // Build Quote form). Shown to the customer as a "Discount" line in the quote email.
 addQuoteCol('discount',            'REAL DEFAULT 0');
+// Optional owner-entered label describing the discount (e.g. "Veteran discount").
+// Shown next to the Discount line on the customer quote page and quote/confirmation emails.
+addQuoteCol('discount_label',      'TEXT');
 
 // Receipts: custom priced line items (JSON array of {label, amount}), taxed as parts.
 // Kept separate from `service` so per-service reporting stays clean. `customer_notes`
