@@ -3278,6 +3278,8 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="qssDisplay">$0.00</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="qtaxDisplay">$0.00</span></div>'
+    + '<div class="price-row"><span class="price-label">Discount <span class="price-note">(applied after tax)</span></span>'
+    + '<input class="price-input" type="number" name="discount" id="qdisc" min="0" step="1" value="0" oninput="qcalc()" onfocus="this.select()"></div>'
     + '<div class="price-row total-row divider-row"><span id="qTotalLabel">Total</span><span id="qtotalAmt" style="font-size:1.15rem;">$0.00</span></div>'
     + '</div>'
     + '<input type="hidden" name="parts"      id="qpartsH"       value="0.00">'
@@ -3528,7 +3530,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var cliItems=(typeof cliCollect==="function")?cliCollect():[];'
     +   'var cliTax=cliItems.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
     +   'var cliAll=cliItems.reduce(function(a,it){return a+(it.amount||0);},0);'
-    +   'var tax=(parts+ss+cliTax)*tr/100;var total=parts+labor+ss+cliAll+tax;'
+    +   'var disc=parseFloat(document.getElementById("qdisc").value)||0;'
+    +   'var tax=(parts+ss+cliTax)*tr/100;var total=parts+labor+ss+cliAll+tax-disc;'
     +   'var cdr=document.getElementById("cliDisplayRows");'
     +   'if(cdr)cdr.innerHTML=cliItems.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
     +   'document.getElementById("qtaxAmt").textContent="$"+money(tax);'
@@ -3860,6 +3863,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var taxRate      = parseFloat(req.body.taxRate)      || 0;
   var taxAmt       = parseFloat(req.body.taxAmt)       || 0;
   var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
+  var discount     = parseFloat(req.body.discount)     || 0;
   var lineItemsJson = (req.body.lineItems_json || '').trim() || null;
   var quoteCustomerNotes = (req.body.quote_customer_notes || '').trim() || null;
   var customLineItems = parseLineItems(req.body.customLineItems);
@@ -3909,9 +3913,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     var acceptToken = crypto.randomBytes(24).toString('hex');
     var qStatus = action === 'quote_save' ? 'saved' : 'sent';
     var qInfo = db.prepare(
-      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, line_items, customer_notes, accept_token, sent_at, status) '
-      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, customLineItemsJson, quoteCustomerNotes, acceptToken,
+      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, line_items, customer_notes, discount, accept_token, sent_at, status) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, customLineItemsJson, quoteCustomerNotes, discount, acceptToken,
           null, qStatus);
     var quoteId = qInfo.lastInsertRowid;
     var acceptUrl = baseUrl + '/quote/' + quoteId + '/' + acceptToken;
@@ -3943,7 +3947,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         subject: qqRevised
           ? 'Your Updated Brake Service Quote — Brake Knights'
           : 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, lineItemsJson ? (function(){try{return JSON.parse(lineItemsJson);}catch(e){return null;}})() : null, qqRevised, quoteCustomerNotes, customLineItems)
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, lineItemsJson ? (function(){try{return JSON.parse(lineItemsJson);}catch(e){return null;}})() : null, qqRevised, quoteCustomerNotes, customLineItems, discount)
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
