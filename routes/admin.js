@@ -1909,6 +1909,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '</div>'
         : '')
 
+    + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf" data-autosave="' + autosaveKey + '" data-autosave-after="bkQuoteAfter">'
+
     + '<div class="form-group"><label>Service <span style="color:#bbb;font-weight:400;">(select all that apply)</span></label>'
     + serviceCheckboxes
     + '<button type="button" class="svc-clear-btn" onclick="clearServices()">&#10005; Clear selection</button>'
@@ -2256,9 +2258,16 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
     + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
   ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lineItemsJson, customerNotes, discount, acceptToken, lead.email ? 'sent' : 'saved');
 
-  db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+  // Don't drag a lead backwards: once an appointment is booked or the job is done,
+  // re-sending/updating a quote should not silently move it back to the Quoted stage
+  // (that would un-book the appointment). To change a booked appointment's details,
+  // use Edit Appointment. Early-stage leads still advance to Quoted as before.
+  var lockedStage = ['booked', 'completed', 'receipt'].indexOf(lead.status) !== -1;
+  if (!lockedStage) {
+    db.prepare("UPDATE leads SET status = 'quoted', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+  }
   logHistory(lead.id, isRevisedQuote ? 'Quote updated' : 'Quote sent', service + (tier ? ' (' + tier + ')' : '') + ' — $' + totalAmt.toFixed(2));
-  if (lead.status !== 'quoted') sendStagePush(lead, 'quoted');
+  if (!lockedStage && lead.status !== 'quoted') sendStagePush(lead, 'quoted');
 
   if (!lead.email) return res.redirect('/admin/quote/' + lead.id + '?msg=quote_saved_noemail');
 
