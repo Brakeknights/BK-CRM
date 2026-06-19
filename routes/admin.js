@@ -623,11 +623,13 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 #deleteModalBtns button{flex:1;padding:11px;border-radius:8px;font-weight:700;font-size:0.92rem;cursor:pointer;}
 #deleteModalCancel{border:1.5px solid #dde3ea;background:#fff;color:#444;}
 #deleteModalConfirm{border:none;background:#c0392b;color:#fff;}
-.push-btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;color:#94a3b8;cursor:pointer;background:none;border:none;position:relative}
-.push-btn:hover{background:var(--gray-100)}
+.push-btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;color:#94a3b8;cursor:pointer;background:none;border:none;position:relative;-webkit-tap-highlight-color:transparent}
+/* Only hover-capable devices get the background. On touch (iPhone) :hover sticks
+   after a tap and leaves a gray box around the bell, so scope it to real hover. */
+@media (hover:hover){.push-btn:hover{background:var(--gray-100)}}
 .push-btn svg{width:22px;height:22px}
 .push-btn.on{color:#1a7a3a}
-.push-btn.unsupported{color:#cbd5e1}
+.push-btn.unsupported{color:#94a3b8}
 .nav-new-badge{background:#e07000;color:#fff;font-size:0.6rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;margin-left:auto;flex-shrink:0}
 `;
 
