@@ -245,6 +245,7 @@ function quoteSummaryCard(q) {
     + '<div class="qline"><span>Parts &amp; Labor</span><span>$' + money(partsLabor) + '</span></div>'
     + '<div class="qline"><span>Shop Supplies</span><span>$' + money(q.shop_supplies) + '</span></div>'
     + '<div class="qline"><span style="color:#889;">Tax</span><span style="color:#889;">$' + money(q.tax) + '</span></div>'
+    + ((q.discount || 0) > 0 ? '<div class="qline"><span style="color:#1a7a3a;">Discount' + (q.discount_label ? ' (' + esc(q.discount_label) + ')' : '') + '</span><span style="color:#1a7a3a;">-$' + money(q.discount) + '</span></div>' : '')
     + '<div class="qline qtotal"><span>Total</span><span>$' + money(q.total) + '</span></div>'
     + '</div>';
 }

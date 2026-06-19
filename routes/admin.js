@@ -1597,7 +1597,7 @@ function parseLineItems(json) {
 function cliRowServer(label, amount, taxed) {
   return '<div class="cli-row" style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">'
     + '<input type="text" class="cli-label" placeholder="e.g. OEM Brake Pads &amp; Rotors" value="' + esc(label || '') + '" oninput="cliChanged()" style="flex:1;min-width:140px;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;">'
-    + '<input type="number" class="cli-amount" placeholder="0" min="0" step="1" value="' + (amount != null && amount !== '' ? esc(String(amount)) : '') + '" oninput="cliChanged()" onfocus="this.select()" style="width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;">'
+    + '<input type="number" class="cli-amount" placeholder="0" min="0" step="0.01" value="' + (amount != null && amount !== '' ? esc(String(amount)) : '') + '" oninput="cliChanged()" onfocus="this.select()" style="width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;">'
     + '<button type="button" class="cli-tax" data-taxed="' + (taxed === false ? '0' : '1') + '" onclick="cliToggleTax(this)"></button>'
     + '<button type="button" class="cli-x" onclick="cliRemove(this)" title="Remove" style="background:none;border:none;color:#c0392b;font-size:1.05rem;cursor:pointer;padding:0 4px;flex-shrink:0;">&#10005;</button>'
     + '</div>';
@@ -1626,7 +1626,7 @@ var CLI_JS = ''
   + 'function cliRowHtml(){'
   +   'return "<div class=\'cli-row\' style=\'display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;\'>"'
   +     '+"<input type=\'text\' class=\'cli-label\' placeholder=\'e.g. OEM Brake Pads &amp; Rotors\' oninput=\'cliChanged()\' style=\'flex:1;min-width:140px;padding:9px 11px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;\'>"'
-  +     '+"<input type=\'number\' class=\'cli-amount\' placeholder=\'0\' min=\'0\' step=\'1\' oninput=\'cliChanged()\' onfocus=\'this.select()\' style=\'width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;\'>"'
+  +     '+"<input type=\'number\' class=\'cli-amount\' placeholder=\'0\' min=\'0\' step=\'0.01\' oninput=\'cliChanged()\' onfocus=\'this.select()\' style=\'width:90px;flex-shrink:0;padding:9px 8px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.92rem;text-align:right;\'>"'
   +     '+"<button type=\'button\' class=\'cli-tax\' data-taxed=\'1\' onclick=\'cliToggleTax(this)\'><\\/button>"'
   +     '+"<button type=\'button\' class=\'cli-x\' onclick=\'cliRemove(this)\' title=\'Remove\' style=\'background:none;border:none;color:#c0392b;font-size:1.05rem;cursor:pointer;padding:0 4px;flex-shrink:0;\'>&#10005;<\\/button>"'
   +   '+"<\\/div>";'
@@ -1715,6 +1715,7 @@ function quotePricingBlock(pfx, opts) {
   var tier = opts.tier === 'premium' ? 'premium' : 'standard';
   var taxPct = opts.taxPct != null ? opts.taxPct : +(PRICING.taxRate * 100).toFixed(2);
   var discount = Math.round(Number(opts.discount) || 0);
+  var discountLabel = opts.discountLabel || '';
   var ss = Math.round(Number(opts.shopSupplies) || 0);
   var showNotes = opts.showCustomerNotes !== false;
   return ''
@@ -1741,7 +1742,7 @@ function quotePricingBlock(pfx, opts) {
     + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer — Combined/Split P/L per service above)</span></div>'
     + '<div id="' + pfx + 'SvcPriceRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
-    + '<input class="price-input" type="number" name="shopSupplies" id="' + pfx + 'ss" min="0" step="1" value="' + ss + '" oninput="' + pfx + 'calc()" onfocus="this.select()"></div>'
+    + '<input class="price-input" type="number" name="shopSupplies" id="' + pfx + 'ss" min="0" step="0.01" value="' + ss + '" oninput="' + pfx + 'calc()" onfocus="this.select()"></div>'
     + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="' + pfx + 'tr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="' + pfx + 'calc()">%) on Parts + Supplies</span>'
     + '<span id="' + pfx + 'taxAmt">$0.00</span></div>'
     + '</div>'
@@ -1754,8 +1755,9 @@ function quotePricingBlock(pfx, opts) {
     + '<div id="cliDisplayRows"></div>'
     + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="' + pfx + 'ssDisplay">$0.00</span></div>'
     + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="' + pfx + 'taxDisplay">$0.00</span></div>'
-    + '<div class="price-row"><span class="price-label">Discount <span class="price-note">(applied after tax)</span></span>'
-    + '<input class="price-input" type="number" name="discount" id="' + pfx + 'disc" min="0" step="1" value="' + discount + '" oninput="' + pfx + 'calc()" onfocus="this.select()"></div>'
+    + '<div class="price-row"><span class="price-label" style="flex:1;min-width:0;">Discount <span class="price-note">(applied after tax)</span>'
+    + '<input class="price-input" type="text" name="discount_label" id="' + pfx + 'discLabel" value="' + esc(discountLabel) + '" placeholder="reason shown to customer (optional)" style="display:block;width:100%;max-width:260px;margin-top:5px;font-size:0.82rem;text-align:left;padding:5px 8px;"></span>'
+    + '<input class="price-input" type="number" name="discount" id="' + pfx + 'disc" min="0" step="0.01" value="' + discount + '" oninput="' + pfx + 'calc()" onfocus="this.select()"></div>'
     + '<div class="price-row total-row divider-row"><span id="' + pfx + 'TotalLabel">Total</span><span id="' + pfx + 'totalAmt" style="font-size:1.15rem;">$0.00</span></div>'
     + '</div>'
     + '<input type="hidden" name="parts"   id="' + pfx + 'partsH"   value="0.00">'
@@ -1804,8 +1806,8 @@ function quotePricingJs(pfx) {
     +     '+"<button type=\'button\' class=\'tier-btn svc-disp-btn\' onclick=\'' + P + 'RowMode(this,\\\"split\\\")\' style=\'padding:3px 9px;font-size:0.75rem;\'>Split P/L</button>"'
     +     '+"</div></div>"'
     +     '+"<input type=\'hidden\' class=\'svc-row-mode\' value=\'combined\'>"'
-    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input ' + P + '-parts-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(dParts.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
-    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input ' + P + '-labor-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(dLabor.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
+    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input ' + P + '-parts-in\' type=\'number\' min=\'0\' step=\'0.01\' value=\'"+(dParts.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
+    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input ' + P + '-labor-in\' type=\'number\' min=\'0\' step=\'0.01\' value=\'"+(dLabor.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
     +     '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
     +   'if(dSS>0){var curSS=parseFloat(document.getElementById("' + P + 'ss").value)||0;document.getElementById("' + P + 'ss").value=(curSS+dSS).toFixed(2);}'
     +   'document.getElementById("' + P + 'SvcPriceRows").appendChild(row);'
@@ -1973,6 +1975,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var currentLineItems    = newQuote ? [] : parseLineItems(q.line_items);
   var currentCustomerNotes = newQuote ? '' : (q.customer_notes || '');
   var currentDiscount     = newQuote ? 0 : Math.round(Number(q.discount) || 0);
+  var currentDiscountLabel = newQuote ? '' : (q.discount_label || '');
   // Which send action this page is set up for, used by the single Send button below.
   var sendMode = newQuote ? 'separate' : (hasSentQuote ? 'update' : 'new');
   var autosaveKey = 'quote-' + lead.id + (newQuote ? '-new' : '');
@@ -2231,6 +2234,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
         tier: currentTier,
         taxPct: currentTaxRate,
         discount: currentDiscount,
+        discountLabel: currentDiscountLabel,
         shopSupplies: Math.round(Number(q.shop_supplies) || 0),
         lineItems: currentLineItems,
         customerNotes: currentCustomerNotes
@@ -2288,7 +2292,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+cliCollect().map(function(it){return "<tr><td>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'text-align:right;\'>$"+money(it.amount)+"</td></tr>";}).join("")'
     +     '+(ss>0?"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>":"")'
     +     '+(tax>0?"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>":"")'
-    +     '+(disc>0?"<tr><td>Discount</td><td style=\'text-align:right;\'>-$"+money(disc)+"</td></tr>":"")'
+    +     '+(disc>0?"<tr><td>Discount"+(((document.getElementById("bqdiscLabel")||{}).value||"").trim()?" ("+document.getElementById("bqdiscLabel").value.trim().replace(/</g,"&lt;")+")":"")+"</td><td style=\'text-align:right;\'>-$"+money(disc)+"</td></tr>":"")'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
     +     '+"</table>"'
     +     '+svcNames.map(function(s){return bqPRICING[s]&&bqPRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:11px 13px;font-size:0.85rem;line-height:1.6;margin:18px 0;\'>"+n+"</p>";}).join("")'
@@ -2364,6 +2368,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
   var customerNotes = (req.body.customerNotes || '').trim() || null;
   var discount      = parseFloat(req.body.discount)      || 0;
+  var discountLabel = (req.body.discount_label || '').trim() || null;
   // Per-service breakdown [{service,parts,labor,mode}] from the shared pricing block,
   // shown line-by-line in the customer quote email.
   var svcLineItems  = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } })();
@@ -2410,9 +2415,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   ).get(lead.id).n > 0;
 
   var info = db.prepare(
-    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, line_items, customer_notes, discount, accept_token, sent_at, status) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
-  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lineItemsJson, customerNotes, discount, acceptToken, lead.email ? 'sent' : 'saved');
+    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, vin, internal_notes, line_items, customer_notes, discount, discount_label, accept_token, sent_at, status) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?)'
+  ).run(lead.id, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, vin, internalNotes, lineItemsJson, customerNotes, discount, discountLabel, acceptToken, lead.email ? 'sent' : 'saved');
 
   // Don't drag a lead backwards: once an appointment is booked or the job is done,
   // re-sending/updating a quote should not silently move it back to the Quoted stage
@@ -2453,7 +2458,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       subject: isRevisedQuote
         ? 'Your Updated Brake Service Quote — Brake Knights'
         : 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, svcLineItems, isRevisedQuote, customerNotes, lineItems, discount)
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, svcLineItems, isRevisedQuote, customerNotes, lineItems, discount, discountLabel)
     });
 
     res.redirect('/admin/quote/' + lead.id + '?msg=' + (sendMode === 'separate' ? 'quote_sent_sep' : 'quote_sent'));
@@ -2482,8 +2487,9 @@ function buildWarrantyClause(service) {
   return '<p style="color:#444;line-height:1.6;margin:0 0 18px;font-size:0.9rem;">' + partsQuality + ' This job carries a <strong>12-month / 12,000-mile warranty on labor</strong>.</p>';
 }
 
-function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes, customLineItems, discount) {
+function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, total, acceptUrl, lineItemsData, isRevised, customerNotes, customLineItems, discount, discountLabel) {
   discount = Number(discount) || 0;
+  var discountText = 'Discount' + (discountLabel ? ' (' + esc(discountLabel) + ')' : '');
   var partsLabor  = parts + labor;
   var svcName     = joinServices(service);
   var vehicleBit  = lead.vehicle ? ' for your <strong>' + esc(lead.vehicle) + '</strong>' : '';
@@ -2527,7 +2533,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
       }).join('') : '')
     + (shopSupplies > 0 ? '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(shopSupplies) + '</td></tr>' : '')
     + (tax > 0 ? '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(tax) + '</td></tr>' : '')
-    + (discount > 0 ? '<tr><td style="padding:6px 0;color:#1a7a3a;">Discount</td><td style="text-align:right;color:#1a7a3a;">-$' + money(discount) + '</td></tr>' : '')
+    + (discount > 0 ? '<tr><td style="padding:6px 0;color:#1a7a3a;">' + discountText + '</td><td style="text-align:right;color:#1a7a3a;">-$' + money(discount) + '</td></tr>' : '')
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total</td>'
     + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
     + '</table></div>'
@@ -3461,6 +3467,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+pmoney(it.amount)+"</td></tr>";});'
     +     'if(qss2>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+pmoney(qss2)+"</td></tr>";'
     +     'if(qtax>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+pmoney(qtax)+"</td></tr>";'
+    +     'var qdsc=parseFloat((document.getElementById("qdisc")||{}).value)||0;'
+    +     'if(qdsc>0){var qdl=((document.getElementById("qdiscLabel")||{}).value||"").trim();rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#1a7a3a;\'>Discount"+(qdl?" ("+qdl.replace(/</g,"&lt;")+")":"")+"</td><td style=\'padding:5px 0;color:#1a7a3a;\'>-$"+pmoney(qdsc)+"</td></tr>";}'
     +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>$"+pmoney(qtot)+"</td></tr>";'
     +     'var qcn=(document.getElementById("qCustNotes")||{}).value||"";'
     +     'if(qcn.trim())rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Notes to customer</td><td style=\'padding:5px 0;font-style:italic;\'>"+qcn+"</td></tr>";'
@@ -3534,6 +3542,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'ss:document.getElementById("qss").value,'
     +       'tr:document.getElementById("qtr").value,'
     +       'disc:(document.getElementById("qdisc")||{}).value||"0",'
+    +       'discLabel:(document.getElementById("qdiscLabel")||{}).value||"",'
     +       'custNotes:(document.getElementById("qCustNotes")||{}).value||"",'
     +       'cli:(typeof cliCollect==="function")?cliCollect():[],'
     +       'payMethod:(document.getElementById("qpm")||{}).value||"",'
@@ -3577,6 +3586,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
     +     'if(s.tr!==undefined)document.getElementById("qtr").value=s.tr;'
     +     'if(s.disc!==undefined&&document.getElementById("qdisc"))document.getElementById("qdisc").value=s.disc;'
+    +     'if(s.discLabel!==undefined&&document.getElementById("qdiscLabel"))document.getElementById("qdiscLabel").value=s.discLabel;'
     +     'if(s.custNotes!==undefined&&document.getElementById("qCustNotes"))document.getElementById("qCustNotes").value=s.custNotes;'
     +     'if(Array.isArray(s.cli)){var cliC=document.getElementById("cliRows");if(cliC){cliC.innerHTML="";s.cli.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);cliC.appendChild(row);});}}'
     +     'if(s.payMethod&&document.getElementById("qpm"))document.getElementById("qpm").value=s.payMethod;'
@@ -3712,6 +3722,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var taxAmt       = parseFloat(req.body.taxAmt)       || 0;
   var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
   var discount     = parseFloat(req.body.discount)     || 0;
+  var discountLabel = (req.body.discount_label || '').trim() || null;
   // Per-service breakdown JSON [{service,parts,labor,mode}] from the shared block.
   var lineItemsJson = (req.body.svcLineItems || '').trim() || null;
   var quoteCustomerNotes = (req.body.customerNotes || '').trim() || null;
@@ -3762,9 +3773,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     var acceptToken = crypto.randomBytes(24).toString('hex');
     var qStatus = action === 'quote_save' ? 'saved' : 'sent';
     var qInfo = db.prepare(
-      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, line_items, customer_notes, discount, accept_token, sent_at, status) '
-      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, customLineItemsJson, quoteCustomerNotes, discount, acceptToken,
+      'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, line_items, customer_notes, discount, discount_label, accept_token, sent_at, status) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, customLineItemsJson, quoteCustomerNotes, discount, discountLabel, acceptToken,
           null, qStatus);
     var quoteId = qInfo.lastInsertRowid;
     var acceptUrl = baseUrl + '/quote/' + quoteId + '/' + acceptToken;
@@ -3796,7 +3807,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         subject: qqRevised
           ? 'Your Updated Brake Service Quote — Brake Knights'
           : 'Your Brake Service Quote — Brake Knights',
-        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, lineItemsJson ? (function(){try{return JSON.parse(lineItemsJson);}catch(e){return null;}})() : null, qqRevised, quoteCustomerNotes, customLineItems, discount)
+        html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, lineItemsJson ? (function(){try{return JSON.parse(lineItemsJson);}catch(e){return null;}})() : null, qqRevised, quoteCustomerNotes, customLineItems, discount, discountLabel)
       });
       db.prepare("UPDATE quotes SET sent_at = datetime('now') WHERE id = ?").run(quoteId);
       return res.redirect('/admin/quote/' + leadId + '?msg=quick_sent');
@@ -5249,7 +5260,8 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+apMon2(it.amount)+"</td></tr>";});'
     +   'if(apSs>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+apMon2(apSs)+"</td></tr>";'
     +   'if(apTax>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+apMon2(apTax)+"</td></tr>";'
-    +   'if(apDisc>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#1a7a3a;\'>Discount</td><td style=\'padding:5px 0;color:#1a7a3a;\'>-$"+apMon2(apDisc)+"</td></tr>";'
+    +   'var apDl=((document.getElementById("apptdiscLabel")||{}).value||"").trim();'
+    +   'if(apDisc>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#1a7a3a;\'>Discount"+(apDl?" ("+apDl.replace(/</g,"&lt;")+")":"")+"</td><td style=\'padding:5px 0;color:#1a7a3a;\'>-$"+apMon2(apDisc)+"</td></tr>";'
     +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
     +   'if(date)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Date &amp; Time</td><td style=\'padding:5px 0;\'>"+date+(time?" at "+time:"")+"</td></tr>";'
     +   'if(addr)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Address</td><td style=\'padding:5px 0;\'>"+addr+"</td></tr>";'
@@ -5301,6 +5313,7 @@ function appointmentEmailHtml(o) {
   }
   var parts = o.parts || 0, labor = o.labor || 0, supplies = o.supplies || 0, tax = o.tax || 0, total = o.total || 0;
   var discount = Number(o.discount) || 0;
+  var discountText = 'Discount' + (o.discountLabel ? ' (' + esc(o.discountLabel) + ')' : '');
   var svcLineItems = Array.isArray(o.svcLineItems) ? o.svcLineItems : [];
   var customLineItems = Array.isArray(o.customLineItems) ? o.customLineItems : [];
   var calendarUrl = o.baseUrl + '/quote/' + o.quoteId + '/' + o.token + '/calendar.ics';
@@ -5358,7 +5371,7 @@ function appointmentEmailHtml(o) {
       }).join('')
     + (supplies > 0 ? '<tr><td style="padding:5px 0;color:#888;">Shop Supplies</td><td style="padding:5px 0;">$' + money(supplies) + '</td></tr>' : '')
     + (tax > 0 ? '<tr><td style="padding:5px 0;color:#888;">Tax</td><td style="padding:5px 0;color:#888;">$' + money(tax) + '</td></tr>' : '')
-    + (discount > 0 ? '<tr><td style="padding:5px 0;color:#1a7a3a;">Discount</td><td style="padding:5px 0;color:#1a7a3a;">-$' + money(discount) + '</td></tr>' : '')
+    + (discount > 0 ? '<tr><td style="padding:5px 0;color:#1a7a3a;">' + discountText + '</td><td style="padding:5px 0;color:#1a7a3a;">-$' + money(discount) + '</td></tr>' : '')
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;color:#0a1f3d;">Total</td><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
     + '<tr><td style="padding:10px 0 0;color:#888;">Date</td><td style="padding:10px 0 0;">' + esc(fmtApptDate(o.pref_date)) + '</td></tr>'
     + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(o.pref_time || '-') + '</td></tr>'
@@ -5400,6 +5413,7 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
   var price_labor  = req.body.labor;
   var shop_supplies = req.body.shopSupplies;
   var discount     = parseFloat(req.body.discount) || 0;
+  var discountLabel = (req.body.discount_label || '').trim() || null;
   var svcLineItems = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } })();
   var customLineItems = parseLineItems(req.body.customLineItems);
   var customLineItemsJson = customLineItems.length ? JSON.stringify(customLineItems) : null;
@@ -5490,8 +5504,8 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
 
   var token = crypto.randomUUID();
   var quoteResult = db.prepare(
-    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, status, accept_token, accepted_at, pref_date, pref_time, pref_location, scheduling_notes, line_items, customer_notes, discount, sent_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?,?,?,?,?,?,?,datetime(\'now\'))'
-  ).run(leadId, service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, 'approved', token, pref_date, pref_time, pref_location, notes, apptLineItemsStore, customerNotes, discount);
+    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, status, accept_token, accepted_at, pref_date, pref_time, pref_location, scheduling_notes, line_items, customer_notes, discount, discount_label, sent_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?,?,?,?,?,?,?,?,datetime(\'now\'))'
+  ).run(leadId, service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, 'approved', token, pref_date, pref_time, pref_location, notes, apptLineItemsStore, customerNotes, discount, discountLabel);
 
   if (send_email && cust.email && process.env.SMTP_PASS) {
     try {
@@ -5500,7 +5514,7 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
       var html = appointmentEmailHtml({
         firstName: cust.first_name, service: service, vehicle: vehicle,
         parts: parts, labor: labor, supplies: supplies, tax: tax, total: total,
-        svcLineItems: svcLineItems, customLineItems: customLineItems, discount: discount, customerNotes: customerNotes,
+        svcLineItems: svcLineItems, customLineItems: customLineItems, discount: discount, discountLabel: discountLabel, customerNotes: customerNotes,
         pref_date: pref_date, pref_time: pref_time, pref_location: pref_location,
         baseUrl: baseUrl, quoteId: quoteResult.lastInsertRowid, token: token, isUpdate: false
       });
@@ -5550,6 +5564,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
   var tier = q.tier === 'premium' ? 'premium' : 'standard';
   var supplies = Math.round(Number(q.shop_supplies) || 0);
   var apptDiscount = Math.round(Number(q.discount) || 0);
+  var apptDiscountLabel = q.discount_label || '';
   var apptTaxPct = q.tax_rate != null ? +(q.tax_rate * 100).toFixed(2) : +(taxRate * 100).toFixed(2);
   // Prefill: appointments created via the shared block store line_items as
   // {svc:[...],custom:[...]}; older approved quotes store either a plain custom
@@ -5620,6 +5635,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
         tier: tier,
         taxPct: apptTaxPct,
         discount: apptDiscount,
+        discountLabel: apptDiscountLabel,
         shopSupplies: supplies,
         lineItems: apptCustomLI,
         customerNotes: q.customer_notes || ''
@@ -5695,6 +5711,7 @@ router.post('/appointments/:lead_id/edit', requireAuth, express.urlencoded({ ext
   var labor    = parseFloat(req.body.labor)        || 0;
   var supplies = parseFloat(req.body.shopSupplies) || 0;
   var discount = parseFloat(req.body.discount)     || 0;
+  var discountLabel = (req.body.discount_label || '').trim() || null;
   var svcLineItems = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } })();
   var customLineItems = parseLineItems(req.body.customLineItems);
   var cliSum = customLineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
@@ -5707,8 +5724,8 @@ router.post('/appointments/:lead_id/edit', requireAuth, express.urlencoded({ ext
   // Update the lead contact + vehicle + service, and the approved quote details.
   db.prepare("UPDATE leads SET first_name = ?, last_name = ?, phone = ?, email = ?, vehicle = COALESCE(?, vehicle), service = ?, status_updated_at = datetime('now') WHERE id = ?")
     .run(firstName, lastName, phone, email, vehicle, service, lead.id);
-  db.prepare("UPDATE quotes SET service = ?, tier = ?, price_parts = ?, price_labor = ?, shop_supplies = ?, tax_rate = ?, tax = ?, total = ?, pref_date = ?, pref_time = ?, pref_location = ?, scheduling_notes = ?, line_items = ?, customer_notes = ?, discount = ? WHERE id = ?")
-    .run(service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, pref_date, pref_time, pref_location, notes, apptLineItemsStore, customerNotes, discount, q.id);
+  db.prepare("UPDATE quotes SET service = ?, tier = ?, price_parts = ?, price_labor = ?, shop_supplies = ?, tax_rate = ?, tax = ?, total = ?, pref_date = ?, pref_time = ?, pref_location = ?, scheduling_notes = ?, line_items = ?, customer_notes = ?, discount = ?, discount_label = ? WHERE id = ?")
+    .run(service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, pref_date, pref_time, pref_location, notes, apptLineItemsStore, customerNotes, discount, discountLabel, q.id);
 
   // Keep the linked customer record's contact info in sync.
   if (lead.customer_id) {
@@ -5725,7 +5742,7 @@ router.post('/appointments/:lead_id/edit', requireAuth, express.urlencoded({ ext
       var html = appointmentEmailHtml({
         firstName: firstName, service: service, vehicle: vehicle,
         parts: parts, labor: labor, supplies: supplies, tax: tax, total: total,
-        svcLineItems: svcLineItems, customLineItems: customLineItems, discount: discount, customerNotes: customerNotes,
+        svcLineItems: svcLineItems, customLineItems: customLineItems, discount: discount, discountLabel: discountLabel, customerNotes: customerNotes,
         pref_date: pref_date, pref_time: pref_time, pref_location: pref_location,
         baseUrl: baseUrl, quoteId: q.id, token: q.accept_token, isUpdate: true
       });
