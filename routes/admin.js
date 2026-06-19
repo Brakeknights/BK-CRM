@@ -936,6 +936,8 @@ function page(title, body, req) {
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
     + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
+    // Keep the Build Quote section open after toggling Edit/New (those links reload the page with ?bq=1).
+    + '(function(){try{if(/[?&]bq=1(&|$)/.test(location.search)){var el=document.querySelector(".collapse[data-ckey=\\"buildquote\\"]");if(el)el.classList.remove("collapsed");}}catch(e){}})();'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
     + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
     + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
@@ -1899,8 +1901,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // a clean new/separate quote for the same customer that pulls today's pricing.
     + (hasSentQuote
         ? '<div class="tier-toggle" style="margin-bottom:6px;">'
-          + '<a href="/admin/quote/' + lead.id + '" class="tier-btn' + (newQuote ? '' : ' active') + '" style="text-align:center;text-decoration:none;line-height:1.2;display:flex;align-items:center;justify-content:center;">Edit existing quote</a>'
-          + '<a href="/admin/quote/' + lead.id + '?new=1" class="tier-btn' + (newQuote ? ' active' : '') + '" style="text-align:center;text-decoration:none;line-height:1.2;display:flex;align-items:center;justify-content:center;">New separate quote</a>'
+          + '<a href="/admin/quote/' + lead.id + '?bq=1" class="tier-btn' + (newQuote ? '' : ' active') + '" style="text-align:center;text-decoration:none;line-height:1.2;display:flex;align-items:center;justify-content:center;">Edit existing quote</a>'
+          + '<a href="/admin/quote/' + lead.id + '?new=1&bq=1" class="tier-btn' + (newQuote ? ' active' : '') + '" style="text-align:center;text-decoration:none;line-height:1.2;display:flex;align-items:center;justify-content:center;">New separate quote</a>'
           + '</div>'
           + '<div style="font-size:0.8rem;color:#888;margin-bottom:12px;line-height:1.5;">'
           + (newQuote
