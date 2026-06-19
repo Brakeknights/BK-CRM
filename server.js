@@ -118,13 +118,31 @@ app.use('/images', express.static(path.join(__dirname, 'public/images'), {
 app.use('/css', express.static(path.join(__dirname, 'public/css'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache')
 }));
-// Serve the PWA manifest with the correct content-type. Some hosts (Hostinger's
-// static layer included) don't know the .webmanifest extension and fall back to
-// text/plain, which can stop iOS from treating the admin as an installable app
-// (required for web push). Setting it explicitly keeps install reliable.
+// Serve the PWA manifest inline with the correct content-type. We deliberately do
+// NOT ship a physical public/manifest.webmanifest file: Hostinger's static layer
+// would serve that file directly as text/plain (bypassing Express), and some
+// browsers reject a manifest that isn't application/manifest+json, which can stop
+// iOS from treating the admin as an installable PWA (required for web push).
+// Serving it from Express guarantees the right content-type everywhere.
+var PWA_MANIFEST = JSON.stringify({
+  name: 'Brake Knights Admin',
+  short_name: 'BK Admin',
+  description: 'Brake Knights CRM and admin dashboard',
+  start_url: '/admin',
+  scope: '/admin',
+  display: 'standalone',
+  orientation: 'portrait',
+  background_color: '#0a1f3d',
+  theme_color: '#0a1f3d',
+  icons: [
+    { src: '/images/favicon.png', sizes: '180x180', type: 'image/png', purpose: 'any' },
+    { src: '/images/favicon.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/images/favicon.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+  ]
+});
 app.get('/manifest.webmanifest', (req, res) => {
   res.type('application/manifest+json');
-  res.sendFile(path.join(__dirname, 'public', 'manifest.webmanifest'));
+  res.send(PWA_MANIFEST);
 });
 // redirect:false stops express.static from 301-ing a bare directory request
 // (e.g. /blog -> /blog/). That redirect fought the trailing-slash stripper above
