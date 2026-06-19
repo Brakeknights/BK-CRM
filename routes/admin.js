@@ -1638,6 +1638,318 @@ var CLI_JS = ''
   + 'function cliSum(){return cliCollect().reduce(function(a,it){return a+(it.amount||0);},0);}'
   + 'function cliChanged(){if(typeof bkRecalc==="function")bkRecalc();}';
 
+// ─── Shared QUOTE pricing block (canonical: per-service breakdown) ─────────────
+// One renderer + one JS wiring for the quote pricing UI, used by every quote
+// surface (Build Quote, Quick Quote, New/Edit Appointment). Each surface passes a
+// unique id `pfx` so multiple instances never collide, but the STRUCTURE, classes,
+// fields, and math are identical everywhere. The model is the Quick Quote style:
+// each selected service gets its own auto-filled Parts/Labor row (with a per-row
+// Combined / Split P/L toggle), plus Shop Supplies, VA tax, custom line items, a
+// Discount (applied after tax), a customer summary, and a Notes-to-customer box.
+//
+// Submitted field names (identical on every surface):
+//   service            comma-joined service string (hidden, kept in sync)
+//   customService      free-text extra service
+//   tier               standard | premium
+//   shopSupplies       number
+//   taxRate            percent
+//   parts, labor       aggregate parts/labor totals (hidden, summed from rows)
+//   svcLineItems       JSON array of {service, parts, labor, mode}
+//   customLineItems    JSON array (custom priced rows; see customLineItemsSection)
+//   discount           number (applied after tax)
+//   taxAmt, totalAmt   computed numbers (hidden)
+//   customerNotes      free text shown in the quote email
+//
+// `quoteParseBody(req.body)` on the server turns those back into a normalized
+// object every POST handler can use.
+
+// Services that book per-wheel position (caliper, hose). Mirrors the Quick Quote
+// position map so position picking is identical on every quote surface.
+var QUOTE_POSITION_SVCS = {
+  'Caliper Replacement':    { prefix: 'Caliper',    label: 'Caliper',    positions: ['Front Left', 'Front Right', 'Rear Left', 'Rear Right'] },
+  'Brake Hose Replacement': { prefix: 'Brake Hose', label: 'Brake Hose', positions: ['Front Left', 'Front Right', 'Rear Left', 'Rear Right'] }
+};
+
+// Service checkbox list (with per-position groups for caliper/hose) for a quote
+// surface. `pfx` namespaces the checkbox handlers/ids; `serviceNames` is the list
+// of services; `selected` is an array of already-selected plain service names.
+function quoteServiceCheckboxes(pfx, serviceNames, selected) {
+  selected = selected || [];
+  return '<div class="svc-check-list">'
+    + serviceNames.map(function(s) {
+        var posCfg = QUOTE_POSITION_SVCS[s];
+        if (posCfg) {
+          return '<div class="svc-pos-group" style="margin:4px 0 8px;">'
+            + '<div style="font-size:0.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;padding:4px 0 6px;">' + esc(posCfg.label) + '</div>'
+            + '<div style="padding-left:4px;">'
+            + posCfg.positions.map(function(pos) {
+                var nm = posCfg.prefix + ' - ' + pos;
+                var checked = selected.indexOf(nm) !== -1 ? ' checked' : '';
+                return '<label class="svc-check-item" style="margin-bottom:3px;">'
+                  + '<input type="checkbox" class="' + pfx + '-pos-cb" data-parent="' + esc(s) + '" data-prefix="' + esc(posCfg.prefix) + '" data-pos="' + esc(pos) + '"' + checked + ' onchange="' + pfx + 'PosCbChange(this)">'
+                  + '<span class="svc-box"></span>' + esc(pos) + '</label>';
+              }).join('')
+            + '</div></div>';
+        }
+        var checked = selected.indexOf(s) !== -1 ? ' checked' : '';
+        return '<label class="svc-check-item"><input type="checkbox" class="' + pfx + '-svc-cb" value="' + esc(s) + '"' + checked + ' onchange="' + pfx + 'SvcCbChange(this)"><span class="svc-box"></span>' + esc(s) + '</label>';
+      }).join('')
+    + '</div>'
+    + '<input type="hidden" name="service" id="' + pfx + 'svcHidden" value="' + esc(selected.join(', ')) + '">';
+}
+
+// The full quote pricing block markup. `pfx` is the unique id prefix. `opts`:
+//   serviceNames  array of service names (required)
+//   selected      array of selected plain service names
+//   customSvc     prefill for the custom-service field
+//   tier          'standard' | 'premium'
+//   shopSupplies  number prefill
+//   taxPct        tax rate percent prefill
+//   discount      number prefill
+//   lineItems     custom line items (customLineItemsSection)
+//   customerNotes prefill for the notes-to-customer textarea
+//   showTier      include the Tier toggle + service picker (default true)
+//   showCustomerNotes  include the Notes-to-customer block (default true)
+function quotePricingBlock(pfx, opts) {
+  opts = opts || {};
+  var tier = opts.tier === 'premium' ? 'premium' : 'standard';
+  var taxPct = opts.taxPct != null ? opts.taxPct : +(PRICING.taxRate * 100).toFixed(2);
+  var discount = Math.round(Number(opts.discount) || 0);
+  var ss = Math.round(Number(opts.shopSupplies) || 0);
+  var showNotes = opts.showCustomerNotes !== false;
+  return ''
+    // Tier
+    + '<div class="form-group" style="margin:0 0 14px;"><label>Tier</label>'
+    + '<div class="tier-toggle">'
+    + '<button type="button" class="tier-btn' + (tier === 'standard' ? ' active' : '') + '" id="' + pfx + 'BtnStd" onclick="' + pfx + 'SetTier(\'standard\')">Standard</button>'
+    + '<button type="button" class="tier-btn' + (tier === 'premium' ? ' active' : '') + '" id="' + pfx + 'BtnPrem" onclick="' + pfx + 'SetTier(\'premium\')">Premium</button>'
+    + '</div>'
+    + '<input type="hidden" name="tier" id="' + pfx + 'tier" value="' + esc(tier) + '"></div>'
+    // Services
+    + '<div class="form-group" style="margin-bottom:6px;"><label>Service <span style="color:#bbb;font-weight:400;">(select all that apply)</span></label>'
+    + quoteServiceCheckboxes(pfx, opts.serviceNames || [], opts.selected || [])
+    + '<button type="button" class="svc-clear-btn" onclick="' + pfx + 'ClearServices()">&#10005; Clear selection</button>'
+    + '<div class="svc-tags" id="' + pfx + 'svcTags"></div>'
+    + '<div id="' + pfx + 'CustomHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
+    + '<div class="form-group" style="margin:14px 0 6px;">'
+    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
+    + '<input type="text" id="' + pfx + 'CustomSvc" name="customService" value="' + esc(opts.customSvc || '') + '" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" oninput="' + pfx + 'OnCustomSvc()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
+    + '</div>'
+    + '</div>'
+    // Internal per-service price breakdown
+    + '<div class="price-section">'
+    + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer — Combined/Split P/L per service above)</span></div>'
+    + '<div id="' + pfx + 'SvcPriceRows"></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
+    + '<input class="price-input" type="number" name="shopSupplies" id="' + pfx + 'ss" min="0" step="1" value="' + ss + '" oninput="' + pfx + 'calc()" onfocus="this.select()"></div>'
+    + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="' + pfx + 'tr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="' + pfx + 'calc()">%) on Parts + Supplies</span>'
+    + '<span id="' + pfx + 'taxAmt">$0.00</span></div>'
+    + '</div>'
+    // Custom line items
+    + '<div style="margin:4px 0 16px;">' + customLineItemsSection(opts.lineItems || []) + '</div>'
+    // Customer-facing summary
+    + '<div class="price-section" style="margin-bottom:0;">'
+    + '<div class="price-section-header"><span id="' + pfx + 'SummaryLabel">Customer Quote</span></div>'
+    + '<div id="' + pfx + 'SvcCustomerRows"></div>'
+    + '<div id="cliDisplayRows"></div>'
+    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="' + pfx + 'ssDisplay">$0.00</span></div>'
+    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="' + pfx + 'taxDisplay">$0.00</span></div>'
+    + '<div class="price-row"><span class="price-label">Discount <span class="price-note">(applied after tax)</span></span>'
+    + '<input class="price-input" type="number" name="discount" id="' + pfx + 'disc" min="0" step="1" value="' + discount + '" oninput="' + pfx + 'calc()" onfocus="this.select()"></div>'
+    + '<div class="price-row total-row divider-row"><span id="' + pfx + 'TotalLabel">Total</span><span id="' + pfx + 'totalAmt" style="font-size:1.15rem;">$0.00</span></div>'
+    + '</div>'
+    + '<input type="hidden" name="parts"   id="' + pfx + 'partsH"   value="0.00">'
+    + '<input type="hidden" name="labor"   id="' + pfx + 'laborH"   value="0.00">'
+    + '<input type="hidden" name="svcLineItems" id="' + pfx + 'svcLiH" value="[]">'
+    + '<input type="hidden" name="taxAmt"  id="' + pfx + 'taxH"  value="0.00">'
+    + '<input type="hidden" name="totalAmt" id="' + pfx + 'totalH" value="0.00">'
+    + (showNotes
+        ? '<div class="form-group" style="margin:16px 0 6px;"><label>Notes to customer <span style="color:#bbb;font-weight:400;">(optional — included in the quote email)</span></label>'
+          + '<textarea name="customerNotes" id="' + pfx + 'CustNotes" placeholder="e.g. Parts are in stock; we can usually schedule within 1-2 business days. Reach out anytime with questions." style="width:100%;min-height:74px;padding:10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;resize:vertical;box-sizing:border-box;">' + esc(opts.customerNotes || '') + '</textarea></div>'
+        : '');
+}
+
+// The JS wiring for a quote pricing block. `pfx` must match quotePricingBlock.
+// Requires CLI_JS, a `money()` helper, and a `<pfx>PRICING` global (the effective
+// pricing JSON) to be emitted on the page before this. Optionally a surface can
+// define `<pfx>AfterChange()` to react to any service/price change (e.g. autosave).
+function quotePricingJs(pfx) {
+  var P = pfx;
+  return ''
+    + 'var ' + P + 'tier="standard";'
+    + 'function ' + P + 'CheckedServices(){return Array.from(document.querySelectorAll(".' + P + '-svc-cb:checked")).map(function(c){return c.value;});}'
+    + 'function ' + P + 'CustomSvcVal(){var el=document.getElementById("' + P + 'CustomSvc");return el?el.value.trim():"";}'
+    + 'function ' + P + 'GetAllServiceNames(){'
+    +   'var names=[];'
+    +   'document.querySelectorAll(".' + P + '-svc-cb:checked").forEach(function(cb){names.push(cb.value);});'
+    +   'document.querySelectorAll(".' + P + '-pos-cb:checked").forEach(function(pos){names.push(pos.getAttribute("data-prefix")+" - "+pos.getAttribute("data-pos"));});'
+    +   'return names;'
+    + '}'
+    + 'function ' + P + 'UpdateServiceHidden(){'
+    +   'var all=' + P + 'GetAllServiceNames().slice();var cv=' + P + 'CustomSvcVal();if(cv)all.push(cv);'
+    +   'document.getElementById("' + P + 'svcHidden").value=all.join(", ");'
+    + '}'
+    + 'var ' + P + 'PFX_MAP={"Caliper":"Caliper Replacement","Brake Hose":"Brake Hose Replacement"};'
+    + 'function ' + P + 'AddPriceRow(svcName){'
+    +   'if(document.querySelector("#' + P + 'SvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']"))return;'
+    +   'var pfx=svcName.split(" - ");var lookupKey=pfx.length===2&&' + P + 'PFX_MAP[pfx[0]]?' + P + 'PFX_MAP[pfx[0]]:svcName;'
+    +   'var p=' + P + 'PRICING[lookupKey];var td=p&&(p[' + P + 'tier]||p.standard);'
+    +   'var dParts=td?td.parts:0;var dLabor=td?td.labor:0;var dSS=td?td.shopSupplies:0;'
+    +   'var row=document.createElement("div");row.className="svc-price-row";row.setAttribute("data-base",svcName);'
+    +   'row.innerHTML='
+    +     '"<div class=\'svc-price-title\' style=\'font-size:0.82rem;font-weight:700;color:#0a1f3d;padding:6px 0 4px;display:flex;align-items:center;justify-content:space-between;\'>"'
+    +     '+"<span>"+svcName+"</span>"'
+    +     '+"<div class=\'tier-toggle\' style=\'margin:0;\'>"'
+    +     '+"<button type=\'button\' class=\'tier-btn active svc-disp-btn\' onclick=\'' + P + 'RowMode(this,\\\"combined\\\")\' style=\'padding:3px 9px;font-size:0.75rem;\'>Combined</button>"'
+    +     '+"<button type=\'button\' class=\'tier-btn svc-disp-btn\' onclick=\'' + P + 'RowMode(this,\\\"split\\\")\' style=\'padding:3px 9px;font-size:0.75rem;\'>Split P/L</button>"'
+    +     '+"</div></div>"'
+    +     '+"<input type=\'hidden\' class=\'svc-row-mode\' value=\'combined\'>"'
+    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input ' + P + '-parts-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(dParts.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
+    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input ' + P + '-labor-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(dLabor.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
+    +     '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
+    +   'if(dSS>0){var curSS=parseFloat(document.getElementById("' + P + 'ss").value)||0;document.getElementById("' + P + 'ss").value=(curSS+dSS).toFixed(2);}'
+    +   'document.getElementById("' + P + 'SvcPriceRows").appendChild(row);'
+    + '}'
+    + 'function ' + P + 'RowMode(btn,mode){'
+    +   'var row=btn.closest(".svc-price-row");'
+    +   'row.querySelectorAll(".svc-disp-btn").forEach(function(b){b.classList.toggle("active",b===btn);});'
+    +   'row.querySelector(".svc-row-mode").value=mode;' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
+    + '}'
+    + 'function ' + P + 'RemovePriceRow(svcName){'
+    +   'var row=document.querySelector("#' + P + 'SvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']");'
+    +   'if(row)row.parentNode.removeChild(row);'
+    + '}'
+    + 'function ' + P + 'SvcCbChange(cb){'
+    +   'if(cb.checked)' + P + 'AddPriceRow(cb.value);else ' + P + 'RemovePriceRow(cb.value);'
+    +   P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
+    + '}'
+    + 'function ' + P + 'PosCbChange(cb){'
+    +   'var rowName=cb.getAttribute("data-prefix")+" - "+cb.getAttribute("data-pos");'
+    +   'if(cb.checked)' + P + 'AddPriceRow(rowName);else ' + P + 'RemovePriceRow(rowName);'
+    +   P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
+    + '}'
+    + 'function ' + P + 'UpdateRowPrices(){'
+    +   'Array.from(document.querySelectorAll("#' + P + 'SvcPriceRows .svc-price-row")).forEach(function(r){'
+    +     'var base=r.getAttribute("data-base");var pfx=base.split(" - ");var key=pfx.length===2&&' + P + 'PFX_MAP[pfx[0]]?' + P + 'PFX_MAP[pfx[0]]:base;'
+    +     'var p=' + P + 'PRICING[key];if(!p||p.customQuote)return;'
+    +     'var td=p[' + P + 'tier]||p.standard;if(!td)return;'
+    +     'r.querySelector(".' + P + '-parts-in").value=td.parts.toFixed(2);'
+    +     'r.querySelector(".' + P + '-labor-in").value=td.labor.toFixed(2);'
+    +   '});'
+    + '}'
+    + 'function ' + P + 'SetTier(t){'
+    +   P + 'tier=t;document.getElementById("' + P + 'tier").value=t;'
+    +   'document.getElementById("' + P + 'BtnStd").classList.toggle("active",t==="standard");'
+    +   'document.getElementById("' + P + 'BtnPrem").classList.toggle("active",t==="premium");'
+    +   P + 'UpdateRowPrices();' + P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
+    + '}'
+    + 'function ' + P + 'RenderTags(){'
+    +   'var tags=' + P + 'GetAllServiceNames().map(function(n){'
+    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'' + P + 'RemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
+    +   '});'
+    +   'var cv=' + P + 'CustomSvcVal();'
+    +   'if(cv)tags.push("<span class=\'svc-tag\' style=\'background:#e07000;\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'' + P + 'ClearCustomSvc()\'>&#10005;</button>"+cv+" <em style=\'opacity:.8;font-style:normal;font-size:0.72rem;\'>(custom)</em></span>");'
+    +   'document.getElementById("' + P + 'svcTags").innerHTML=tags.join("");'
+    + '}'
+    + 'function ' + P + 'RemoveTag(btn){'
+    +   'var val=btn.getAttribute("data-val");'
+    +   'var posCb=Array.from(document.querySelectorAll(".' + P + '-pos-cb")).find(function(c){return(c.getAttribute("data-prefix")+" - "+c.getAttribute("data-pos"))===val;});'
+    +   'if(posCb){posCb.checked=false;' + P + 'RemovePriceRow(val);}'
+    +   'else{var cb=Array.from(document.querySelectorAll(".' + P + '-svc-cb")).find(function(c){return c.value===val;});if(cb){cb.checked=false;' + P + 'RemovePriceRow(val);}}'
+    +   P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
+    + '}'
+    + 'function ' + P + 'ClearCustomSvc(){var el=document.getElementById("' + P + 'CustomSvc");if(el)el.value="";' + P + 'UpdateServiceHidden();' + P + 'RenderTags();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();}'
+    + 'function ' + P + 'OnCustomSvc(){' + P + 'UpdateServiceHidden();' + P + 'RenderTags();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();}'
+    + 'function ' + P + 'ClearServices(){'
+    +   'document.querySelectorAll(".' + P + '-svc-cb").forEach(function(cb){cb.checked=false;});'
+    +   'document.querySelectorAll(".' + P + '-pos-cb").forEach(function(c){c.checked=false;});'
+    +   'document.getElementById("' + P + 'SvcPriceRows").innerHTML="";'
+    +   'document.getElementById("' + P + 'ss").value="0.00";'
+    +   P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
+    + '}'
+    + 'function ' + P + 'Hints(){'
+    +   'var names=' + P + 'GetAllServiceNames();var msgs=[];'
+    +   'var custom=names.filter(function(n){var pfx=n.split(" - ");var key=pfx.length===2&&' + P + 'PFX_MAP[pfx[0]]?' + P + 'PFX_MAP[pfx[0]]:n;return ' + P + 'PRICING[key]&&' + P + 'PRICING[key].customQuote;});'
+    +   'if(custom.length){msgs.push("<strong>Custom quote:</strong> "+custom.join(", ")+" "+(custom.length>1?"have":"has")+" no preset price. Look up the exact part(s) and enter Parts and Labor manually.");}'
+    +   'names.forEach(function(n){var pfx=n.split(" - ");var key=pfx.length===2&&' + P + 'PFX_MAP[pfx[0]]?' + P + 'PFX_MAP[pfx[0]]:n;if(' + P + 'PRICING[key]&&' + P + 'PRICING[key].note){msgs.push(' + P + 'PRICING[key].note);}});'
+    +   'var box=document.getElementById("' + P + 'CustomHint");'
+    +   'if(box){if(msgs.length){box.innerHTML=msgs.join("<br><br>");box.style.display="block";}else{box.style.display="none";}}'
+    + '}'
+    + 'function ' + P + 'calc(){'
+    +   'var parts=0,labor=0;'
+    +   'document.querySelectorAll(".' + P + '-parts-in").forEach(function(el){parts+=parseFloat(el.value)||0;});'
+    +   'document.querySelectorAll(".' + P + '-labor-in").forEach(function(el){labor+=parseFloat(el.value)||0;});'
+    +   'var ss=parseFloat(document.getElementById("' + P + 'ss").value)||0;'
+    +   'var tr=parseFloat(document.getElementById("' + P + 'tr").value)||0;'
+    +   'var cliItems=(typeof cliCollect==="function")?cliCollect():[];'
+    +   'var cliTax=cliItems.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
+    +   'var cliAll=cliItems.reduce(function(a,it){return a+(it.amount||0);},0);'
+    +   'var disc=parseFloat(document.getElementById("' + P + 'disc").value)||0;'
+    +   'var tax=(parts+ss+cliTax)*tr/100;var total=parts+labor+ss+cliAll+tax-disc;'
+    +   'var cdr=document.getElementById("cliDisplayRows");'
+    +   'if(cdr)cdr.innerHTML=cliItems.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
+    +   'document.getElementById("' + P + 'taxAmt").textContent="$"+money(tax);'
+    +   'document.getElementById("' + P + 'ssDisplay").textContent="$"+money(ss);'
+    +   'document.getElementById("' + P + 'taxDisplay").textContent="$"+money(tax);'
+    +   'document.getElementById("' + P + 'totalAmt").textContent="$"+money(total);'
+    +   'document.getElementById("' + P + 'partsH").value=parts.toFixed(2);'
+    +   'document.getElementById("' + P + 'laborH").value=labor.toFixed(2);'
+    +   'document.getElementById("' + P + 'taxH").value=tax.toFixed(2);'
+    +   'document.getElementById("' + P + 'totalH").value=total.toFixed(2);'
+    +   'var items=Array.from(document.querySelectorAll("#' + P + 'SvcPriceRows .svc-price-row")).map(function(r){'
+    +     'var t=r.querySelector(".svc-price-title span");'
+    +     'var p=parseFloat(r.querySelector(".' + P + '-parts-in").value)||0;'
+    +     'var l=parseFloat(r.querySelector(".' + P + '-labor-in").value)||0;'
+    +     'var m=(r.querySelector(".svc-row-mode")||{}).value||"combined";'
+    +     'return{service:t?t.textContent:r.getAttribute("data-base"),parts:p,labor:l,mode:m};'
+    +   '});'
+    +   'document.getElementById("' + P + 'svcLiH").value=JSON.stringify(items);'
+    +   'var qcbox=document.getElementById("' + P + 'SvcCustomerRows");'
+    +   'if(qcbox)qcbox.innerHTML=items.map(function(it){'
+    +     'if(it.mode==="split"){'
+    +       'return "<div class=\'price-row\'><span class=\'price-label\'>"+it.service+" — Parts</span><span>$"+money(it.parts)+"</span></div>"'
+    +         '+"<div class=\'price-row\'><span class=\'price-label\'>"+it.service+" — Labor <span class=\'price-note\'>(not taxed)</span></span><span>$"+money(it.labor)+"</span></div>";'
+    +     '}'
+    +     'return "<div class=\'price-row\'><span class=\'price-label\'>"+it.service+"</span><span>$"+money(it.parts+it.labor)+"</span></div>";'
+    +   '}).join("");'
+    + '}'
+    + 'function ' + P + 'Autofill(){' + P + 'UpdateRowPrices();' + P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();}'
+    // Build price rows for any services pre-selected server-side (edit/prefill).
+    + 'function ' + P + 'InitRows(){'
+    +   'document.querySelectorAll(".' + P + '-svc-cb:checked").forEach(function(cb){' + P + 'AddPriceRow(cb.value);});'
+    +   'document.querySelectorAll(".' + P + '-pos-cb:checked").forEach(function(pos){' + P + 'AddPriceRow(pos.getAttribute("data-prefix")+" - "+pos.getAttribute("data-pos"));});'
+    + '}';
+}
+
+// Server-side: normalize a submitted quote pricing block into one object.
+// Works identically for every quote surface because the field names are shared.
+function quoteParseBody(body) {
+  var service = (body.service || '').trim();
+  var customSvc = (body.customService || '').trim();
+  if (customSvc && service.split(',').map(function(s){ return s.trim().toLowerCase(); }).indexOf(customSvc.toLowerCase()) === -1) {
+    service = service ? service + ', ' + customSvc : customSvc;
+  }
+  var svcLineItems = [];
+  try {
+    var arr = JSON.parse(body.svcLineItems || '[]');
+    if (Array.isArray(arr)) svcLineItems = arr;
+  } catch (_) {}
+  return {
+    service: service,
+    tier: body.tier === 'premium' ? 'premium' : 'standard',
+    parts: parseFloat(body.parts) || 0,
+    labor: parseFloat(body.labor) || 0,
+    shopSupplies: parseFloat(body.shopSupplies) || 0,
+    taxRate: parseFloat(body.taxRate) || 0,
+    taxAmt: parseFloat(body.taxAmt) || 0,
+    totalAmt: parseFloat(body.totalAmt) || 0,
+    discount: parseFloat(body.discount) || 0,
+    svcLineItems: svcLineItems,
+    customLineItems: parseLineItems(body.customLineItems),
+    customerNotes: (body.customerNotes || '').trim() || null
+  };
+}
+
 // ─── Quote tool ───────────────────────────────────────────────────────────────
 
 router.get('/quote/:id', requireAuth, function(req, res) {
@@ -1677,13 +1989,6 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var effectivePricing = getEffectivePricing();
   var serviceNames = Object.keys(effectivePricing);
   var currentServices = currentService ? currentService.split(', ').map(function(s) { return s.trim(); }) : [];
-  var serviceCheckboxes = '<div class="svc-check-list">'
-    + serviceNames.map(function(s) {
-        var checked = currentServices.indexOf(s) !== -1 ? ' checked' : '';
-        return '<label class="svc-check-item"><input type="checkbox" class="svc-cb" value="' + esc(s) + '"' + checked + ' onchange="updatePrices()"><span class="svc-box"></span>' + esc(s) + '</label>';
-      }).join('')
-    + '</div>'
-    + '<input type="hidden" name="service" id="svcHidden" value="' + esc(currentService) + '">';
 
   var pricingJson = JSON.stringify(effectivePricing);
   var noEmail = !lead.email;
@@ -1913,74 +2218,23 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
     + '<form method="POST" action="/admin/quote/' + lead.id + '/send" id="qf" data-autosave="' + autosaveKey + '" data-autosave-after="bkQuoteAfter">'
 
-    + '<div class="form-group"><label>Service <span style="color:#bbb;font-weight:400;">(select all that apply)</span></label>'
-    + serviceCheckboxes
-    + '<button type="button" class="svc-clear-btn" onclick="clearServices()">&#10005; Clear selection</button>'
-    + '<div class="svc-tags" id="svcTags"></div>'
-    + '<div id="customQuoteHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
-    + '<div class="form-group" style="margin:14px 0 6px;">'
-    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
-    + '<input type="text" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
-    + '</div>'
-    + '</div>'
-
+    // Vehicle (shown on the customer quote)
     + '<div class="form-group"><label>Vehicle <span style="color:#bbb;font-weight:400;">(shown on the customer quote)</span></label>'
     + vehicleCascadeHtml('qbveh', {}, { year: prefYear, make: prefMake, model: prefModel })
     + '</div>'
 
-    + '<div class="form-group"><label>Tier</label>'
-    + '<div class="tier-toggle">'
-    + '<button type="button" class="tier-btn' + (currentTier === 'standard' ? ' active' : '') + '" id="btnStd" onclick="setTier(\'standard\')">Standard</button>'
-    + '<button type="button" class="tier-btn' + (currentTier === 'premium'  ? ' active' : '') + '" id="btnPrem" onclick="setTier(\'premium\')">Premium</button>'
-    + '</div>'
-    + '<input type="hidden" name="tier" id="tierVal" value="' + esc(currentTier) + '"></div>'
-
-    // Price breakdown — internal section (parts + labor visible to admin only)
-    + '<div class="price-section">'
-    + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
-    + '<div class="price-row">'
-    + '<span class="price-label">Parts</span>'
-    + '<input class="price-input" type="number" name="parts" id="parts" min="0" step="1" value="' + Math.round(Number(q.price_parts)||0) + '" oninput="calc()" onfocus="this.select()"></div>'
-    + '<div class="price-row">'
-    + '<span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
-    + '<input class="price-input" type="number" name="labor" id="labor" min="0" step="1" value="' + Math.round(Number(q.price_labor)||0) + '" oninput="calc()" onfocus="this.select()"></div>'
-    + '<div class="price-row">'
-    + '<span class="price-label">Shop Supplies</span>'
-    + '<input class="price-input" type="number" name="shopSupplies" id="ss" min="0" step="1" value="' + Math.round(Number(q.shop_supplies)||0) + '" oninput="calc()" onfocus="this.select()"></div>'
-    + '<div class="price-row tax-row">'
-    + '<span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="tr" min="0" max="20" step="0.1" value="' + fmt(currentTaxRate) + '" oninput="calc()">%) on Parts + Supplies</span>'
-    + '<span id="taxAmt">$' + money(q.tax) + '</span></div>'
-    + '</div>'
-
-    // Custom line items (e.g. OEM parts) — priced rows kept out of `service` reporting
-    + '<div style="margin:4px 0 16px;">' + customLineItemsSection(currentLineItems) + '</div>'
-
-    // Customer-facing totals
-    + '<div class="price-section" style="margin-bottom:0;">'
-    + '<div class="price-section-header">Customer Quote</div>'
-    + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
-    + '<span style="font-size:0.77rem;color:#888;font-weight:600;">Show pricing as:</span>'
-    + '<div class="tier-toggle" style="margin:0;">'
-    + '<button type="button" class="tier-btn active" id="btnCombined" onclick="setLineItems(\'combined\')">Combined</button>'
-    + '<button type="button" class="tier-btn" id="btnSeparate" onclick="setLineItems(\'separate\')">Separate</button>'
-    + '</div></div>'
-    + '<input type="hidden" name="lineItems" id="lineItemsVal" value="combined">'
-    + '<div class="price-row" id="liCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="partsLaborDisplay">$' + money((q.price_parts || 0) + (q.price_labor || 0)) + '</span></div>'
-    + '<div class="price-row" id="liPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="partsOnlyDisplay">$' + money(q.price_parts || 0) + '</span></div>'
-    + '<div class="price-row" id="liLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="laborOnlyDisplay">$' + money(q.price_labor || 0) + '</span></div>'
-    + '<div id="cliDisplayRows"></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="ssDisplay">$' + money(q.shop_supplies) + '</span></div>'
-    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="taxDisplay">$' + money(q.tax) + '</span></div>'
-    + '<div class="price-row"><span class="price-label">Discount <span class="price-note">(applied after tax)</span></span>'
-    + '<input class="price-input" type="number" name="discount" id="disc" min="0" step="1" value="' + currentDiscount + '" oninput="calc()" onfocus="this.select()"></div>'
-    + '<div class="price-row total-row divider-row"><span>Total</span><span id="totalAmt" style="font-size:1.15rem;">$' + money(q.total) + '</span></div>'
-    + '</div>'
-
-    + '<input type="hidden" name="taxAmt"   id="taxH"   value="' + fmt(q.tax)   + '">'
-    + '<input type="hidden" name="totalAmt" id="totalH" value="' + fmt(q.total) + '">'
-
-    + '<div class="form-group" style="margin:16px 0 6px;"><label>Notes to customer <span style="color:#bbb;font-weight:400;">(optional — included in the quote email)</span></label>'
-    + '<textarea name="customerNotes" id="qbCustNotes" placeholder="e.g. Parts are in stock; we can usually schedule within 1-2 business days. Reach out anytime with questions." style="width:100%;min-height:74px;padding:10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;resize:vertical;box-sizing:border-box;">' + esc(currentCustomerNotes) + '</textarea></div>'
+    // Shared quote pricing block (per-service breakdown, custom line items,
+    // discount, customer summary, notes) — identical on every quote surface.
+    + quotePricingBlock('bq', {
+        serviceNames: serviceNames,
+        selected: currentServices,
+        tier: currentTier,
+        taxPct: currentTaxRate,
+        discount: currentDiscount,
+        shopSupplies: Math.round(Number(q.shop_supplies) || 0),
+        lineItems: currentLineItems,
+        customerNotes: currentCustomerNotes
+      })
 
     + (noEmail ? '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. Quote will be saved but not emailed.</div>' : '')
     + '<input type="hidden" name="sendMode" value="' + sendMode + '">'
@@ -1995,132 +2249,31 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '</div>'
 
     + '<script>'
-    + 'var PRICING=' + pricingJson + ';'
-    + 'var tier="' + esc(currentTier) + '";'
+    + 'var bqPRICING=' + pricingJson + ';'
     + 'var firstName="' + esc(lead.first_name) + '";'
     + 'var vehicle="' + esc(lead.vehicle || '') + '";'
     + 'var leadEmail="' + esc(lead.email || '') + '";'
-
-    + 'function setTier(t){'
-    +   'tier=t;'
-    +   'document.getElementById("tierVal").value=t;'
-    +   'document.getElementById("btnStd").classList.toggle("active",t==="standard");'
-    +   'document.getElementById("btnPrem").classList.toggle("active",t==="premium");'
-    +   'updatePrices();'
-    + '}'
-
-    + 'var lineItems="combined";'
-    + 'function setLineItems(v){'
-    +   'lineItems=v;document.getElementById("lineItemsVal").value=v;'
-    +   'document.getElementById("btnCombined").classList.toggle("active",v==="combined");'
-    +   'document.getElementById("btnSeparate").classList.toggle("active",v==="separate");'
-    +   'document.getElementById("liCombinedRow").style.display=v==="combined"?"":"none";'
-    +   'document.getElementById("liPartsRow").style.display=v==="separate"?"":"none";'
-    +   'document.getElementById("liLaborRow").style.display=v==="separate"?"":"none";'
-    + '}'
-
-    + 'function renderTags(){'
-    +   'var names=Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;});'
-    +   'var box=document.getElementById("svcTags");'
-    +   'box.innerHTML=names.map(function(n){'
-    +     'var title=n.replace(/\\b\\w/g,function(c){return c.toUpperCase();});'
-    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'removeTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+title+"</span>";'
-    +   '}).join("");'
-    + '}'
-
-    + 'function removeTag(btn){'
-    +   'var val=btn.getAttribute("data-val");'
-    +   'var cb=Array.from(document.querySelectorAll(".svc-cb")).find(function(c){return c.value===val;});'
-    +   'if(cb){cb.checked=false;}'
-    +   'updatePrices();'
-    + '}'
-
-    + 'function clearServices(){'
-    +   'document.querySelectorAll(".svc-cb").forEach(function(cb){cb.checked=false;});'
-    +   'document.getElementById("svcHidden").value="";'
-    +   'document.getElementById("parts").value="0.00";'
-    +   'document.getElementById("labor").value="0.00";'
-    +   'document.getElementById("ss").value="0.00";'
-    +   'renderTags();'
-    +   'updateServiceHints([]);'
-    +   'calc();'
-    + '}'
-
-    + 'function updatePrices(){'
-    +   'var cbs=document.querySelectorAll(".svc-cb:checked");'
-    +   'var names=Array.from(cbs).map(function(c){return c.value;});'
-    +   'document.getElementById("svcHidden").value=names.join(", ");'
-    +   'var totParts=0,totLabor=0,totSS=0;'
-    +   'names.forEach(function(svc){'
-    +     'if(!PRICING[svc])return;'
-    +     'var p=PRICING[svc][tier]||PRICING[svc].standard;' // fall back to standard when tier missing
-    +     'if(!p)return;'
-    +     'totParts+=p.parts;totLabor+=p.labor;totSS+=p.shopSupplies;'
-    +   '});'
-    +   'renderTags();'
-    +   'updateServiceHints(names);'
-    +   'if(names.length===0)return;'
-    +   'document.getElementById("parts").value=totParts.toFixed(2);'
-    +   'document.getElementById("labor").value=totLabor.toFixed(2);'
-    +   'document.getElementById("ss").value=totSS.toFixed(2);'
-    +   'calc();'
-    + '}'
-
-    // Shows custom-quote reminders and any service-specific notes (e.g. inspection fee policy)
-    + 'function updateServiceHints(names){'
-    +   'var msgs=[];'
-    +   'var custom=names.filter(function(n){return PRICING[n]&&PRICING[n].customQuote;});'
-    +   'if(custom.length){msgs.push("<strong>Custom quote:</strong> "+custom.join(", ")+" "+(custom.length>1?"have":"has")+" no preset price. Look up the exact part(s) and enter Parts and Labor manually.");}'
-    +   'names.forEach(function(n){if(PRICING[n]&&PRICING[n].note){msgs.push(PRICING[n].note);}});'
-    +   'var box=document.getElementById("customQuoteHint");'
-    +   'if(msgs.length){box.innerHTML=msgs.join("<br><br>");box.style.display="block";}else{box.style.display="none";}'
-    + '}'
-
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
-
     + CLI_JS
-    + 'function bkRecalc(){calc();}'
-    // Tax is on parts + shop supplies + custom line items (not labor — Virginia law)
-    + 'function calc(){'
-    +   'var parts=parseFloat(document.getElementById("parts").value)||0;'
-    +   'var labor=parseFloat(document.getElementById("labor").value)||0;'
-    +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
-    +   'var tr=parseFloat(document.getElementById("tr").value)||0;'
-    +   'var items=cliCollect();'
-    +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
-    +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
-    +   'var disc=parseFloat(document.getElementById("disc").value)||0;'
-    +   'var tax=(parts+ss+cliTax)*tr/100;'
-    +   'var total=parts+labor+ss+cliAll+tax-disc;'
-    +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
-    +   'document.getElementById("taxAmt").textContent="$"+money(tax);'
-    +   'document.getElementById("partsLaborDisplay").textContent="$"+money(parts+labor);'
-    +   'document.getElementById("partsOnlyDisplay").textContent="$"+money(parts);'
-    +   'document.getElementById("laborOnlyDisplay").textContent="$"+money(labor);'
-    +   'document.getElementById("ssDisplay").textContent="$"+money(ss);'
-    +   'document.getElementById("taxDisplay").textContent="$"+money(tax);'
-    +   'document.getElementById("totalAmt").textContent="$"+money(total);'
-    +   'document.getElementById("taxH").value=tax.toFixed(2);'
-    +   'document.getElementById("totalH").value=total.toFixed(2);'
-    + '}'
+    + 'function bkRecalc(){bqcalc();}'
+    // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
+    + quotePricingJs('bq')
 
+    // Preview the customer quote email from the live per-service rows.
     + 'function togglePreview(){'
     +   'var box=document.getElementById("previewBox");'
     +   'if(box.style.display!=="none"){box.style.display="none";document.getElementById("prevBtn").textContent="Preview Email";return;}'
-    +   'var svcNames=Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;});'
-    +   'var svc=svcNames.length?svcNames.join(", "):"(no service selected)";'
-    +   'var parts=parseFloat(document.getElementById("parts").value)||0;'
-    +   'var labor=parseFloat(document.getElementById("labor").value)||0;'
-    +   'var ss=parseFloat(document.getElementById("ss").value)||0;'
-    +   'var tax=parseFloat(document.getElementById("taxH").value)||0;'
-    +   'var tot=parseFloat(document.getElementById("totalH").value)||0;'
-    +   'var disc=parseFloat(document.getElementById("disc").value)||0;'
+    +   'var svcNames=bqGetAllServiceNames();var cv=bqCustomSvcVal();if(cv)svcNames=svcNames.concat([cv]);'
+    +   'var items=JSON.parse(document.getElementById("bqsvcLiH").value||"[]");'
+    +   'var ss=parseFloat(document.getElementById("bqss").value)||0;'
+    +   'var tax=parseFloat(document.getElementById("bqtaxH").value)||0;'
+    +   'var tot=parseFloat(document.getElementById("bqtotalH").value)||0;'
+    +   'var disc=parseFloat(document.getElementById("bqdisc").value)||0;'
     +   'var vehNow=[(document.getElementById("qbveh-year")||{}).value||"",(document.getElementById("qbveh-make")||{}).value||"",(document.getElementById("qbveh-model-hid")||{}).value||""].filter(Boolean).join(" ")||vehicle;'
     +   'var veh=vehNow?" for your <strong>"+vehNow+"</strong>":"";'
     +   'var toLine=leadEmail||"<em style=\'color:#e07000\'>(no email on file)</em>";'
     +   'var svcLine=svcNames.length<=1?(svcNames[0]||"(no service selected)"):svcNames.slice(0,-1).join(", ")+", and "+svcNames[svcNames.length-1];'
-    +   'var totMins=svcNames.reduce(function(a,n){return a+((PRICING[n]&&PRICING[n].minutes)||0);},0);'
-    +   'var durTxt=totMins?(Math.floor(totMins/60)?(Math.floor(totMins/60)+" hr"+(totMins%60?" "+(totMins%60)+" min":"")):(totMins+" min")):"";'
+    +   'var rowsHtml=items.map(function(it){return it.mode==="split"?("<tr><td>"+it.service+" — Parts</td><td style=\'text-align:right;\'>$"+money(it.parts)+"</td></tr><tr><td>"+it.service+" — Labor</td><td style=\'text-align:right;\'>$"+money(it.labor)+"</td></tr>"):("<tr><td>"+it.service+"</td><td style=\'text-align:right;\'>$"+money(it.parts+it.labor)+"</td></tr>");}).join("");'
     +   'box.innerHTML='
     +     '"<div class=\'preview-box\'>"'
     +     '+"<h4>Email Preview</h4>"'
@@ -2130,17 +2283,16 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +     '+"<p>Greetings "+firstName+",</p>"'
     +     '+"<p style=\'margin-top:8px;\'>Here is your quote"+veh+":</p>"'
     +     '+(svcNames.length?("<div style=\'margin:10px 0 4px;font-size:0.8rem;font-weight:700;color:#0a1f3d;text-transform:uppercase;letter-spacing:.4px;\'>Service Requested</div>"+"<p style=\'margin:0 0 6px;font-size:0.92rem;font-weight:600;color:#1a2a3a;\'>"+svcLine+"</p>"):"")'
-    +     '+(durTxt?"<p style=\'margin:0 0 12px;font-size:0.85rem;color:#555;\'>Estimated time on site: about "+durTxt+"</p>":"")'
     +     '+"<table style=\'width:100%;margin:12px 0;font-size:0.88rem;border-collapse:collapse;\'>"'
-    +     '+(lineItems==="separate"?(parts+labor>0?"<tr><td>Parts</td><td style=\'text-align:right;\'>$"+money(parts)+"</td></tr><tr><td>Labor</td><td style=\'text-align:right;\'>$"+money(labor)+"</td></tr>":""):(parts+labor>0?"<tr><td>Parts &amp; Labor</td><td style=\'text-align:right;\'>$"+money(parts+labor)+"</td></tr>":""))'
+    +     '+rowsHtml'
     +     '+cliCollect().map(function(it){return "<tr><td>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'text-align:right;\'>$"+money(it.amount)+"</td></tr>";}).join("")'
     +     '+(ss>0?"<tr><td>Shop Supplies</td><td style=\'text-align:right;\'>$"+money(ss)+"</td></tr>":"")'
     +     '+(tax>0?"<tr><td>Tax</td><td style=\'text-align:right;\'>$"+money(tax)+"</td></tr>":"")'
     +     '+(disc>0?"<tr><td>Discount</td><td style=\'text-align:right;\'>-$"+money(disc)+"</td></tr>":"")'
     +     '+"<tr style=\'font-weight:700;font-size:1rem;border-top:2px solid #dde3ea;\'><td style=\'padding-top:8px;\'>Total</td><td style=\'text-align:right;padding-top:8px;\'>$"+money(tot)+"</td></tr>"'
     +     '+"</table>"'
-    +     '+svcNames.map(function(s){return PRICING[s]&&PRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:11px 13px;font-size:0.85rem;line-height:1.6;margin:18px 0;\'>"+n+"</p>";}).join("")'
-    +     '+((((document.getElementById("qbCustNotes")||{}).value||"").trim())?("<p style=\'color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:6px;padding:12px 14px;font-size:0.86rem;line-height:1.6;margin:18px 0;\'>"+document.getElementById("qbCustNotes").value.trim().replace(/</g,"&lt;")+"</p>"):"")'
+    +     '+svcNames.map(function(s){return bqPRICING[s]&&bqPRICING[s].note;}).filter(Boolean).map(function(n){return "<p style=\'color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:11px 13px;font-size:0.85rem;line-height:1.6;margin:18px 0;\'>"+n+"</p>";}).join("")'
+    +     '+((((document.getElementById("bqCustNotes")||{}).value||"").trim())?("<p style=\'color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:6px;padding:12px 14px;font-size:0.86rem;line-height:1.6;margin:18px 0;\'>"+document.getElementById("bqCustNotes").value.trim().replace(/</g,"&lt;")+"</p>"):"")'
     +     '+"<p style=\'margin:18px 0 0;line-height:1.6;\'>Includes all parts and labor. Qualifying pad and rotor replacements carry a <strong>12-month / 12,000-mile warranty</strong>.</p>"'
     +     '+"<p style=\'margin:16px 0 0;line-height:1.6;\'>We come to your home or office. No shop visit needed.</p>"'
     +     '+"<p style=\'margin:16px 0 0;line-height:1.6;\'>Reply to this email or call/text <strong>703-977-4475</strong> to confirm.</p>"'
@@ -2149,13 +2301,10 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'document.getElementById("prevBtn").textContent="Hide Preview";'
     + '}'
 
-    // On load: if this is a brand-new quote (no saved quote yet) with a service
-    // already auto-filled from the lead, populate prices from the pricing table.
-    // Otherwise just total up the saved/edited values without overwriting them.
+    // On load: build the per-service rows from the selected services, then total up.
     + 'cliInit();'
-    + (allQuotes.length === 0 && currentServices.length > 0 ? 'updatePrices();' : 'calc();')
-    + 'updateServiceHints(Array.from(document.querySelectorAll(".svc-cb:checked")).map(function(c){return c.value;}));'
-    + 'renderTags();'
+    + 'bqInitRows();'
+    + 'bqUpdateServiceHidden();bqRenderTags();bqHints();bqcalc();'
     + '(function(){'
     +   'var STATUS="' + esc(lead.status) + '";'
     +   'var ORDER={'
@@ -2172,18 +2321,20 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     +   'if(!c)return;'
     +   'order.forEach(function(n){var el=c.querySelector("[data-section=\'"+n+"\']");if(el)c.appendChild(el);});'
     + '})();'
-    // Draft restore finalizer: re-check services and reset the tier/line-item toggles
-    // from the restored fields, then recompute tax/total without re-pulling prices so
-    // any manual price overrides in the draft are kept.
+    // Draft restore finalizer: re-check services + rebuild per-service price rows
+    // from the restored fields, restore tier + custom line items, then recompute
+    // without re-pulling prices so any manual price overrides in the draft are kept.
     + 'window.bkQuoteAfter=function(d){'
-    +   'var svc=(document.getElementById("svcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
-    +   'document.querySelectorAll(".svc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
-    +   'tier=(document.getElementById("tierVal").value)||"standard";'
-    +   'document.getElementById("btnStd").classList.toggle("active",tier==="standard");'
-    +   'document.getElementById("btnPrem").classList.toggle("active",tier==="premium");'
-    +   'if(typeof setLineItems==="function"&&document.getElementById("lineItemsVal"))setLineItems(document.getElementById("lineItemsVal").value||"combined");'
+    +   'var svc=(document.getElementById("bqsvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'document.querySelectorAll(".bq-svc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
+    +   'document.querySelectorAll(".bq-pos-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.getAttribute("data-prefix")+" - "+cb.getAttribute("data-pos"))>=0;});'
+    +   'bqtier=(document.getElementById("bqtier").value)||"standard";'
+    +   'document.getElementById("bqBtnStd").classList.toggle("active",bqtier==="standard");'
+    +   'document.getElementById("bqBtnPrem").classList.toggle("active",bqtier==="premium");'
+    // Rebuild the per-service rows from the saved svcLineItems (preserves overrides).
+    +   'var rowsBox=document.getElementById("bqSvcPriceRows");if(rowsBox){rowsBox.innerHTML="";try{var sli=JSON.parse((document.getElementById("bqsvcLiH")||{}).value||"[]");if(Array.isArray(sli)&&sli.length){sli.forEach(function(it){bqAddPriceRow(it.service);var row=document.querySelector("#bqSvcPriceRows .svc-price-row[data-base=\'"+it.service+"\']");if(row){row.querySelector(".bq-parts-in").value=it.parts;row.querySelector(".bq-labor-in").value=it.labor;var mode=it.mode||"combined";row.querySelector(".svc-row-mode").value=mode;row.querySelectorAll(".svc-disp-btn").forEach(function(b,i){b.classList.toggle("active",(mode==="split")?i===1:i===0);});}});}else{bqInitRows();}}catch(e){bqInitRows();}}'
     +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
-    +   'renderTags();updateServiceHints(svc);calc();'
+    +   'bqUpdateServiceHidden();bqRenderTags();bqHints();bqcalc();'
     + '};'
     + '</script>'
     + VEHICLE_CASCADE_JS;
@@ -2213,6 +2364,9 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
   var customerNotes = (req.body.customerNotes || '').trim() || null;
   var discount      = parseFloat(req.body.discount)      || 0;
+  // Per-service breakdown [{service,parts,labor,mode}] from the shared pricing block,
+  // shown line-by-line in the customer quote email.
+  var svcLineItems  = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } })();
 
   // 'new'      = first quote on this lead
   // 'update'   = revise the existing quote in place (stays this lead)
@@ -2299,7 +2453,7 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
       subject: isRevisedQuote
         ? 'Your Updated Brake Service Quote — Brake Knights'
         : 'Your Brake Service Quote — Brake Knights',
-      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, null, isRevisedQuote, customerNotes, lineItems, discount)
+      html:    buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, taxAmt, totalAmt, acceptUrl, svcLineItems, isRevisedQuote, customerNotes, lineItems, discount)
     });
 
     res.redirect('/admin/quote/' + lead.id + '?msg=' + (sendMode === 'separate' ? 'quote_sent_sep' : 'quote_sent'));
@@ -2465,13 +2619,6 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   // owner can change/add what was actually done if the job grew on arrival.
   var selectedServices = service ? service.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
   var rEffectivePricing = getEffectivePricing();
-  var rServiceCheckboxes = '<div class="svc-check-list">'
-    + Object.keys(rEffectivePricing).map(function(s) {
-        var checked = selectedServices.indexOf(s) >= 0 ? ' checked' : '';
-        return '<label class="svc-check-item"><input type="checkbox" class="rsvc-cb" value="' + esc(s) + '"' + checked + ' onchange="rUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
-      }).join('')
-    + '</div>'
-    + '<input type="hidden" name="service" id="rsvcHidden" value="' + esc(service) + '">';
   var rPricingJson = JSON.stringify(rEffectivePricing);
 
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
@@ -2499,21 +2646,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
 
     + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf" data-autosave="receipt-' + lead.id + '" data-autosave-after="bkReceiptAfter">'
 
-    + collapseOpen('rc_service', 'Service &amp; Vehicle', true)
-    + '<div class="form-group"><label>Service performed <span style="color:#bbb;font-weight:400;">(select all that apply, change if the job grew on arrival)</span></label>'
-    + rServiceCheckboxes
-    + '<button type="button" class="svc-clear-btn" onclick="rClearServices()">&#10005; Clear selection</button>'
-    + '<div class="svc-tags" id="rsvcTags"></div>'
-    + '<div class="form-group" style="margin:14px 0 6px;">'
-    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
-    + '<input type="text" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
-    + '</div>'
-    + '</div>'
-    + '<div class="form-group"><label>Tier <span style="color:#bbb;font-weight:400;">(sets auto-filled pricing)</span></label>'
-    + '<div class="tier-toggle">'
-    + '<button type="button" class="tier-btn' + (receiptTier === 'standard' ? ' active' : '') + '" id="rBtnStd" onclick="rSetTier(\'standard\')">Standard</button>'
-    + '<button type="button" class="tier-btn' + (receiptTier === 'premium'  ? ' active' : '') + '" id="rBtnPrem" onclick="rSetTier(\'premium\')">Premium</button>'
-    + '</div></div>'
+    + collapseOpen('rc_service', 'Vehicle &amp; Job Details', true)
     + '<div class="form-group"><label>Vehicle</label>'
     + vehicleCascadeHtml('rc-veh', {}, { year: rcVehData.year || '', make: rcVehData.make || '', model: rcVehData.model || '' })
     + '</div>'
@@ -2529,22 +2662,19 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<input type="text" id="receiptAddr" name="serviceAddress" autocomplete="off" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
     + COLLAPSE_CLOSE
 
-    + collapseOpen('rc_amount', 'Amount Paid', true)
-    + '<div class="price-section" style="margin-bottom:0;">'
-    + '<div class="price-row"><span class="price-label">Parts</span>'
-    + '<input class="price-input" type="number" name="parts" id="rparts" min="0" step="1" value="' + (Math.round(Number(quote.price_parts) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
-    + '<input class="price-input" type="number" name="labor" id="rlabor" min="0" step="1" value="' + (Math.round(Number(quote.price_labor) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
-    + '<input class="price-input" type="number" name="shopSupplies" id="rss" min="0" step="1" value="' + (Math.round(Number(shopSupplies) || 0)) + '" oninput="rcalc()" onfocus="this.select()"></div>'
-    + '<div id="cliDisplayRows"></div>'
-    + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="rtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="rcalc()">%) on Parts + Supplies</span>'
-    + '<span id="rtaxAmt">$' + money(tax) + '</span></div>'
-    + '<div class="price-row total-row divider-row"><span>Total Paid</span><span id="rtotal" style="font-size:1.15rem;">$' + money(total) + '</span></div>'
-    + '</div>'
-    + '<div style="margin-top:14px;">' + customLineItemsSection(rcLineItems) + '</div>'
-    + '<input type="hidden" name="tax" id="rtaxH" value="' + fmt(tax) + '">'
-    + '<input type="hidden" name="total" id="rtotalH" value="' + fmt(total) + '">'
+    // Shared quote pricing block (per-service breakdown, custom line items,
+    // discount, total) — identical to the quote surfaces. The customer summary
+    // label reads "Customer Receipt" / "Total Paid" via the init script below.
+    + collapseOpen('rc_amount', 'Service &amp; Amount Paid', true)
+    + quotePricingBlock('rc', {
+        serviceNames: Object.keys(rEffectivePricing),
+        selected: selectedServices,
+        tier: receiptTier,
+        taxPct: taxPct,
+        shopSupplies: Math.round(Number(shopSupplies) || 0),
+        lineItems: rcLineItems,
+        showCustomerNotes: false
+      })
     + COLLAPSE_CLOSE
 
     + collapseOpen('rc_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true)
@@ -2563,79 +2693,15 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '</form>'
 
     + '<script>'
-    + 'var RPRICING=' + rPricingJson + ';'
-    + 'var rtier="' + esc(receiptTier) + '";'
-    + 'function rmoney(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + 'var rcPRICING=' + rPricingJson + ';'
+    + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + 'function rmoney(n){return money(n);}'
     + CLI_JS
-    + 'function bkRecalc(){rcalc();}'
-    // Tax is on parts + shop supplies + custom line items (not labor — Virginia law)
-    + 'function rcalc(){'
-    +   'var parts=parseFloat(document.getElementById("rparts").value)||0;'
-    +   'var labor=parseFloat(document.getElementById("rlabor").value)||0;'
-    +   'var ss=parseFloat(document.getElementById("rss").value)||0;'
-    +   'var tr=parseFloat(document.getElementById("rtr").value)||0;'
-    +   'var items=cliCollect();'
-    +   'var cliTax=items.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
-    +   'var cliAll=items.reduce(function(a,it){return a+(it.amount||0);},0);'
-    +   'var tax=(parts+ss+cliTax)*tr/100;'
-    +   'var t=parts+labor+ss+cliAll+tax;'
-    +   'document.getElementById("cliDisplayRows").innerHTML=items.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+rmoney(it.amount)+"</span></div>";}).join("");'
-    +   'document.getElementById("rtaxAmt").textContent="$"+rmoney(tax);'
-    +   'document.getElementById("rtotal").textContent="$"+rmoney(t);'
-    +   'document.getElementById("rtaxH").value=tax.toFixed(2);'
-    +   'document.getElementById("rtotalH").value=t.toFixed(2);'
-    + '}'
-    + 'function rCheckedServices(){'
-    +   'return Array.from(document.querySelectorAll(".rsvc-cb:checked")).map(function(c){return c.value;});'
-    + '}'
-    + 'function rRenderTags(){'
-    +   'var names=rCheckedServices();'
-    +   'document.getElementById("rsvcTags").innerHTML=names.map(function(n){'
-    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'rRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
-    +   '}).join("");'
-    + '}'
-    + 'function rRemoveTag(btn){'
-    +   'var val=btn.getAttribute("data-val");'
-    +   'var cb=Array.from(document.querySelectorAll(".rsvc-cb")).find(function(c){return c.value===val;});'
-    +   'if(cb)cb.checked=false;'
-    +   'rUpdateServices();'
-    + '}'
-    + 'function rClearServices(){'
-    +   'document.querySelectorAll(".rsvc-cb").forEach(function(cb){cb.checked=false;});'
-    +   'rUpdateServices();'
-    + '}'
-    + 'function rSetTier(t){'
-    +   'rtier=t;'
-    +   'document.getElementById("rBtnStd").classList.toggle("active",t==="standard");'
-    +   'document.getElementById("rBtnPrem").classList.toggle("active",t==="premium");'
-    +   'rAutofill();'
-    + '}'
-    // Auto-fill the Amount Paid fields from the pricing table for the selected
-    // services + tier. The owner can still type over any field afterward.
-    + 'function rAutofill(){'
-    +   'var names=rCheckedServices();'
-    +   'if(names.length===0){'
-    +     'document.getElementById("rparts").value="0.00";'
-    +     'document.getElementById("rlabor").value="0.00";'
-    +     'document.getElementById("rss").value="0.00";'
-    +     'rcalc();return;'
-    +   '}'
-    +   'var parts=0,labor=0,ss=0;'
-    +   'names.forEach(function(s){'
-    +     'var sv=RPRICING[s];if(!sv)return;'
-    +     'var p=sv[rtier]||sv.standard;if(!p)return;'
-    +     'parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;'
-    +   '});'
-    +   'document.getElementById("rparts").value=parts.toFixed(2);'
-    +   'document.getElementById("rlabor").value=labor.toFixed(2);'
-    +   'document.getElementById("rss").value=ss.toFixed(2);'
-    +   'rcalc();'
-    + '}'
-    + 'function rUpdateServices(){'
-    +   'document.getElementById("rsvcHidden").value=rCheckedServices().join(", ");'
-    +   'rRenderTags();'
-    +   'rAutofill();'
-    + '}'
+    // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
+    + quotePricingJs('rc')
+    + 'function bkRecalc(){rccalc();}'
+    // Receipt labels: the customer summary reads "Customer Receipt" / "Total Paid".
+    + '(function(){var sl=document.getElementById("rcSummaryLabel");if(sl)sl.textContent="Customer Receipt";var tl=document.getElementById("rcTotalLabel");if(tl)tl.textContent="Total Paid";})();'
     + 'function rPayToggle(){'
     +   'var v=document.getElementById("rpm").value;'
     +   'var wrap=document.getElementById("rpmOtherWrap");'
@@ -2647,9 +2713,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var v=document.querySelector("[name=fuTime"+i+"]").value;'
     +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
     + '}'
-    + 'rRenderTags();rPayToggle();cliInit();'
-    // Auto-fill prices from pricing table on page load if all price fields are 0
-    + 'if(!(parseFloat(document.getElementById("rparts").value)||parseFloat(document.getElementById("rlabor").value)||parseFloat(document.getElementById("rss").value)))rUpdateServices();else rcalc();'
+    + 'rPayToggle();cliInit();'
+    // Build the per-service rows from the pre-selected services and total up.
+    + 'rcInitRows();rcUpdateServiceHidden();rcRenderTags();rcHints();rccalc();'
     + 'function bkAddAdvisory(pfx){'
     +   'for(var i=2;i<=4;i++){'
     +     'var r=document.getElementById((pfx||"")+"advRow"+i)||document.getElementById("advRow"+i);'
@@ -2661,13 +2727,13 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + 'function toggleReceiptPreview(){'
     +   'var box=document.getElementById("rPreviewBox");'
     +   'if(box.style.display!=="none"){box.style.display="none";document.getElementById("rPrevBtn").textContent="Preview Receipt Email";return;}'
-    +   'var svcs=Array.from(document.querySelectorAll(".rsvc-cb:checked")).map(function(c){return c.value;});'
+    +   'var svcs=rcGetAllServiceNames();'
     +   'var rcustom=(document.querySelector("[name=customService]")||{}).value.trim();'
     +   'if(rcustom)svcs.push(rcustom);'
     +   'var veh=[(document.querySelector("[name=veh_year]")||{}).value||"",(document.querySelector("[name=veh_make]")||{}).value||"",(document.querySelector("[name=veh_model]")||{}).value||""].filter(Boolean).join(" ");'
     +   'var svcDate=(document.querySelector("[name=serviceDate]")||{}).value||"";'
     +   'var pm=(document.getElementById("rpm")||{}).value||"";'
-    +   'var tot=document.getElementById("rtotal").textContent||"$0.00";'
+    +   'var tot=document.getElementById("rctotalAmt").textContent||"$0.00";'
     +   'var advNotes=[];for(var i=1;i<=4;i++){var n=(document.querySelector("[name=custNote"+i+"]")||{}).value||"";if(n)advNotes.push(n);}'
     +   'var toLine="' + esc(lead.email || '') + '"||"<em style=\'color:#e07000\'>(no email on file)</em>";'
     +   'box.innerHTML="<div class=\'preview-box\'>"'
@@ -2689,19 +2755,25 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     '+"</div>";'
     +   'box.style.display="block";document.getElementById("rPrevBtn").textContent="Hide Preview";'
     + '}'
-    // Draft restore finalizer: re-check services, restore the payment "Other" box and
-    // advisory rows, then recompute the total from restored amounts (no price re-pull).
+    // Draft restore finalizer: re-check services + rebuild per-service price rows from
+    // the restored svcLineItems, restore tier/payment/advisories/custom line items,
+    // then recompute the total from restored amounts (no price re-pull).
     + 'window.bkReceiptAfter=function(d){'
-    +   'var svc=(document.getElementById("rsvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
-    +   'document.querySelectorAll(".rsvc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
-    +   'rRenderTags();'
+    +   'var svc=(document.getElementById("rcsvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'document.querySelectorAll(".rc-svc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
+    +   'document.querySelectorAll(".rc-pos-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.getAttribute("data-prefix")+" - "+cb.getAttribute("data-pos"))>=0;});'
+    +   'rctier=(document.getElementById("rctier").value)||"standard";'
+    +   'document.getElementById("rcBtnStd").classList.toggle("active",rctier==="standard");'
+    +   'document.getElementById("rcBtnPrem").classList.toggle("active",rctier==="premium");'
+    +   'var rowsBox=document.getElementById("rcSvcPriceRows");if(rowsBox){rowsBox.innerHTML="";try{var sli=JSON.parse((document.getElementById("rcsvcLiH")||{}).value||"[]");if(Array.isArray(sli)&&sli.length){sli.forEach(function(it){rcAddPriceRow(it.service);var row=document.querySelector("#rcSvcPriceRows .svc-price-row[data-base=\'"+it.service+"\']");if(row){row.querySelector(".rc-parts-in").value=it.parts;row.querySelector(".rc-labor-in").value=it.labor;var mode=it.mode||"combined";row.querySelector(".svc-row-mode").value=mode;row.querySelectorAll(".svc-disp-btn").forEach(function(b,i){b.classList.toggle("active",(mode==="split")?i===1:i===0);});}});}else{rcInitRows();}}catch(e){rcInitRows();}}'
+    +   'rcRenderTags();'
     +   'if(typeof rPayToggle==="function")rPayToggle();'
     +   'for(var i=2;i<=4;i++){var n=(document.querySelector("[name=custNote"+i+"]")||{}).value||"";var cu=(document.querySelector("[name=fuCustom"+i+"]")||{}).value||"";if(n||cu){var r=document.getElementById("advRow"+i);if(r)r.style.display="block";}}'
     +   'var allVis=true;for(var j=2;j<=4;j++){var rr=document.getElementById("advRow"+j);if(rr&&rr.style.display==="none")allVis=false;}'
     +   'if(allVis){var ab=document.getElementById("rAddAdvBtn");if(ab)ab.style.display="none";}'
     +   'for(var k=1;k<=4;k++){if(typeof toggleCustom==="function")toggleCustom(k);}'
     +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
-    +   'if(typeof rcalc==="function")rcalc();'
+    +   'rccalc();'
     + '};'
     + '</script>'
     + VEHICLE_CASCADE_JS
@@ -2727,11 +2799,13 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var labor        = parseFloat(req.body.labor)        || 0;
   var partsLabor   = parts + labor;
   var shopSupplies = parseFloat(req.body.shopSupplies) || 0;
-  var tax          = parseFloat(req.body.tax)          || 0;
+  // Shared pricing block posts taxAmt (older receipts posted `tax`); accept either.
+  var tax          = parseFloat(req.body.taxAmt != null && req.body.taxAmt !== '' ? req.body.taxAmt : req.body.tax) || 0;
+  var discount     = parseFloat(req.body.discount)     || 0;
   var lineItems    = parseLineItems(req.body.customLineItems);
   var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
   var cliSum       = lineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
-  var total        = partsLabor + shopSupplies + cliSum + tax;
+  var total        = partsLabor + shopSupplies + cliSum + tax - discount;
   var payment      = (req.body.paymentMethod || '').trim();
   if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
   var officeNotes  = (req.body.officeNotes || '').trim() || null;
@@ -3140,30 +3214,6 @@ router.get('/quick', requireAuth, function(req, res) {
       + '</div>'
     : '';
 
-  var QQ_POSITION_SVCS = {
-    'Caliper Replacement':      { prefix: 'Caliper',    label: 'Caliper',    positions: ['Front Left', 'Front Right', 'Rear Left', 'Rear Right'] },
-    'Brake Hose Replacement':   { prefix: 'Brake Hose', label: 'Brake Hose', positions: ['Front Left', 'Front Right', 'Rear Left', 'Rear Right'] }
-  };
-
-  var serviceCheckboxes = '<div class="svc-check-list">'
-    + serviceNames.map(function(s) {
-        var posCfg = QQ_POSITION_SVCS[s];
-        if (posCfg) {
-          return '<div class="svc-pos-group" style="margin:4px 0 8px;">'
-            + '<div style="font-size:0.78rem;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;padding:4px 0 6px;">' + esc(posCfg.label) + '</div>'
-            + '<div style="padding-left:4px;">'
-            + posCfg.positions.map(function(pos) {
-                return '<label class="svc-check-item" style="margin-bottom:3px;">'
-                  + '<input type="checkbox" class="qq-svc-pos-cb" data-parent="' + esc(s) + '" data-prefix="' + esc(posCfg.prefix) + '" data-pos="' + esc(pos) + '" onchange="qqPosCbChange(this)">'
-                  + '<span class="svc-box"></span>' + esc(pos) + '</label>';
-              }).join('')
-            + '</div></div>';
-        }
-        return '<label class="svc-check-item"><input type="checkbox" class="qsvc-cb" value="' + esc(s) + '" onchange="qqSvcCbChange(this)"><span class="svc-box"></span>' + esc(s) + '</label>';
-      }).join('')
-    + '</div>'
-    + '<input type="hidden" name="service" id="qsvcHidden" value="">';
-
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
     return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
   }).join('');
@@ -3225,25 +3275,6 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</div>'
     + COLLAPSE_CLOSE
 
-    // Services + tier
-    + collapseOpen('qq_service', 'Service <span style="font-size:0.8rem;color:#bbb;font-weight:400;">(select all that apply)</span>', true)
-    + '<div class="form-group" style="margin:0 0 14px;"><label>Tier</label>'
-    + '<div class="tier-toggle">'
-    + '<button type="button" class="tier-btn active" id="qBtnStd" onclick="qSetTier(\'standard\')">Standard</button>'
-    + '<button type="button" class="tier-btn" id="qBtnPrem" onclick="qSetTier(\'premium\')">Premium</button>'
-    + '</div>'
-    + '<input type="hidden" name="tier" id="qtier" value="standard"></div>'
-    + serviceCheckboxes
-    + '<button type="button" class="svc-clear-btn" onclick="qClearServices()">&#10005; Clear selection</button>'
-    + '<div class="svc-tags" id="qsvcTags"></div>'
-    + '<div id="qCustomHint" style="display:none;background:#fff8e1;border:1px solid #f0d080;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:0.83rem;color:#7a5a00;"></div>'
-    + '<div class="form-group" style="margin:14px 0 6px;">'
-    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
-    + '<input type="text" id="qCustomSvc" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" oninput="qOnCustomSvc()" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
-    + '<div id="qCustomSvcHint" style="display:none;font-size:0.82rem;color:#7a5a00;background:#fff8e1;border:1px solid #f0d080;border-radius:6px;padding:8px 10px;margin-top:6px;">Custom service added to the quote. Enter its parts and labor costs in the price fields below.</div>'
-    + '</div>'
-    + COLLAPSE_CLOSE
-
     // Receipt-only date / payment / address
     + collapseOpen('qq_jobdetails', 'Job Details', true, ' qReceiptOnly', 'display:none;')
     + '<div class="row2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
@@ -3257,43 +3288,11 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="text" name="serviceAddress" placeholder="Where the work was performed"></div>'
     + COLLAPSE_CLOSE
 
-    // Price breakdown (internal) — shared by both modes
-    + collapseOpen('qq_pricing', 'Pricing', true)
-    + '<div class="price-section">'
-    + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer — Combined/Split P/L per service above)</span></div>'
-    + '<div id="qqSvcPriceRows"></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
-    + '<input class="price-input" type="number" name="shopSupplies" id="qss" min="0" step="1" value="0" oninput="qcalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row tax-row"><span class="price-label" style="display:flex;align-items:center;gap:5px;">VA Tax (<input class="tax-rate-input" type="number" name="taxRate" id="qtr" min="0" max="20" step="0.1" value="' + fmt(taxPct) + '" oninput="qcalc()">%) on Parts + Supplies</span>'
-    + '<span id="qtaxAmt">$0.00</span></div>'
-    + '</div>'
-
-    // Custom line items (e.g. OEM parts) — priced rows kept out of `service` reporting
-    + '<div style="margin:4px 0 16px;">' + customLineItemsSection([]) + '</div>'
-
-    // Customer-facing total
-    + '<div class="price-section" style="margin-bottom:0;">'
-    + '<div class="price-section-header"><span id="qSummaryLabel">Customer Quote</span></div>'
-    + '<div id="qqSvcCustomerRows"></div>'
-    + '<div id="cliDisplayRows"></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="qssDisplay">$0.00</span></div>'
-    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="qtaxDisplay">$0.00</span></div>'
-    + '<div class="price-row"><span class="price-label">Discount <span class="price-note">(applied after tax)</span></span>'
-    + '<input class="price-input" type="number" name="discount" id="qdisc" min="0" step="1" value="0" oninput="qcalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row total-row divider-row"><span id="qTotalLabel">Total</span><span id="qtotalAmt" style="font-size:1.15rem;">$0.00</span></div>'
-    + '</div>'
-    + '<input type="hidden" name="parts"      id="qpartsH"       value="0.00">'
-    + '<input type="hidden" name="labor"      id="qlaborH"       value="0.00">'
-    + '<input type="hidden" name="lineItems_json" id="qlineItemsJsonH" value="[]">'
-    + '<input type="hidden" name="taxAmt"     id="qtaxH"         value="0.00">'
-    + '<input type="hidden" name="totalAmt"   id="qtotalH"       value="0.00">'
+    // Shared quote pricing block (services + per-service breakdown, custom line
+    // items, discount, customer summary, notes) — identical on every quote surface.
+    + collapseOpen('qq_pricing', 'Service &amp; Pricing', true)
+    + quotePricingBlock('q', { serviceNames: serviceNames, taxPct: taxPct })
     + COLLAPSE_CLOSE
-
-    // Quote-only: notes shown to customer in the quote email
-    + '<div class="card qQuoteOnly">'
-    + '<div class="section-title">Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional — included in the quote email)</span></div>'
-    + '<textarea name="quote_customer_notes" id="qCustNotes" placeholder="e.g. Parts are in stock, we can typically schedule within 1-2 business days. Reach out anytime with questions." style="width:100%;min-height:80px;padding:10px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;resize:vertical;box-sizing:border-box;"></textarea>'
-    + '</div>'
 
     // Receipt-only advisories + office notes
     + collapseOpen('qq_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true, ' qReceiptOnly', 'display:none;')
@@ -3370,76 +3369,18 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'qSaveState();'
     + '}'
 
-    + 'function qCheckedServices(){return Array.from(document.querySelectorAll(".qsvc-cb:checked")).map(function(c){return c.value;});}'
-    + 'function qCustomSvcVal(){var el=document.getElementById("qCustomSvc");return el?el.value.trim():"";}'
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
     + CLI_JS
-    + 'function qqGetAllServiceNames(){'
-    +   'var names=[];'
-    +   'document.querySelectorAll(".qsvc-cb:checked").forEach(function(cb){names.push(cb.value);});'
-    +   'document.querySelectorAll(".qq-svc-pos-cb:checked").forEach(function(pos){names.push(pos.getAttribute("data-prefix")+" - "+pos.getAttribute("data-pos"));});'
-    +   'return names;'
-    + '}'
-    + 'function qqUpdateServiceHidden(){'
-    +   'var all=qqGetAllServiceNames().slice();var cv=qCustomSvcVal();if(cv)all.push(cv);'
-    +   'document.getElementById("qsvcHidden").value=all.join(", ");'
-    + '}'
-    + 'function qqAddPriceRow(svcName){'
-    +   'if(document.querySelector("#qqSvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']"))return;'
-    +   'var PFX_MAP={"Caliper":"Caliper Replacement","Brake Hose":"Brake Hose Replacement"};'
-    +   'var pfx=svcName.split(" - ");var lookupKey=pfx.length===2&&PFX_MAP[pfx[0]]?PFX_MAP[pfx[0]]:svcName;'
-    +   'var p=QPRICING[lookupKey];var td=p&&(p[qtier]||p.standard);'
-    +   'var dParts=td?td.parts:0;var dLabor=td?td.labor:0;var dSS=td?td.shopSupplies:0;'
-    +   'var row=document.createElement("div");row.className="svc-price-row";row.setAttribute("data-base",svcName);'
-    +   'row.innerHTML='
-    +     '"<div class=\'svc-price-title\' style=\'font-size:0.82rem;font-weight:700;color:#0a1f3d;padding:6px 0 4px;display:flex;align-items:center;justify-content:space-between;\'>"'
-    +     '+"<span>"+svcName+"</span>"'
-    +     '+"<div class=\'tier-toggle\' style=\'margin:0;\'>"'
-    +     '+"<button type=\'button\' class=\'tier-btn active svc-disp-btn\' onclick=\'setQqRowMode(this,\\\"combined\\\")\' style=\'padding:3px 9px;font-size:0.75rem;\'>Combined</button>"'
-    +     '+"<button type=\'button\' class=\'tier-btn svc-disp-btn\' onclick=\'setQqRowMode(this,\\\"split\\\")\' style=\'padding:3px 9px;font-size:0.75rem;\'>Split P/L</button>"'
-    +     '+"</div></div>"'
-    +     '+"<input type=\'hidden\' class=\'svc-row-mode\' value=\'combined\'>"'
-    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input qsvc-parts-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(dParts.toFixed(2))+"\' oninput=\'qcalc()\' onfocus=\'this.select()\'></div>"'
-    +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input qsvc-labor-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(dLabor.toFixed(2))+"\' oninput=\'qcalc()\' onfocus=\'this.select()\'></div>"'
-    +     '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
-    +   'if(dSS>0){var curSS=parseFloat(document.getElementById("qss").value)||0;document.getElementById("qss").value=(curSS+dSS).toFixed(2);}'
-    +   'document.getElementById("qqSvcPriceRows").appendChild(row);'
-    + '}'
-    + 'function setQqRowMode(btn,mode){'
-    +   'var row=btn.closest(".svc-price-row");'
-    +   'row.querySelectorAll(".svc-disp-btn").forEach(function(b){b.classList.toggle("active",b===btn);});'
-    +   'row.querySelector(".svc-row-mode").value=mode;'
-    +   'qcalc();'
-    + '}'
-    + 'function qqRemovePriceRow(svcName){'
-    +   'var row=document.querySelector("#qqSvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']");'
-    +   'if(row)row.parentNode.removeChild(row);'
-    + '}'
-    + 'function qqSvcCbChange(cb){'
-    +   'var posDiv=document.querySelector(".qq-svc-positions[data-parent=\'"+cb.value+"\']");'
-    +   'if(posDiv){'
-    +     'posDiv.style.display=cb.checked?"block":"none";'
-    +     'if(!cb.checked){posDiv.querySelectorAll(".qq-svc-pos-cb:checked").forEach(function(pos){pos.checked=false;qqRemovePriceRow(pos.getAttribute("data-prefix")+" - "+pos.getAttribute("data-pos"));});}'
-    +   '}else{'
-    +     'if(cb.checked)qqAddPriceRow(cb.value);else qqRemovePriceRow(cb.value);'
-    +   '}'
-    +   'qqUpdateServiceHidden();qRenderTags();qHints();qcalc();qSaveState();'
-    + '}'
-    + 'function qqPosCbChange(cb){'
-    +   'var rowName=cb.getAttribute("data-prefix")+" - "+cb.getAttribute("data-pos");'
-    +   'if(cb.checked)qqAddPriceRow(rowName);else qqRemovePriceRow(rowName);'
-    +   'qqUpdateServiceHidden();qRenderTags();qHints();qcalc();qSaveState();'
-    + '}'
-    + 'function qqUpdateRowPrices(){'
-    +   'var PFX_MAP={"Caliper":"Caliper Replacement","Brake Hose":"Brake Hose Replacement"};'
-    +   'Array.from(document.querySelectorAll("#qqSvcPriceRows .svc-price-row")).forEach(function(r){'
-    +     'var base=r.getAttribute("data-base");var pfx=base.split(" - ");var key=pfx.length===2&&PFX_MAP[pfx[0]]?PFX_MAP[pfx[0]]:base;'
-    +     'var p=QPRICING[key];if(!p||p.customQuote)return;'
-    +     'var td=p[qtier]||p.standard;if(!td)return;'
-    +     'r.querySelector(".qsvc-parts-in").value=td.parts.toFixed(2);'
-    +     'r.querySelector(".qsvc-labor-in").value=td.labor.toFixed(2);'
-    +   '});'
-    + '}'
+    // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints). Defines
+    // qcalc, qSetTier, qClearServices, qSvcCbChange, qPosCbChange, qAddPriceRow,
+    // qRenderTags, qHints, qUpdateServiceHidden, qGetAllServiceNames, qInitRows, etc.
+    + quotePricingJs('q')
+    // Re-save the autosaved state on any pricing-block change.
+    + 'function qAfterChange(){if(typeof qSaveState==="function")qSaveState();}'
+    // Back-compat aliases so the surrounding Quick Quote glue keeps its old names.
+    + 'function qqUpdateServiceHidden(){return qUpdateServiceHidden();}'
+    + 'function qqGetAllServiceNames(){return qGetAllServiceNames();}'
+    + 'function qqAddPriceRow(n){return qAddPriceRow(n);}'
 
     + 'function qSetMode(m){'
     +   'qmode=m;document.getElementById("qmode").value=m;'
@@ -3453,112 +3394,14 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qSummaryLabel").textContent=rec?"Customer Receipt":"Customer Quote";'
     +   'document.getElementById("qTotalLabel").textContent=rec?"Total Paid":"Total";'
     +   'document.getElementById("qemHint").textContent=rec?"(to send receipt)":"(to send)";'
+    // Notes-to-customer (from the shared pricing block) only applies to a quote.
+    +   'var qn=document.getElementById("qCustNotes");if(qn){var qng=qn.closest(".form-group");if(qng)qng.style.display=rec?"none":"";}'
     +   'if(rec){var cc=document.querySelector(\'.collapse[data-ckey="qq_customer"]\');if(cc)cc.classList.remove("collapsed");}'
     +   'qSaveState();'
     + '}'
 
-    + 'function qSetTier(t){'
-    +   'qtier=t;document.getElementById("qtier").value=t;'
-    +   'document.getElementById("qBtnStd").classList.toggle("active",t==="standard");'
-    +   'document.getElementById("qBtnPrem").classList.toggle("active",t==="premium");'
-    +   'qAutofill();'
-    +   'qSaveState();'
-    + '}'
-
-    + 'function qRenderTags(){'
-    +   'var tags=qqGetAllServiceNames().map(function(n){'
-    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
-    +   '});'
-    +   'var cv=qCustomSvcVal();'
-    +   'if(cv)tags.push("<span class=\'svc-tag\' style=\'background:#e07000;\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'qClearCustomSvc()\'>&#10005;</button>"+cv+" <em style=\'opacity:.8;font-style:normal;font-size:0.72rem;\'>(custom)</em></span>");'
-    +   'document.getElementById("qsvcTags").innerHTML=tags.join("");'
-    + '}'
-    + 'function qRemoveTag(btn){'
-    +   'var val=btn.getAttribute("data-val");'
-    +   'var posCb=Array.from(document.querySelectorAll(".qq-svc-pos-cb")).find(function(c){return(c.getAttribute("data-prefix")+" - "+c.getAttribute("data-pos"))===val;});'
-    +   'if(posCb){'
-    +     'posCb.checked=false;qqRemovePriceRow(val);'
-    +     'var par=posCb.getAttribute("data-parent");'
-    +     'var anyLeft=Array.from(document.querySelectorAll(".qq-svc-pos-cb[data-parent=\'"+par+"\']")).some(function(c){return c.checked;});'
-    +     'if(!anyLeft){var parCb=Array.from(document.querySelectorAll(".qsvc-cb")).find(function(c){return c.value===par;});if(parCb){parCb.checked=false;var pd=document.querySelector(".qq-svc-positions[data-parent=\'"+par+"\']");if(pd)pd.style.display="none";}}'
-    +   '}else{'
-    +     'var cb=Array.from(document.querySelectorAll(".qsvc-cb")).find(function(c){return c.value===val;});'
-    +     'if(cb){cb.checked=false;var posDiv=document.querySelector(".qq-svc-positions[data-parent=\'"+val+"\']");if(posDiv){posDiv.style.display="none";posDiv.querySelectorAll(".qq-svc-pos-cb").forEach(function(p){p.checked=false;});}qqRemovePriceRow(val);}'
-    +   '}'
-    +   'qqUpdateServiceHidden();qRenderTags();qHints();qcalc();'
-    + '}'
-    + 'function qClearCustomSvc(){'
-    +   'var el=document.getElementById("qCustomSvc");if(el)el.value="";'
-    +   'document.getElementById("qCustomSvcHint").style.display="none";'
-    +   'qUpdateFullService();'
-    + '}'
-    + 'function qOnCustomSvc(){'
-    +   'var cv=qCustomSvcVal();'
-    +   'document.getElementById("qCustomSvcHint").style.display=cv?"block":"none";'
-    +   'qUpdateFullService();qSaveState();'
-    + '}'
-    + 'function qUpdateFullService(){qqUpdateServiceHidden();qRenderTags();}'
-    + 'function qClearServices(){'
-    +   'document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=false;});'
-    +   'document.querySelectorAll(".qq-svc-pos-cb").forEach(function(c){c.checked=false;});'
-    +   'document.getElementById("qqSvcPriceRows").innerHTML="";'
-    +   'document.getElementById("qss").value="0.00";'
-    +   'qqUpdateServiceHidden();qRenderTags();qHints();qcalc();'
-    + '}'
-
-    + 'function qAutofill(){qqUpdateRowPrices();qqUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
-    + 'function qUpdateServices(){qqUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
-
-    + 'function qHints(){'
-    +   'var PFX_MAP={"Caliper":"Caliper Replacement","Brake Hose":"Brake Hose Replacement"};'
-    +   'var names=qqGetAllServiceNames();var msgs=[];'
-    +   'var custom=names.filter(function(n){var pfx=n.split(" - ");var key=pfx.length===2&&PFX_MAP[pfx[0]]?PFX_MAP[pfx[0]]:n;return QPRICING[key]&&QPRICING[key].customQuote;});'
-    +   'if(custom.length){msgs.push("<strong>Custom quote:</strong> "+custom.join(", ")+" "+(custom.length>1?"have":"has")+" no preset price. Look up the exact part(s) and enter Parts and Labor manually.");}'
-    +   'names.forEach(function(n){var pfx=n.split(" - ");var key=pfx.length===2&&PFX_MAP[pfx[0]]?PFX_MAP[pfx[0]]:n;if(QPRICING[key]&&QPRICING[key].note){msgs.push(QPRICING[key].note);}});'
-    +   'var box=document.getElementById("qCustomHint");'
-    +   'if(msgs.length){box.innerHTML=msgs.join("<br><br>");box.style.display="block";}else{box.style.display="none";}'
-    + '}'
-
-    // Tax is on parts + shop supplies only (not labor — Virginia law).
     + 'function bkRecalc(){qcalc();}'
-    + 'function qcalc(){'
-    +   'var parts=0,labor=0;'
-    +   'document.querySelectorAll(".qsvc-parts-in").forEach(function(el){parts+=parseFloat(el.value)||0;});'
-    +   'document.querySelectorAll(".qsvc-labor-in").forEach(function(el){labor+=parseFloat(el.value)||0;});'
-    +   'var ss=parseFloat(document.getElementById("qss").value)||0;'
-    +   'var tr=parseFloat(document.getElementById("qtr").value)||0;'
-    +   'var cliItems=(typeof cliCollect==="function")?cliCollect():[];'
-    +   'var cliTax=cliItems.reduce(function(a,it){return a+(it.taxed?(it.amount||0):0);},0);'
-    +   'var cliAll=cliItems.reduce(function(a,it){return a+(it.amount||0);},0);'
-    +   'var disc=parseFloat(document.getElementById("qdisc").value)||0;'
-    +   'var tax=(parts+ss+cliTax)*tr/100;var total=parts+labor+ss+cliAll+tax-disc;'
-    +   'var cdr=document.getElementById("cliDisplayRows");'
-    +   'if(cdr)cdr.innerHTML=cliItems.map(function(it){return "<div class=\'price-row\'><span class=\'price-label\'>"+(it.label.replace(/</g,"&lt;"))+"</span><span>$"+money(it.amount)+"</span></div>";}).join("");'
-    +   'document.getElementById("qtaxAmt").textContent="$"+money(tax);'
-    +   'document.getElementById("qssDisplay").textContent="$"+money(ss);'
-    +   'document.getElementById("qtaxDisplay").textContent="$"+money(tax);'
-    +   'document.getElementById("qtotalAmt").textContent="$"+money(total);'
-    +   'document.getElementById("qpartsH").value=parts.toFixed(2);'
-    +   'document.getElementById("qlaborH").value=labor.toFixed(2);'
-    +   'document.getElementById("qtaxH").value=tax.toFixed(2);'
-    +   'document.getElementById("qtotalH").value=total.toFixed(2);'
-    +   'var items=Array.from(document.querySelectorAll("#qqSvcPriceRows .svc-price-row")).map(function(r){'
-    +     'var t=r.querySelector(".svc-price-title span");'
-    +     'var p=parseFloat(r.querySelector(".qsvc-parts-in").value)||0;'
-    +     'var l=parseFloat(r.querySelector(".qsvc-labor-in").value)||0;'
-    +     'var m=(r.querySelector(".svc-row-mode")||{}).value||"combined";'
-    +     'return{service:t?t.textContent:r.getAttribute("data-base"),parts:p,labor:l,mode:m};'
-    +   '});'
-    +   'document.getElementById("qlineItemsJsonH").value=JSON.stringify(items);'
-    +   'var qcbox=document.getElementById("qqSvcCustomerRows");'
-    +   'if(qcbox)qcbox.innerHTML=items.map(function(it){'
-    +     'if(it.mode==="split"){'
-    +       'return "<div class=\'price-row\'><span class=\'price-label\'>"+it.service+" — Parts</span><span>$"+money(it.parts)+"</span></div>"'
-    +         '+"<div class=\'price-row\'><span class=\'price-label\'>"+it.service+" — Labor <span class=\'price-note\'>(not taxed)</span></span><span>$"+money(it.labor)+"</span></div>";'
-    +     '}'
-    +     'return "<div class=\'price-row\'><span class=\'price-label\'>"+it.service+"</span><span>$"+money(it.parts+it.labor)+"</span></div>";'
-    +   '}).join("");'
-    + '}'
+    + 'function qUpdateServices(){qUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
 
     + 'function qPayToggle(){'
     +   'var v=document.getElementById("qpm").value;var show=(v==="Other");'
@@ -3596,7 +3439,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'if(veh)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Vehicle</td><td style=\'padding:5px 0;font-weight:600;\'>"+veh+"</td></tr>";'
     +   'if(svcs.length)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+svcs.join(", ")+"</td></tr>";'
     +   'if(!rec){'
-    +     'var qqi=JSON.parse(document.getElementById("qlineItemsJsonH").value||"[]");'
+    +     'var qqi=JSON.parse(document.getElementById("qsvcLiH").value||"[]");'
     +     'var qss2=parseFloat(document.getElementById("qss").value)||0;'
     +     'var qtax=parseFloat(document.getElementById("qtaxH").value)||0;'
     +     'var qtot=parseFloat(document.getElementById("qtotalH").value)||0;'
@@ -3646,7 +3489,6 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qem").value="";document.getElementById("qph").value="";'
     +   'if(window.bkVehFill)window.bkVehFill("qq-veh",{});'
     +   'var cse=document.getElementById("qCustomSvc");if(cse)cse.value="";'
-    +   'document.getElementById("qCustomSvcHint").style.display="none";'
     +   'document.getElementById("qss").value="0.00";'
     +   'var cliC=document.getElementById("cliRows");if(cliC)cliC.innerHTML="";var cliH=document.getElementById("cliJson");if(cliH)cliH.value="[]";'
     +   'var svcAddr=document.querySelector("[name=serviceAddress]");if(svcAddr)svcAddr.value="";'
@@ -3686,11 +3528,13 @@ router.get('/quick', requireAuth, function(req, res) {
     +       'ph:document.getElementById("qph").value,'
     +       'veh_year:document.getElementById("qq-veh-year")?(document.getElementById("qq-veh-year").value||""):"",veh_make:document.getElementById("qq-veh-make")?(document.getElementById("qq-veh-make").value||""):"",veh_model:document.getElementById("qq-veh-model-hid")?(document.getElementById("qq-veh-model-hid").value||""):"",veh:"",'
     +       'svcs:qCheckedServices(),'
-    +       'posSvcs:Array.from(document.querySelectorAll(".qq-svc-pos-cb:checked")).map(function(c){return{par:c.getAttribute("data-parent"),pfx:c.getAttribute("data-prefix"),pos:c.getAttribute("data-pos")};}),'
-    +       'svcRows:Array.from(document.querySelectorAll("#qqSvcPriceRows .svc-price-row")).map(function(r){var t=r.querySelector(".svc-price-title span");var m=(r.querySelector(".svc-row-mode")||{}).value||"combined";return{base:r.getAttribute("data-base"),label:t?t.textContent:r.getAttribute("data-base"),parts:r.querySelector(".qsvc-parts-in").value,labor:r.querySelector(".qsvc-labor-in").value,mode:m};}),'
+    +       'posSvcs:Array.from(document.querySelectorAll(".q-pos-cb:checked")).map(function(c){return{par:c.getAttribute("data-parent"),pfx:c.getAttribute("data-prefix"),pos:c.getAttribute("data-pos")};}),'
+    +       'svcRows:Array.from(document.querySelectorAll("#qSvcPriceRows .svc-price-row")).map(function(r){var t=r.querySelector(".svc-price-title span");var m=(r.querySelector(".svc-row-mode")||{}).value||"combined";return{base:r.getAttribute("data-base"),label:t?t.textContent:r.getAttribute("data-base"),parts:r.querySelector(".q-parts-in").value,labor:r.querySelector(".q-labor-in").value,mode:m};}),'
     +       'customSvc:qCustomSvcVal(),'
     +       'ss:document.getElementById("qss").value,'
     +       'tr:document.getElementById("qtr").value,'
+    +       'disc:(document.getElementById("qdisc")||{}).value||"0",'
+    +       'custNotes:(document.getElementById("qCustNotes")||{}).value||"",'
     +       'cli:(typeof cliCollect==="function")?cliCollect():[],'
     +       'payMethod:(document.getElementById("qpm")||{}).value||"",'
     +       'payOther:(document.getElementById("qpmOther")||{}).value||"",'
@@ -3713,31 +3557,27 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'if(s.em)document.getElementById("qem").value=s.em;'
     +     'if(s.ph)document.getElementById("qph").value=s.ph;'
     +     'if(window.bkVehFill&&(s.veh_year||s.veh_make||s.veh_model))window.bkVehFill("qq-veh",{year:s.veh_year||"",make:s.veh_make||"",model:s.veh_model||""});'
-    +     'if(s.svcs&&s.svcs.length){document.querySelectorAll(".qsvc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;if(cb.checked){var pd=document.querySelector(".qq-svc-positions[data-parent=\'"+cb.value+"\']");if(pd)pd.style.display="block";}});}'
-    +     'if(s.posSvcs&&s.posSvcs.length){s.posSvcs.forEach(function(q){var el=document.querySelector(".qq-svc-pos-cb[data-parent=\'"+q.par+"\'][data-pos=\'"+q.pos+"\']");if(el)el.checked=true;});}'
+    +     'if(s.svcs&&s.svcs.length){document.querySelectorAll(".q-svc-cb").forEach(function(cb){cb.checked=s.svcs.indexOf(cb.value)>=0;});}'
+    +     'if(s.posSvcs&&s.posSvcs.length){s.posSvcs.forEach(function(q){var el=document.querySelector(".q-pos-cb[data-parent=\'"+q.par+"\'][data-pos=\'"+q.pos+"\']");if(el)el.checked=true;});}'
     +     'if(s.svcRows&&s.svcRows.length){'
+    // Rebuild each saved per-service row via the shared helper, then apply its
+    // saved parts/labor/mode (preserves any manual price overrides in the draft).
     +       's.svcRows.forEach(function(r){'
-    +         'var m=r.mode||"combined";'
-    +         'var row=document.createElement("div");row.className="svc-price-row";row.setAttribute("data-base",r.base);'
-    +         'row.innerHTML="<div class=\'svc-price-title\' style=\'font-size:0.82rem;font-weight:700;color:#0a1f3d;padding:6px 0 4px;display:flex;align-items:center;justify-content:space-between;\'>"'
-    +           '+"<span>"+r.label+"</span>"'
-    +           '+"<div class=\'tier-toggle\' style=\'margin:0;\'>"'
-    +           '+"<button type=\'button\' class=\'tier-btn"+(m==="combined"?" active":"")+" svc-disp-btn\' onclick=\'setQqRowMode(this,\\\"combined\\\")\' style=\'padding:3px 9px;font-size:0.75rem;\'>Combined</button>"'
-    +           '+"<button type=\'button\' class=\'tier-btn"+(m==="split"?" active":"")+" svc-disp-btn\' onclick=\'setQqRowMode(this,\\\"split\\\")\' style=\'padding:3px 9px;font-size:0.75rem;\'>Split P/L</button>"'
-    +           '+"</div></div>"'
-    +           '+"<input type=\'hidden\' class=\'svc-row-mode\' value=\'"+m+"\'>"'
-    +           '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input qsvc-parts-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(r.parts||0)+"\' oninput=\'qcalc()\' onfocus=\'this.select()\'></div>"'
-    +           '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input qsvc-labor-in\' type=\'number\' min=\'0\' step=\'1\' value=\'"+(r.labor||0)+"\' oninput=\'qcalc()\' onfocus=\'this.select()\'></div>"'
-    +           '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
-    +         'document.getElementById("qqSvcPriceRows").appendChild(row);'
+    +         'qAddPriceRow(r.base);'
+    +         'var row=document.querySelector("#qSvcPriceRows .svc-price-row[data-base=\'"+r.base+"\']");'
+    +         'if(row){row.querySelector(".q-parts-in").value=(r.parts||0);row.querySelector(".q-labor-in").value=(r.labor||0);'
+    +           'var m=r.mode||"combined";row.querySelector(".svc-row-mode").value=m;'
+    +           'row.querySelectorAll(".svc-disp-btn").forEach(function(b,i){b.classList.toggle("active",(m==="split")?i===1:i===0);});}'
     +       '});'
     +     '}else if(s.svcs&&s.svcs.length){'
-    +       'document.querySelectorAll(".qsvc-cb:checked").forEach(function(cb){var pd=document.querySelector(".qq-svc-positions[data-parent=\'"+cb.value+"\']");if(!pd)qqAddPriceRow(cb.value);});'
-    +       'if(s.posSvcs&&s.posSvcs.length)s.posSvcs.forEach(function(q){qqAddPriceRow(q.pfx+" - "+q.pos);});'
+    +       'document.querySelectorAll(".q-svc-cb:checked").forEach(function(cb){qAddPriceRow(cb.value);});'
+    +       'if(s.posSvcs&&s.posSvcs.length)s.posSvcs.forEach(function(q){qAddPriceRow(q.pfx+" - "+q.pos);});'
     +     '}'
-    +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;document.getElementById("qCustomSvcHint").style.display="block";}'
+    +     'var cse=document.getElementById("qCustomSvc");if(cse&&s.customSvc){cse.value=s.customSvc;}'
     +     'if(s.ss!==undefined)document.getElementById("qss").value=s.ss;'
     +     'if(s.tr!==undefined)document.getElementById("qtr").value=s.tr;'
+    +     'if(s.disc!==undefined&&document.getElementById("qdisc"))document.getElementById("qdisc").value=s.disc;'
+    +     'if(s.custNotes!==undefined&&document.getElementById("qCustNotes"))document.getElementById("qCustNotes").value=s.custNotes;'
     +     'if(Array.isArray(s.cli)){var cliC=document.getElementById("cliRows");if(cliC){cliC.innerHTML="";s.cli.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);cliC.appendChild(row);});}}'
     +     'if(s.payMethod&&document.getElementById("qpm"))document.getElementById("qpm").value=s.payMethod;'
     +     'if(s.payOther&&document.getElementById("qpmOther"))document.getElementById("qpmOther").value=s.payOther;'
@@ -3830,13 +3670,21 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     var draftLabel = (firstName || lastName) ? (firstName + ' ' + lastName).trim() : 'Untitled';
     var firstSvcD  = allSvcsD[0] || '';
     if (firstSvcD) draftLabel += ' - ' + firstSvcD.substring(0, 28);
+    // Per-service rows [{service,parts,labor,mode}] from the shared block; saved so
+    // the draft restores exact prices (and any overrides), not just re-pulled defaults.
+    var svcRowsD = [];
+    try { var _sr = JSON.parse(req.body.svcLineItems || '[]'); if (Array.isArray(_sr)) svcRowsD = _sr.map(function(it){ return { base: it.service, label: it.service, parts: it.parts, labor: it.labor, mode: it.mode || 'combined' }; }); } catch (_) {}
     var draftData = {
       mode: mode, tier: req.body.tier === 'premium' ? 'premium' : 'standard',
       fn: firstName, ln: lastName, em: email || '', ph: phone, veh: '', veh_year: vehYear, veh_make: vehMake, veh_model: vehModel,
       svcs: presetSvcsD, customSvc: customSvcD,
+      svcRows: svcRowsD,
       parts: req.body.parts || '0.00', labor: req.body.labor || '0.00',
       ss: req.body.shopSupplies || '0.00',
       tr: req.body.taxRate || String(+(PRICING.taxRate * 100).toFixed(2)),
+      disc: req.body.discount || '0',
+      cli: parseLineItems(req.body.customLineItems),
+      custNotes: (req.body.customerNotes || ''),
       payMethod: req.body.paymentMethod || '', payOther: req.body.paymentOther || '',
       svcDate: req.body.serviceDate || '', svcAddr: req.body.serviceAddress || '',
       offNotes: req.body.officeNotes || '',
@@ -3864,8 +3712,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var taxAmt       = parseFloat(req.body.taxAmt)       || 0;
   var totalAmt     = parseFloat(req.body.totalAmt)     || 0;
   var discount     = parseFloat(req.body.discount)     || 0;
-  var lineItemsJson = (req.body.lineItems_json || '').trim() || null;
-  var quoteCustomerNotes = (req.body.quote_customer_notes || '').trim() || null;
+  // Per-service breakdown JSON [{service,parts,labor,mode}] from the shared block.
+  var lineItemsJson = (req.body.svcLineItems || '').trim() || null;
+  var quoteCustomerNotes = (req.body.customerNotes || '').trim() || null;
   var customLineItems = parseLineItems(req.body.customLineItems);
   var customLineItemsJson = customLineItems.length ? JSON.stringify(customLineItems) : null;
 
@@ -5122,66 +4971,6 @@ router.post('/appointments/block/:id/delete', requireAuth, function(req, res) {
   res.redirect('/admin/appointments?msg=blockremoved');
 });
 
-// Shared service multi-select + tier + pricing JS for the New and Edit appointment
-// forms. Both render the same element ids, so this single block drives both. The
-// caller defines `APPT_PRICING`, `apptTier`, and `apptLineItems` before including it.
-function apptFormJs(taxRate) {
-  return 'function apptSetTier(t){'
-    +   'apptTier=t;document.getElementById("apptTier").value=t;'
-    +   'document.getElementById("apptBtnStd").classList.toggle("active",t==="standard");'
-    +   'document.getElementById("apptBtnPrem").classList.toggle("active",t==="premium");'
-    +   'apptAutofill();'
-    + '}'
-    + 'function apptCheckedServices(){return Array.from(document.querySelectorAll(".appt-svc-cb:checked")).map(function(c){return c.value;});}'
-    + 'function apptRenderTags(){'
-    +   'var tags=apptCheckedServices().map(function(n){'
-    +     'return "<span class=\'svc-tag\'><button type=\'button\' class=\'svc-tag-x\' onclick=\'apptRemoveTag(this)\' data-val=\'"+n+"\'>&#10005;</button>"+n+"</span>";'
-    +   '});'
-    +   'document.getElementById("apptSvcTags").innerHTML=tags.join("");'
-    + '}'
-    + 'function apptRemoveTag(btn){'
-    +   'var val=btn.getAttribute("data-val");'
-    +   'var cb=Array.from(document.querySelectorAll(".appt-svc-cb")).find(function(c){return c.value===val;});'
-    +   'if(cb)cb.checked=false;apptUpdateServices();'
-    + '}'
-    + 'function apptClearServices(){document.querySelectorAll(".appt-svc-cb").forEach(function(cb){cb.checked=false;});apptUpdateServices();}'
-    + 'function apptUpdateServices(){apptRenderTags();apptAutofill();}'
-    + 'function apptAutofill(){'
-    +   'var names=apptCheckedServices();'
-    +   'document.getElementById("apptSvcHidden").value=names.join(", ");'
-    +   'if(names.length===0){document.getElementById("apptParts").value="0";document.getElementById("apptLabor").value="0";document.getElementById("apptSupplies").value="0";apptCalc();return;}'
-    +   'var parts=0,labor=0,ss=0;'
-    +   'names.forEach(function(s){var sv=APPT_PRICING[s];if(!sv)return;var p=sv[apptTier]||sv.standard;if(!p)return;parts+=p.parts;labor+=p.labor;ss+=p.shopSupplies;});'
-    +   'document.getElementById("apptParts").value=Math.round(parts);'
-    +   'document.getElementById("apptLabor").value=Math.round(labor);'
-    +   'document.getElementById("apptSupplies").value=Math.round(ss);'
-    +   'apptCalc();'
-    + '}'
-    + 'function apptSetLineItems(v){'
-    +   'apptLineItems=v;document.getElementById("apptLineItemsVal").value=v;'
-    +   'document.getElementById("apptBtnCombined").classList.toggle("active",v==="combined");'
-    +   'document.getElementById("apptBtnSeparate").classList.toggle("active",v==="separate");'
-    +   'document.getElementById("apptLiCombinedRow").style.display=v==="combined"?"":"none";'
-    +   'document.getElementById("apptLiPartsRow").style.display=v==="separate"?"":"none";'
-    +   'document.getElementById("apptLiLaborRow").style.display=v==="separate"?"":"none";'
-    + '}'
-    + 'function apptCalc(){'
-    +   'var parts=parseFloat(document.getElementById("apptParts").value)||0;'
-    +   'var labor=parseFloat(document.getElementById("apptLabor").value)||0;'
-    +   'var ss=parseFloat(document.getElementById("apptSupplies").value)||0;'
-    +   'var tax=Math.round((parts+ss)*' + taxRate + '*100)/100;'
-    +   'var total=Math.round((parts+labor+ss+tax)*100)/100;'
-    +   'function apMon(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
-    +   'document.getElementById("apptTaxAmt").textContent="$"+apMon(tax);'
-    +   'document.getElementById("apptTaxDisplay").textContent="$"+apMon(tax);'
-    +   'document.getElementById("apptPlDisplay").textContent="$"+apMon(parts+labor);'
-    +   'document.getElementById("apptPartsOnlyDisplay").textContent="$"+apMon(parts);'
-    +   'document.getElementById("apptLaborOnlyDisplay").textContent="$"+apMon(labor);'
-    +   'document.getElementById("apptSsDisplay").textContent="$"+apMon(ss);'
-    +   'document.getElementById("apptTotal").textContent="$"+apMon(total);'
-    + '}';
-}
-
 router.get('/appointments/new', requireAuth, function(req, res) {
   var apptPricing = getEffectivePricing();
   var serviceNames = Object.keys(apptPricing);
@@ -5210,15 +4999,6 @@ router.get('/appointments/new', requireAuth, function(req, res) {
   var fromLeadServices = fromLead && fromLead.service
     ? fromLead.service.split(',').map(function(s) { return s.trim(); })
     : [];
-  var fromLeadServiceVal = fromLeadServices.join(', ');
-  var serviceCheckboxes = '<div class="svc-check-list">'
-    + serviceNames.map(function(s) {
-        var checked = fromLeadServices.indexOf(s) !== -1 ? ' checked' : '';
-        return '<label class="svc-check-item"><input type="checkbox" class="appt-svc-cb" value="' + esc(s) + '"' + checked + ' onchange="apptUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
-      }).join('')
-    + '</div>'
-    + '<input type="hidden" name="service" id="apptSvcHidden" value="' + esc(fromLeadServiceVal) + '">';
-
   var timeOpts = ownerTimeOptions('');
 
   var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
@@ -5298,52 +5078,15 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
 
+    // Shared quote pricing block (services + per-service breakdown, custom line
+    // items, discount, customer summary, notes) — identical on every quote surface.
     + '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Service</div>'
-    + '<div class="form-group" style="margin:0 0 14px;"><label>Tier</label>'
-    + '<div class="tier-toggle">'
-    + '<button type="button" class="tier-btn active" id="apptBtnStd" onclick="apptSetTier(\'standard\')">Standard</button>'
-    + '<button type="button" class="tier-btn" id="apptBtnPrem" onclick="apptSetTier(\'premium\')">Premium</button>'
-    + '</div>'
-    + '<input type="hidden" name="tier" id="apptTier" value="standard"></div>'
-    + serviceCheckboxes
-    + '<button type="button" class="svc-clear-btn" onclick="apptClearServices()">&#10005; Clear selection</button>'
-    + '<div class="svc-tags" id="apptSvcTags"></div>'
-    + '<div class="form-group" style="margin:14px 0 6px;">'
-    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
-    + '<input type="text" name="customService" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;">'
-    + '</div>'
-    + '</div>'
-
-    + '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Pricing</div>'
-    + '<div class="price-section">'
-    + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
-    + '<div class="price-row"><span class="price-label">Parts</span>'
-    + '<input class="price-input" type="number" name="price_parts" id="apptParts" min="0" step="1" value="0" oninput="apptCalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
-    + '<input class="price-input" type="number" name="price_labor" id="apptLabor" min="0" step="1" value="0" oninput="apptCalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
-    + '<input class="price-input" type="number" name="shop_supplies" id="apptSupplies" min="0" step="1" value="0" oninput="apptCalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row tax-row"><span class="price-label">VA Tax (' + (taxRate * 100).toFixed(0) + '%) on Parts + Supplies</span>'
-    + '<span id="apptTaxAmt">$0.00</span></div>'
-    + '</div>'
-    + '<div class="price-section" style="margin-bottom:0;">'
-    + '<div class="price-section-header">Customer Quote</div>'
-    + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
-    + '<span style="font-size:0.77rem;color:#888;font-weight:600;">Show pricing as:</span>'
-    + '<div class="tier-toggle" style="margin:0;">'
-    + '<button type="button" class="tier-btn active" id="apptBtnCombined" onclick="apptSetLineItems(\'combined\')">Combined</button>'
-    + '<button type="button" class="tier-btn" id="apptBtnSeparate" onclick="apptSetLineItems(\'separate\')">Separate</button>'
-    + '</div></div>'
-    + '<input type="hidden" name="lineItems" id="apptLineItemsVal" value="combined">'
-    + '<div class="price-row" id="apptLiCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="apptPlDisplay">$0.00</span></div>'
-    + '<div class="price-row" id="apptLiPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="apptPartsOnlyDisplay">$0.00</span></div>'
-    + '<div class="price-row" id="apptLiLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="apptLaborOnlyDisplay">$0.00</span></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="apptSsDisplay">$0.00</span></div>'
-    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="apptTaxDisplay">$0.00</span></div>'
-    + '<div class="price-row total-row divider-row"><span>Total</span><span id="apptTotal" style="font-size:1.15rem;">$0.00</span></div>'
-    + '</div>'
+    + '<div class="section-title" style="margin-bottom:10px;">Service &amp; Pricing</div>'
+    + quotePricingBlock('appt', {
+        serviceNames: serviceNames,
+        selected: fromLeadServices,
+        taxPct: +(taxRate * 100).toFixed(2)
+      })
     + '</div>'
 
     + '<div class="card">'
@@ -5373,10 +5116,11 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '})();</script>'
 
     + '<script>'
-    + 'var APPT_PRICING=' + pricingJson + ';'
+    + 'var apptPRICING=' + pricingJson + ';'
     + 'var CUST_LIST=' + custJson + ';'
-    + 'var apptTier="standard";'
-    + 'var apptLineItems="combined";'
+    + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + CLI_JS
+    + 'function bkRecalc(){apptcalc();}'
     // Customer typeahead
     + '(function(){'
     +   'var inp=document.getElementById("custPickerInput");'
@@ -5453,7 +5197,9 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'if(q){var hits=CUST_LIST.filter(function(c){return c.search.indexOf(q)!==-1;}).slice(0,8);showDrop(hits);}'
     +   '});'
     + '})();'
-    + apptFormJs(taxRate)
+    // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
+    + quotePricingJs('appt')
+    + 'apptInitRows();apptUpdateServiceHidden();apptRenderTags();apptHints();apptcalc();'
     + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
     + 'function apptPreview(){'
     +   'var box=document.getElementById("apptPreviewBox"),btn=document.getElementById("apptPreviewBtn");'
@@ -5470,13 +5216,13 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'toName=(fn+" "+ln).trim()||"(no name entered)";'
     +     'toEmail=(document.querySelector("[name=cust_email]")||{}).value||"";'
     +   '}'
-    +   'var svcs=apptCheckedServices();'
+    +   'var svcs=apptGetAllServiceNames();'
     +   'var customSvc=(document.querySelector("[name=customService]")||{}).value||"";'
     +   'if(customSvc.trim())svcs=svcs.concat(customSvc.trim().split(",").map(function(s){return s.trim();}).filter(Boolean));'
     +   'var date=(document.getElementById("apptDate")||{}).value||"";'
     +   'var time=(document.querySelector("[name=pref_time]")||{}).value||"";'
     +   'var addr=(document.getElementById("apptAddr")||{}).value||"";'
-    +   'var total=(document.getElementById("apptTotal")||{}).textContent||"$0.00";'
+    +   'var total=(document.getElementById("appttotalAmt")||{}).textContent||"$0.00";'
     +   'var toLine=toName+(toEmail?"&nbsp;&lt;"+toEmail+"&gt;":"");'
     +   'var rows="<table style=\'width:100%;border-collapse:collapse;font-size:0.88rem;\'>";'
     +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;white-space:nowrap;vertical-align:top;\'>To</td><td style=\'padding:5px 0;\'>"+toLine+"</td></tr>";'
@@ -5485,23 +5231,25 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +   'var apvmk=(document.getElementById("appt-veh-make")||{}).value||"";'
     +   'var apvmd=(document.getElementById("appt-veh-model-hid")||{}).value||"";'
     +   'var apveh=[apvy,apvmk,apvmd].filter(function(x){return x&&x!=="Other";}).join(" ");'
-    +   'var apParts=parseFloat((document.getElementById("apptParts")||{}).value)||0;'
-    +   'var apLabor=parseFloat((document.getElementById("apptLabor")||{}).value)||0;'
-    +   'var apSs=parseFloat((document.getElementById("apptSupplies")||{}).value)||0;'
-    +   'var apTax=parseFloat(((document.getElementById("apptTaxAmt")||{}).textContent||"0").replace(/[^\\d.]/g,""))||0;'
+    +   'var apItems=JSON.parse((document.getElementById("apptsvcLiH")||{}).value||"[]");'
+    +   'var apSs=parseFloat((document.getElementById("apptss")||{}).value)||0;'
+    +   'var apTax=parseFloat((document.getElementById("appttaxH")||{}).value)||0;'
+    +   'var apDisc=parseFloat((document.getElementById("apptdisc")||{}).value)||0;'
     +   'function apMon2(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
     +   'if(svcs.length)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;vertical-align:top;\'>Services</td><td style=\'padding:5px 0;\'>"+svcs.join(", ")+"</td></tr>";'
     +   'if(apveh)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Vehicle</td><td style=\'padding:5px 0;font-weight:600;\'>"+apveh+"</td></tr>";'
-    +   'if(apptLineItems==="separate"){'
-    +     'if(apParts+apLabor>0){'
-    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts</td><td style=\'padding:5px 0;\'>$"+apMon2(apParts)+"</td></tr>";'
-    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Labor</td><td style=\'padding:5px 0;\'>$"+apMon2(apLabor)+"</td></tr>";'
+    +   'apItems.forEach(function(it){'
+    +     'if(it.mode==="split"){'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.service+" — Parts</td><td style=\'padding:5px 0;\'>$"+apMon2(it.parts)+"</td></tr>";'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.service+" — Labor</td><td style=\'padding:5px 0;\'>$"+apMon2(it.labor)+"</td></tr>";'
+    +     '}else{'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.service+"</td><td style=\'padding:5px 0;\'>$"+apMon2(it.parts+it.labor)+"</td></tr>";'
     +     '}'
-    +   '}else{'
-    +     'if(apParts+apLabor>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Parts &amp; Labor</td><td style=\'padding:5px 0;\'>$"+apMon2(apParts+apLabor)+"</td></tr>";'
-    +   '}'
+    +   '});'
+    +   'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+apMon2(it.amount)+"</td></tr>";});'
     +   'if(apSs>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Shop Supplies</td><td style=\'padding:5px 0;\'>$"+apMon2(apSs)+"</td></tr>";'
     +   'if(apTax>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tax</td><td style=\'padding:5px 0;\'>$"+apMon2(apTax)+"</td></tr>";'
+    +   'if(apDisc>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#1a7a3a;\'>Discount</td><td style=\'padding:5px 0;color:#1a7a3a;\'>-$"+apMon2(apDisc)+"</td></tr>";'
     +   'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
     +   'if(date)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Date &amp; Time</td><td style=\'padding:5px 0;\'>"+date+(time?" at "+time:"")+"</td></tr>";'
     +   'if(addr)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Address</td><td style=\'padding:5px 0;\'>"+addr+"</td></tr>";'
@@ -5514,19 +5262,22 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     // owner's restored vehicle/address/notes are not overwritten).
     + 'window.bkApptAfter=function(d){'
     +   'window._apptDraftRestored=true;'
-    +   'var svc=(document.getElementById("apptSvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
+    +   'var svc=(document.getElementById("apptsvcHidden").value||"").split(",").map(function(s){return s.trim();}).filter(Boolean);'
     +   'document.querySelectorAll(".appt-svc-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.value)>=0;});'
-    +   'apptTier=(document.getElementById("apptTier").value)||"standard";'
-    +   'document.getElementById("apptBtnStd").classList.toggle("active",apptTier==="standard");'
-    +   'document.getElementById("apptBtnPrem").classList.toggle("active",apptTier==="premium");'
-    +   'apptRenderTags();'
+    +   'document.querySelectorAll(".appt-pos-cb").forEach(function(cb){cb.checked=svc.indexOf(cb.getAttribute("data-prefix")+" - "+cb.getAttribute("data-pos"))>=0;});'
+    +   'appttier=(document.getElementById("appttier").value)||"standard";'
+    +   'document.getElementById("apptBtnStd").classList.toggle("active",appttier==="standard");'
+    +   'document.getElementById("apptBtnPrem").classList.toggle("active",appttier==="premium");'
+    +   'var rowsBox=document.getElementById("apptSvcPriceRows");if(rowsBox){rowsBox.innerHTML="";try{var sli=JSON.parse((document.getElementById("apptsvcLiH")||{}).value||"[]");if(Array.isArray(sli)&&sli.length){sli.forEach(function(it){apptAddPriceRow(it.service);var row=document.querySelector("#apptSvcPriceRows .svc-price-row[data-base=\'"+it.service+"\']");if(row){row.querySelector(".appt-parts-in").value=it.parts;row.querySelector(".appt-labor-in").value=it.labor;var mode=it.mode||"combined";row.querySelector(".svc-row-mode").value=mode;row.querySelectorAll(".svc-disp-btn").forEach(function(b,i){b.classList.toggle("active",(mode==="split")?i===1:i===0);});}});}else{apptInitRows();}}catch(e){apptInitRows();}}'
+    +   'try{var ci=JSON.parse((document.getElementById("cliJson")||{}).value||"[]");if(Array.isArray(ci)){var c=document.getElementById("cliRows");if(c){c.innerHTML="";ci.forEach(function(it){var w=document.createElement("div");w.innerHTML=cliRowHtml();var row=w.firstChild;row.querySelector(".cli-label").value=it.label||"";row.querySelector(".cli-amount").value=(it.amount!=null?it.amount:"");cliSetTax(row.querySelector(".cli-tax"),it.taxed!==false);c.appendChild(row);});}}}catch(e){}'
+    +   'apptUpdateServiceHidden();apptRenderTags();apptHints();'
     +   'var cid=(document.getElementById("apptCustId")||{}).value||"";'
     +   'if(cid){var c=(typeof CUST_LIST!=="undefined")?CUST_LIST.find(function(x){return String(x.id)===String(cid);}):null;'
     +     'if(c){var chip=document.getElementById("custPickerChip");if(chip)chip.style.display="flex";'
     +       'var lbl=document.getElementById("custPickerLabel");if(lbl)lbl.textContent=c.label;'
     +       'var nf=document.getElementById("apptNewCustFields");if(nf)nf.style.display="none";'
     +       'var he=document.getElementById("apptCustEmail");if(he&&!he.value)he.value=c.email||"";}}'
-    +   'apptCalc();'
+    +   'apptcalc();'
     + '};'
     + '</script>'
     + VEHICLE_CASCADE_JS
@@ -5549,6 +5300,9 @@ function appointmentEmailHtml(o) {
     return WEEKDAYS[dt.getDay()] + ', ' + MONTHS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
   }
   var parts = o.parts || 0, labor = o.labor || 0, supplies = o.supplies || 0, tax = o.tax || 0, total = o.total || 0;
+  var discount = Number(o.discount) || 0;
+  var svcLineItems = Array.isArray(o.svcLineItems) ? o.svcLineItems : [];
+  var customLineItems = Array.isArray(o.customLineItems) ? o.customLineItems : [];
   var calendarUrl = o.baseUrl + '/quote/' + o.quoteId + '/' + o.token + '/calendar.ics';
   var gcalUrl = '';
   var apptStartRfc = toEasternRfc3339(o.pref_date, o.pref_time);
@@ -5584,19 +5338,33 @@ function appointmentEmailHtml(o) {
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
     + '<tr><td style="padding:5px 0;color:#888;width:100px;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(o.service || 'Brake Service') + '</td></tr>'
     + (o.vehicle ? '<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">' + esc(o.vehicle) + '</td></tr>' : '')
-    + (o.lineItems === 'separate'
-        ? (parts + labor > 0
-            ? '<tr><td style="padding:5px 0;color:#888;">Parts</td><td style="padding:5px 0;">$' + money(parts) + '</td></tr>'
-              + '<tr><td style="padding:5px 0;color:#888;">Labor</td><td style="padding:5px 0;">$' + money(labor) + '</td></tr>'
-            : '')
-        : (parts + labor > 0 ? '<tr><td style="padding:5px 0;color:#888;">Parts &amp; Labor</td><td style="padding:5px 0;">$' + money(parts + labor) + '</td></tr>' : ''))
+    // Prefer the per-service breakdown (shared block); fall back to the legacy
+    // combined / separate aggregate for older callers.
+    + (svcLineItems.length
+        ? svcLineItems.map(function(it) {
+            return it.mode === 'split'
+              ? '<tr><td style="padding:5px 0;color:#888;">' + esc(it.service) + ' — Parts</td><td style="padding:5px 0;">$' + money(it.parts) + '</td></tr>'
+                + '<tr><td style="padding:5px 0;color:#888;">' + esc(it.service) + ' — Labor</td><td style="padding:5px 0;">$' + money(it.labor) + '</td></tr>'
+              : '<tr><td style="padding:5px 0;color:#888;">' + esc(it.service) + '</td><td style="padding:5px 0;">$' + money(it.parts + it.labor) + '</td></tr>';
+          }).join('')
+        : (o.lineItems === 'separate'
+            ? (parts + labor > 0
+                ? '<tr><td style="padding:5px 0;color:#888;">Parts</td><td style="padding:5px 0;">$' + money(parts) + '</td></tr>'
+                  + '<tr><td style="padding:5px 0;color:#888;">Labor</td><td style="padding:5px 0;">$' + money(labor) + '</td></tr>'
+                : '')
+            : (parts + labor > 0 ? '<tr><td style="padding:5px 0;color:#888;">Parts &amp; Labor</td><td style="padding:5px 0;">$' + money(parts + labor) + '</td></tr>' : '')))
+    + customLineItems.map(function(it) {
+        return '<tr><td style="padding:5px 0;color:#888;">' + esc(it.label) + '</td><td style="padding:5px 0;">$' + money(it.amount) + '</td></tr>';
+      }).join('')
     + (supplies > 0 ? '<tr><td style="padding:5px 0;color:#888;">Shop Supplies</td><td style="padding:5px 0;">$' + money(supplies) + '</td></tr>' : '')
     + (tax > 0 ? '<tr><td style="padding:5px 0;color:#888;">Tax</td><td style="padding:5px 0;color:#888;">$' + money(tax) + '</td></tr>' : '')
+    + (discount > 0 ? '<tr><td style="padding:5px 0;color:#1a7a3a;">Discount</td><td style="padding:5px 0;color:#1a7a3a;">-$' + money(discount) + '</td></tr>' : '')
     + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;color:#0a1f3d;">Total</td><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">$' + money(total) + '</td></tr>'
     + '<tr><td style="padding:10px 0 0;color:#888;">Date</td><td style="padding:10px 0 0;">' + esc(fmtApptDate(o.pref_date)) + '</td></tr>'
     + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + esc(o.pref_time || '-') + '</td></tr>'
     + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + esc(o.pref_location || '-') + '</td></tr>'
     + '</table></div>'
+    + (o.customerNotes ? '<p style="color:#1a3a7a;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:8px;padding:12px 16px;line-height:1.6;margin:0 0 20px;font-size:0.88rem;">' + esc(o.customerNotes) + '</p>' : '')
     + '<div style="text-align:center;margin:0 0 24px;">'
     + (gcalUrl ? '<a href="' + gcalUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">Add to Google Calendar</a>' : '')
     + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">Apple / Outlook (.ics)</a>'
@@ -5627,10 +5395,17 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
   if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
   service = service || null;
   var tier       = (req.body.tier       || 'standard').trim();
-  var price_parts  = req.body.price_parts;
-  var price_labor  = req.body.price_labor;
-  var shop_supplies = req.body.shop_supplies;
-  var lineItems     = (req.body.lineItems || 'combined').trim();
+  // Shared quote pricing block fields (per-service totals + discount + line items).
+  var price_parts  = req.body.parts;
+  var price_labor  = req.body.labor;
+  var shop_supplies = req.body.shopSupplies;
+  var discount     = parseFloat(req.body.discount) || 0;
+  var svcLineItems = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } })();
+  var customLineItems = parseLineItems(req.body.customLineItems);
+  var customLineItemsJson = customLineItems.length ? JSON.stringify(customLineItems) : null;
+  var cliSum = customLineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
+  var cliTaxable = customLineItems.reduce(function(a, it){ return a + (it.taxed ? (Number(it.amount) || 0) : 0); }, 0);
+  var customerNotes = (req.body.customerNotes || '').trim() || null;
   var pref_date     = (req.body.pref_date     || '').trim() || null;
   var pref_time     = (req.body.pref_time     || '').trim() || null;
   var pref_location = (req.body.pref_location || '').trim() || null;
@@ -5705,13 +5480,18 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
   var parts    = parseFloat(price_parts)    || 0;
   var labor    = parseFloat(price_labor)    || 0;
   var supplies = parseFloat(shop_supplies)  || 0;
-  var tax      = Math.round((parts + supplies) * PRICING.taxRate * 100) / 100;
-  var total    = Math.round((parts + labor + supplies + tax) * 100) / 100;
+  // Tax is on parts + shop supplies + taxable custom line items (not labor — VA).
+  var tax      = Math.round((parts + supplies + cliTaxable) * PRICING.taxRate * 100) / 100;
+  var total    = Math.round((parts + labor + supplies + cliSum + tax - discount) * 100) / 100;
+  var svcLineItemsJson = svcLineItems.length ? JSON.stringify(svcLineItems) : null;
+  // Store the per-service breakdown + custom line items together so the appointment
+  // confirmation email and any later edit can re-render the exact lines.
+  var apptLineItemsStore = JSON.stringify({ svc: svcLineItems, custom: customLineItems });
 
   var token = crypto.randomUUID();
   var quoteResult = db.prepare(
-    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, status, accept_token, accepted_at, pref_date, pref_time, pref_location, scheduling_notes, sent_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?,?,?,?,datetime(\'now\'))'
-  ).run(leadId, service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, 'approved', token, pref_date, pref_time, pref_location, notes);
+    'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, status, accept_token, accepted_at, pref_date, pref_time, pref_location, scheduling_notes, line_items, customer_notes, discount, sent_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),?,?,?,?,?,?,?,datetime(\'now\'))'
+  ).run(leadId, service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, 'approved', token, pref_date, pref_time, pref_location, notes, apptLineItemsStore, customerNotes, discount);
 
   if (send_email && cust.email && process.env.SMTP_PASS) {
     try {
@@ -5719,7 +5499,8 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
       var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
       var html = appointmentEmailHtml({
         firstName: cust.first_name, service: service, vehicle: vehicle,
-        parts: parts, labor: labor, supplies: supplies, tax: tax, total: total, lineItems: lineItems,
+        parts: parts, labor: labor, supplies: supplies, tax: tax, total: total,
+        svcLineItems: svcLineItems, customLineItems: customLineItems, discount: discount, customerNotes: customerNotes,
         pref_date: pref_date, pref_time: pref_time, pref_location: pref_location,
         baseUrl: baseUrl, quoteId: quoteResult.lastInsertRowid, token: token, isUpdate: false
       });
@@ -5758,14 +5539,6 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
   var checkedSet = {};
   svcList.forEach(function(s){ if (apptPricing[s]) checkedSet[s] = true; });
   var customSvc = svcList.filter(function(s){ return !apptPricing[s]; }).join(', ');
-  var svcHiddenVal = svcList.filter(function(s){ return !!apptPricing[s]; }).join(', ');
-
-  var serviceCheckboxes = '<div class="svc-check-list">'
-    + serviceNames.map(function(s) {
-        return '<label class="svc-check-item"><input type="checkbox" class="appt-svc-cb" value="' + esc(s) + '"' + (checkedSet[s] ? ' checked' : '') + ' onchange="apptUpdateServices()"><span class="svc-box"></span>' + esc(s) + '</label>';
-      }).join('')
-    + '</div>'
-    + '<input type="hidden" name="service" id="apptSvcHidden" value="' + esc(svcHiddenVal) + '">';
 
   // Vehicle: best-effort split of the lead's free-text vehicle for the cascade.
   var vehParts = String(lead.vehicle || '').trim().split(/\s+/).filter(Boolean);
@@ -5775,9 +5548,21 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
   prefModel = vehParts.join(' ');
 
   var tier = q.tier === 'premium' ? 'premium' : 'standard';
-  var parts = Math.round(Number(q.price_parts) || 0);
-  var labor = Math.round(Number(q.price_labor) || 0);
   var supplies = Math.round(Number(q.shop_supplies) || 0);
+  var apptDiscount = Math.round(Number(q.discount) || 0);
+  var apptTaxPct = q.tax_rate != null ? +(q.tax_rate * 100).toFixed(2) : +(taxRate * 100).toFixed(2);
+  // Prefill: appointments created via the shared block store line_items as
+  // {svc:[...],custom:[...]}; older approved quotes store either a plain custom
+  // line-items array or nothing. Parse defensively so edit always works.
+  var apptSvcRows = [];
+  var apptCustomLI = [];
+  try {
+    var _li = JSON.parse(q.line_items || 'null');
+    if (_li && Array.isArray(_li.svc)) { apptSvcRows = _li.svc; apptCustomLI = parseLineItems(JSON.stringify(_li.custom || [])); }
+    else if (Array.isArray(_li)) { apptCustomLI = parseLineItems(q.line_items); }
+  } catch (_) {}
+  // Hidden seed so the page can rebuild the exact per-service rows on load.
+  var apptSvcSeed = JSON.stringify(apptSvcRows);
 
   var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
   var mapsScript = mapsKey
@@ -5824,51 +5609,22 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
 
+    // Shared quote pricing block (services + per-service breakdown, custom line
+    // items, discount, customer summary, notes) — identical on every quote surface.
     + '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Service</div>'
-    + '<div class="form-group" style="margin:0 0 14px;"><label>Tier</label>'
-    + '<div class="tier-toggle">'
-    + '<button type="button" class="tier-btn' + (tier === 'standard' ? ' active' : '') + '" id="apptBtnStd" onclick="apptSetTier(\'standard\')">Standard</button>'
-    + '<button type="button" class="tier-btn' + (tier === 'premium' ? ' active' : '') + '" id="apptBtnPrem" onclick="apptSetTier(\'premium\')">Premium</button>'
-    + '</div>'
-    + '<input type="hidden" name="tier" id="apptTier" value="' + tier + '"></div>'
-    + serviceCheckboxes
-    + '<button type="button" class="svc-clear-btn" onclick="apptClearServices()">&#10005; Clear selection</button>'
-    + '<div class="svc-tags" id="apptSvcTags"></div>'
-    + '<div class="form-group" style="margin:14px 0 6px;">'
-    + '<label>Custom service <span style="color:#bbb;font-weight:400;">(optional, type any service not listed above)</span></label>'
-    + '<input type="text" name="customService" value="' + esc(customSvc) + '" placeholder="e.g. Tie Rod End Replacement, Wheel Bearing" style="' + inputStyle + '"></div>'
-    + '</div>'
-
-    + '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:10px;">Pricing</div>'
-    + '<div class="price-section">'
-    + '<div class="price-section-header">Internal Breakdown <span style="font-weight:400;text-transform:none;letter-spacing:0;">(not sent to customer)</span></div>'
-    + '<div class="price-row"><span class="price-label">Parts</span>'
-    + '<input class="price-input" type="number" name="price_parts" id="apptParts" min="0" step="1" value="' + parts + '" oninput="apptCalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row"><span class="price-label">Labor <span class="price-note">(not taxed)</span></span>'
-    + '<input class="price-input" type="number" name="price_labor" id="apptLabor" min="0" step="1" value="' + labor + '" oninput="apptCalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span>'
-    + '<input class="price-input" type="number" name="shop_supplies" id="apptSupplies" min="0" step="1" value="' + supplies + '" oninput="apptCalc()" onfocus="this.select()"></div>'
-    + '<div class="price-row tax-row"><span class="price-label">VA Tax (' + taxPctLabel + '%) on Parts + Supplies</span>'
-    + '<span id="apptTaxAmt">$0.00</span></div>'
-    + '</div>'
-    + '<div class="price-section" style="margin-bottom:0;">'
-    + '<div class="price-section-header">Customer Quote</div>'
-    + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
-    + '<span style="font-size:0.77rem;color:#888;font-weight:600;">Show pricing as:</span>'
-    + '<div class="tier-toggle" style="margin:0;">'
-    + '<button type="button" class="tier-btn active" id="apptBtnCombined" onclick="apptSetLineItems(\'combined\')">Combined</button>'
-    + '<button type="button" class="tier-btn" id="apptBtnSeparate" onclick="apptSetLineItems(\'separate\')">Separate</button>'
-    + '</div></div>'
-    + '<input type="hidden" name="lineItems" id="apptLineItemsVal" value="combined">'
-    + '<div class="price-row" id="apptLiCombinedRow"><span class="price-label">Parts &amp; Labor</span><span id="apptPlDisplay">$0.00</span></div>'
-    + '<div class="price-row" id="apptLiPartsRow" style="display:none;"><span class="price-label">Parts</span><span id="apptPartsOnlyDisplay">$0.00</span></div>'
-    + '<div class="price-row" id="apptLiLaborRow" style="display:none;"><span class="price-label">Labor</span><span id="apptLaborOnlyDisplay">$0.00</span></div>'
-    + '<div class="price-row"><span class="price-label">Shop Supplies</span><span id="apptSsDisplay">$0.00</span></div>'
-    + '<div class="price-row tax-row"><span class="price-label">Tax</span><span id="apptTaxDisplay">$0.00</span></div>'
-    + '<div class="price-row total-row divider-row"><span>Total</span><span id="apptTotal" style="font-size:1.15rem;">$0.00</span></div>'
-    + '</div>'
+    + '<div class="section-title" style="margin-bottom:10px;">Service &amp; Pricing</div>'
+    + quotePricingBlock('appt', {
+        serviceNames: serviceNames,
+        selected: Object.keys(checkedSet),
+        customSvc: customSvc,
+        tier: tier,
+        taxPct: apptTaxPct,
+        discount: apptDiscount,
+        shopSupplies: supplies,
+        lineItems: apptCustomLI,
+        customerNotes: q.customer_notes || ''
+      })
+    + '<input type="hidden" id="apptSvcSeed" value="' + esc(apptSvcSeed) + '">'
     + '</div>'
 
     + '<div class="card">'
@@ -5886,14 +5642,21 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + '</form>'
 
     + '<script>'
-    + 'var APPT_PRICING=' + pricingJson + ';'
-    + 'var apptTier="' + tier + '";'
-    + 'var apptLineItems="combined";'
-    + apptFormJs(taxRate)
+    + 'var apptPRICING=' + pricingJson + ';'
+    + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
+    + CLI_JS
+    + 'function bkRecalc(){apptcalc();}'
+    // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
+    + quotePricingJs('appt')
     + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
-    // On load: render tags and totals from the saved values without re-pulling
-    // prices (so manual price overrides on the booked appointment are preserved).
-    + 'apptRenderTags();apptCalc();'
+    // On load: rebuild the saved per-service rows (preserving booked-appointment
+    // price overrides), or pull fresh defaults if none were stored, then total up.
+    + '(function(){'
+    +   'var seed=[];try{seed=JSON.parse((document.getElementById("apptSvcSeed")||{}).value||"[]");}catch(e){}'
+    +   'if(Array.isArray(seed)&&seed.length){seed.forEach(function(it){apptAddPriceRow(it.service);var row=document.querySelector("#apptSvcPriceRows .svc-price-row[data-base=\'"+it.service+"\']");if(row){row.querySelector(".appt-parts-in").value=it.parts;row.querySelector(".appt-labor-in").value=it.labor;var mode=it.mode||"combined";row.querySelector(".svc-row-mode").value=mode;row.querySelectorAll(".svc-disp-btn").forEach(function(b,i){b.classList.toggle("active",(mode==="split")?i===1:i===0);});}});}'
+    +   'else{apptInitRows();}'
+    +   'apptUpdateServiceHidden();apptRenderTags();apptHints();apptcalc();'
+    + '})();'
     + '</script>'
     + VEHICLE_CASCADE_JS
     + mapsScript;
@@ -5921,24 +5684,31 @@ router.post('/appointments/:lead_id/edit', requireAuth, express.urlencoded({ ext
   if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
   service = service || null;
   var tier     = (req.body.tier || 'standard').trim();
-  var lineItems = (req.body.lineItems || 'combined').trim();
   var pref_date = (req.body.pref_date || '').trim() || null;
   var pref_time = (req.body.pref_time || '').trim() || null;
   var pref_location = (req.body.pref_location || '').trim() || null;
   var notes = (req.body.notes || '').trim() || null;
   var sendEmail = req.body.send_email === '1';
 
-  var parts    = parseFloat(req.body.price_parts)   || 0;
-  var labor    = parseFloat(req.body.price_labor)   || 0;
-  var supplies = parseFloat(req.body.shop_supplies) || 0;
-  var tax      = Math.round((parts + supplies) * PRICING.taxRate * 100) / 100;
-  var total    = Math.round((parts + labor + supplies + tax) * 100) / 100;
+  // Shared quote pricing block fields (per-service totals + discount + line items).
+  var parts    = parseFloat(req.body.parts)        || 0;
+  var labor    = parseFloat(req.body.labor)        || 0;
+  var supplies = parseFloat(req.body.shopSupplies) || 0;
+  var discount = parseFloat(req.body.discount)     || 0;
+  var svcLineItems = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } })();
+  var customLineItems = parseLineItems(req.body.customLineItems);
+  var cliSum = customLineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
+  var cliTaxable = customLineItems.reduce(function(a, it){ return a + (it.taxed ? (Number(it.amount) || 0) : 0); }, 0);
+  var customerNotes = (req.body.customerNotes || '').trim() || null;
+  var tax      = Math.round((parts + supplies + cliTaxable) * PRICING.taxRate * 100) / 100;
+  var total    = Math.round((parts + labor + supplies + cliSum + tax - discount) * 100) / 100;
+  var apptLineItemsStore = JSON.stringify({ svc: svcLineItems, custom: customLineItems });
 
   // Update the lead contact + vehicle + service, and the approved quote details.
   db.prepare("UPDATE leads SET first_name = ?, last_name = ?, phone = ?, email = ?, vehicle = COALESCE(?, vehicle), service = ?, status_updated_at = datetime('now') WHERE id = ?")
     .run(firstName, lastName, phone, email, vehicle, service, lead.id);
-  db.prepare("UPDATE quotes SET service = ?, tier = ?, price_parts = ?, price_labor = ?, shop_supplies = ?, tax_rate = ?, tax = ?, total = ?, pref_date = ?, pref_time = ?, pref_location = ?, scheduling_notes = ? WHERE id = ?")
-    .run(service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, pref_date, pref_time, pref_location, notes, q.id);
+  db.prepare("UPDATE quotes SET service = ?, tier = ?, price_parts = ?, price_labor = ?, shop_supplies = ?, tax_rate = ?, tax = ?, total = ?, pref_date = ?, pref_time = ?, pref_location = ?, scheduling_notes = ?, line_items = ?, customer_notes = ?, discount = ? WHERE id = ?")
+    .run(service, tier, parts, labor, supplies, PRICING.taxRate, tax, total, pref_date, pref_time, pref_location, notes, apptLineItemsStore, customerNotes, discount, q.id);
 
   // Keep the linked customer record's contact info in sync.
   if (lead.customer_id) {
@@ -5954,7 +5724,8 @@ router.post('/appointments/:lead_id/edit', requireAuth, express.urlencoded({ ext
       var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
       var html = appointmentEmailHtml({
         firstName: firstName, service: service, vehicle: vehicle,
-        parts: parts, labor: labor, supplies: supplies, tax: tax, total: total, lineItems: lineItems,
+        parts: parts, labor: labor, supplies: supplies, tax: tax, total: total,
+        svcLineItems: svcLineItems, customLineItems: customLineItems, discount: discount, customerNotes: customerNotes,
         pref_date: pref_date, pref_time: pref_time, pref_location: pref_location,
         baseUrl: baseUrl, quoteId: q.id, token: q.accept_token, isUpdate: true
       });
