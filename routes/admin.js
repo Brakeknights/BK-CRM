@@ -577,7 +577,15 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .info-grid{display:grid;grid-template-columns:100px 1fr;gap:7px 12px;font-size:0.88rem}
 .info-key{color:#888}
 .info-val{color:#1a2a3a;font-weight:500;word-break:break-word}
-.back-link{display:inline-flex;align-items:center;gap:6px;color:#0a1f3d;text-decoration:none;font-weight:600;font-size:0.88rem;margin-bottom:14px}
+.back-link{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:9px 16px 9px 13px;color:#0a1f3d;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:8px;text-decoration:none;font-weight:600;font-size:0.92rem;margin-bottom:14px;-webkit-tap-highlight-color:transparent;transition:background .12s,border-color .12s}
+.back-link:hover,.back-link:active{background:var(--gray-200);border-color:#cbd5e1}
+.back-link .bk-arrow{font-size:1.15rem;line-height:1;font-weight:700;margin-top:-1px}
+/* Row that holds the back button on the left and a forward/profile link on the right,
+   spaced apart so they are never mistaken for each other or mis-tapped. */
+.nav-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.nav-row .back-link{margin-bottom:0}
+.fwd-link{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:9px 14px;color:#1a6fc4;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;-webkit-tap-highlight-color:transparent;transition:background .12s}
+.fwd-link:hover,.fwd-link:active{background:#d8e8ff}
 .alert{padding:11px 14px;border-radius:8px;margin-bottom:14px;font-size:0.88rem;font-weight:500}
 .alert-success{background:#e6f9ee;color:#1a7a3a;border:1px solid #b2dfcb}
 .alert-error{background:#fff0f0;color:#c0392b;border:1px solid #f5c6c6}
@@ -615,10 +623,13 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 #deleteModalBtns button{flex:1;padding:11px;border-radius:8px;font-weight:700;font-size:0.92rem;cursor:pointer;}
 #deleteModalCancel{border:1.5px solid #dde3ea;background:#fff;color:#444;}
 #deleteModalConfirm{border:none;background:#c0392b;color:#fff;}
-.push-btn{display:none;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;color:#94a3b8;cursor:pointer;background:none;border:none}
-.push-btn:hover{background:var(--gray-100)}
+.push-btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;color:#94a3b8;cursor:pointer;background:none;border:none;position:relative;-webkit-tap-highlight-color:transparent}
+/* Only hover-capable devices get the background. On touch (iPhone) :hover sticks
+   after a tap and leaves a gray box around the bell, so scope it to real hover. */
+@media (hover:hover){.push-btn:hover{background:var(--gray-100)}}
 .push-btn svg{width:22px;height:22px}
 .push-btn.on{color:#1a7a3a}
+.push-btn.unsupported{color:#94a3b8}
 .nav-new-badge{background:#e07000;color:#fff;font-size:0.6rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;margin-left:auto;flex-shrink:0}
 `;
 
@@ -655,6 +666,20 @@ function icon(name) {
 function ic(name) {
   return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">' + (ICON_PATHS[name] || '') + '</svg>';
 }
+
+// Notification bell, two states, drawn as one SOLID bell shape so on/off look
+// identical except color + slash. The outline Heroicons bell-slash fragments the
+// bell at small sizes and reads as broken; this keeps a clean, single silhouette.
+var SOLID_BELL_PATHS =
+    '<path d="M5.85 3.5a.75.75 0 00-1.117-1 9.719 9.719 0 00-2.348 4.876.75.75 0 001.479.248A8.219 8.219 0 015.85 3.5zM19.267 2.5a.75.75 0 10-1.118 1 8.22 8.22 0 011.987 4.124.75.75 0 001.48-.248A9.72 9.72 0 0019.266 2.5z"/>'
+  + '<path fill-rule="evenodd" d="M12 2.25A6.75 6.75 0 005.25 9v.75a8.217 8.217 0 01-2.119 5.52.75.75 0 00.298 1.206c1.544.57 3.16.99 4.831 1.243a3.75 3.75 0 107.48 0 24.583 24.583 0 004.83-1.244.75.75 0 00.298-1.205 8.217 8.217 0 01-2.118-5.52V9A6.75 6.75 0 0012 2.25zM9.75 18c0-.034 0-.067.002-.1a25.05 25.05 0 004.496 0l.002.1a2.25 2.25 0 11-4.5 0z" clip-rule="evenodd"/>';
+// ON: solid filled bell (color set by the button's .on class).
+var BELL_ON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' + SOLID_BELL_PATHS + '</svg>';
+// OFF/unsupported: same solid bell with a single clean diagonal slash. A white
+// stroke under the slash carves a crisp gap so the line reads clearly over the bell.
+var BELL_OFF = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' + SOLID_BELL_PATHS
+  + '<line x1="3.6" y1="3.2" x2="20.4" y2="20.8" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>'
+  + '<line x1="3.6" y1="3.2" x2="20.4" y2="20.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 
 // Sidebar nav: [section label, [[id, label, href, icon], ...]].
 var NAV = [
@@ -833,6 +858,16 @@ function page(title, body, req) {
     + '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
     + '<meta name="robots" content="noindex,nofollow">'
     + '<link rel="icon" type="image/png" href="/images/favicon.png">'
+    // PWA manifest + Apple meta so the admin can be added to the iPhone Home Screen.
+    // iOS Safari only delivers web push to a Home-Screen-installed PWA, so these are
+    // required for push notifications to work on the owner's phone.
+    + '<link rel="manifest" href="/manifest.webmanifest">'
+    + '<meta name="theme-color" content="#0a1f3d">'
+    + '<meta name="apple-mobile-web-app-capable" content="yes">'
+    + '<meta name="mobile-web-app-capable" content="yes">'
+    + '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+    + '<meta name="apple-mobile-web-app-title" content="BK Admin">'
+    + '<link rel="apple-touch-icon" href="/images/favicon.png">'
     + '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
     + '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">'
     + '<title>BK Admin' + (title && title !== 'Leads' ? ' — ' + esc(title) : '') + '</title>'
@@ -907,8 +942,8 @@ function page(title, body, req) {
     + '</div>';
 
   var pushBtn = vapidKey
-    ? '<button id="push-btn" class="push-btn" onclick="togglePush()" title="Enable push notifications" aria-label="Enable push notifications">'
-      + icon('bell') + '</button>'
+    ? '<button id="push-btn" class="push-btn" onclick="togglePush()" title="Notifications off — tap to enable" aria-label="Toggle push notifications">'
+      + BELL_OFF + '</button>'
     : '';
 
   var appbar = '<header class="appbar">'
@@ -949,9 +984,14 @@ function page(title, body, req) {
     + (vapidKey ? (
         'var _VAPID_KEY=' + JSON.stringify(vapidKey) + ';'
       + 'function _b64u(b){var p="=".repeat((4-b.length%4)%4);var s=(b+p).replace(/-/g,"+").replace(/_/g,"/");var r=atob(s);var o=new Uint8Array(r.length);for(var i=0;i<r.length;i++)o[i]=r.charCodeAt(i);return o;}'
-      + 'var _pushBellIcon=' + JSON.stringify(icon('bell')) + ';'
-      + 'function _pushSetOn(btn){btn.classList.add("on");btn.title="Push notifications on (tap to disable)";btn.innerHTML=_pushBellIcon;}'
-      + 'function _pushSetOff(btn){btn.classList.remove("on");btn.title="Enable push notifications";btn.innerHTML=_pushBellIcon;}'
+      // ON = solid green bell (filled). OFF = gray bell with a slash. UNSUPPORTED =
+      // faint slashed bell with guidance, for browsers that can't do push yet
+      // (e.g. an iPhone Safari tab not yet added to the Home Screen).
+      + 'var _pushBellOn=' + JSON.stringify(BELL_ON) + ';'
+      + 'var _pushBellOff=' + JSON.stringify(BELL_OFF) + ';'
+      + 'function _pushSetOn(btn){if(!btn)return;btn.classList.remove("unsupported");btn.classList.add("on");btn.title="Notifications on — tap to turn off";btn.innerHTML=_pushBellOn;}'
+      + 'function _pushSetOff(btn){if(!btn)return;btn.classList.remove("on");btn.classList.remove("unsupported");btn.title="Notifications off — tap to enable";btn.innerHTML=_pushBellOff;}'
+      + 'function _pushSetUnsupported(btn){if(!btn)return;btn.classList.remove("on");btn.classList.add("unsupported");btn.title="Notifications unavailable in this browser. On iPhone: tap Share, Add to Home Screen, then open Brake Knights from that icon.";btn.innerHTML=_pushBellOff;}'
       + 'function _pushSaveSub(sub,btn){'
       +   'var j=sub.toJSON();'
       +   'fetch("/admin/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:j.endpoint,p256dh:j.keys.p256dh,auth:j.keys.auth})})'
@@ -960,12 +1000,12 @@ function page(title, body, req) {
       +   '.catch(function(e){console.error("Push save error:",e);});'
       + '}'
       + '(function(){'
-      +   'if(!("serviceWorker" in navigator&&"PushManager" in window))return;'
       +   'var btn=document.getElementById("push-btn");if(!btn)return;'
+      +   'var supported=("serviceWorker" in navigator)&&("PushManager" in window)&&("Notification" in window);'
+      +   'if(!supported){_pushSetUnsupported(btn);return;}'
       +   'navigator.serviceWorker.register("/sw.js").then(function(reg){'
       +     'reg.pushManager.getSubscription().then(function(sub){'
-      +       'btn.style.display="inline-flex";'
-      +       'if(!sub)return;'
+      +       'if(!sub){_pushSetOff(btn);return;}'
       +       'fetch("/admin/push/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({endpoint:sub.endpoint})})'
       +       '.then(function(r){return r.json();})'
       +       '.then(function(d){'
@@ -975,11 +1015,12 @@ function page(title, body, req) {
       +       '})'
       +       '.catch(function(){_pushSetOn(btn);});'
       +     '});'
-      +   '});'
+      +   '}).catch(function(){_pushSetOff(btn);});'
       + '})();'
       + 'function togglePush(){'
-      +   'if(!("serviceWorker" in navigator&&"PushManager" in window))return;'
       +   'var btn=document.getElementById("push-btn");'
+      +   'if(btn&&btn.classList.contains("unsupported")){alert("To get notifications on your iPhone: open brakeknights.com/admin in Safari, tap the Share button, choose \\"Add to Home Screen,\\" then open Brake Knights from that new icon and tap the bell again.");return;}'
+      +   'if(!("serviceWorker" in navigator&&"PushManager" in window))return;'
       +   'navigator.serviceWorker.ready.then(function(reg){'
       +     'reg.pushManager.getSubscription().then(function(sub){'
       +       'if(sub){'
@@ -1222,6 +1263,19 @@ router.post('/lead/:id/notes', requireAuth, express.urlencoded({ extended: false
   }
   res.redirect('/admin/quote/' + lead.id + '?msg=notes_saved');
 });
+
+// Lead-level customer interaction notes — a running log of calls/texts/conversations,
+// stored separately from internal notes. Saved independently of any quote.
+router.post('/lead/:id/interaction-notes', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.redirect('/admin');
+  var notes = (req.body.interactionNotes || '').trim() || null;
+  db.prepare('UPDATE leads SET interaction_notes = ? WHERE id = ?').run(notes, lead.id);
+  if ((lead.interaction_notes || '') !== (notes || '')) {
+    logHistory(lead.id, 'Interaction notes updated');
+  }
+  res.redirect('/admin/quote/' + lead.id + '?msg=interaction_saved');
+});
 router.get('/square-info', requireAuth, async function(req, res) {
   const { client } = require('../square');
   const out = {};
@@ -1397,7 +1451,7 @@ router.get('/quote/:id/deny-schedule', requireAuth, function(req, res) {
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
   var reqTime = quote ? fmtPrefDate(quote.pref_date) + (quote.pref_time ? ' at ' + quote.pref_time : '') : 'the requested time';
 
-  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back</a>'
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link"><span class="bk-arrow">&#8592;</span>Back</a>'
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:4px;">Suggest Alternative Times</div>'
     + '<div style="font-size:0.85rem;color:#888;margin-bottom:14px;">Customer requested: <strong>' + esc(reqTime) + '</strong></div>'
@@ -2015,12 +2069,13 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'appt_created')  quoteAlert = '<div class="alert alert-success">Appointment created and confirmation email sent.</div>';
 
   var custLink = lead.customer_id
-    ? '<a href="/admin/customer/' + lead.customer_id + '" style="display:inline-flex;align-items:center;gap:6px;color:#1a6fc4;text-decoration:none;font-weight:600;font-size:0.85rem;margin-bottom:14px;">' + ic('user') + 'View Customer Profile &rarr;</a>'
+    ? '<a href="/admin/customer/' + lead.customer_id + '" class="fwd-link">' + ic('user') + 'Customer Profile <span class="bk-arrow">&rarr;</span></a>'
     : '';
 
-  var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
+  // Back (left) and Customer Profile (right) sit in a spaced row so they are large,
+  // distinct tap targets and never mistaken for one another.
+  var body = '<div class="nav-row"><a href="/admin" class="back-link"><span class="bk-arrow">&#8592;</span> All Leads</a>' + custLink + '</div>'
     + quoteAlert
-    + custLink
     + stageTracker(lead.status)
     + nextStageHint(lead)
 
@@ -2042,8 +2097,15 @@ router.get('/quote/:id', requireAuth, function(req, res) {
         + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : ''))
     + '</div>'
     + contactActions(lead, 12)
-    + (['quoted','quote_accepted','new','follow_up'].indexOf(lead.status) !== -1
-        ? '<div style="margin-top:8px;"><a href="/admin/appointments/new?from_lead=' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Book Appointment</a></div>'
+    // Primary job actions live right inside the Customer Information box, next to
+    // Call/Text/Email: Book Appointment (when still pre-booking) and Send Receipt.
+    + (!lead.archived
+        ? '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">'
+          + (['quoted','quote_accepted','new','follow_up'].indexOf(lead.status) !== -1
+              ? '<a href="/admin/appointments/new?from_lead=' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Book Appointment</a>'
+              : '')
+          + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-blue btn-sm" style="width:auto;">' + ic('receipt') + 'Send Receipt</a>'
+          + '</div>'
         : '')
     + '<form method="POST" action="/admin/lead/' + lead.id + '/status" style="margin-top:12px;display:flex;align-items:center;gap:8px;">'
     + '<input type="hidden" name="back" value="/admin/quote/' + lead.id + '">'
@@ -2067,6 +2129,18 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + '</div>'
     + COLLAPSE_CLOSE
 
+    // Customer Interaction Notes — a quick running log of calls, texts, and
+    // conversations, kept separate from internal notes so the owner can see customer
+    // contact history at a glance. Open by default. Internal only, never sent.
+    + collapseOpen('interaction', 'Customer Interaction Notes', true)
+    + (req.query.msg === 'interaction_saved' ? '<div class="alert alert-success" style="margin-bottom:10px;">Saved.</div>' : '')
+    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Log of calls, texts, and conversations with the customer. Internal only, never sent.</div>'
+    + '<form method="POST" action="/admin/lead/' + lead.id + '/interaction-notes">'
+    + '<div class="form-group" style="margin-bottom:10px;"><label>Interaction Notes</label>'
+    + '<textarea name="interactionNotes" rows="5" placeholder="e.g. 6/19 called, left voicemail. 6/20 texted the quote, customer asked about Saturday.">' + esc(lead.interaction_notes || '') + '</textarea></div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save</button>'
+    + '</form>' + COLLAPSE_CLOSE
+
     // Lead-level VIN + Internal Notes — collapsible, collapsed by default.
     + collapseOpen('notes', 'VIN &amp; Internal Notes', false)
     + (req.query.msg === 'notes_saved' ? '<div class="alert alert-success" style="margin-bottom:10px;">Saved.</div>' : '')
@@ -2082,9 +2156,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Sections below are reordered client-side based on the pipeline stage
     + '<div id="sects">'
 
-    + '<div data-section="complete-job">'
-    + (!lead.archived ? '<a href="/admin/receipt/' + lead.id + '" class="btn btn-navy btn-sm" style="margin-bottom:12px;">' + ic('receipt') + 'Send Receipt</a>' : '')
-    + '</div>'
+    // Send Receipt now lives in the Customer Information box above; this section is
+    // kept (empty) so the stage-based section reorder script still has its anchor.
+    + '<div data-section="complete-job"></div>'
 
     // Receipt history
     + '<div data-section="receipts">'
@@ -2618,8 +2692,25 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   var total     = partsLabor + shopSupplies + tax;
   var receiptTier = quote.tier === 'premium' ? 'premium' : 'standard';
   var taxPct    = quote.tax_rate != null ? +(quote.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
-  // Prefill any custom line items (e.g. OEM parts) carried over from the quote.
-  var rcLineItems = parseLineItems(quote.line_items);
+  // Prefill the exact booked breakdown carried over from the quote/appointment.
+  // Appointments created via the shared pricing block store line_items as
+  // {svc:[...per-service rows...], custom:[...custom line items...]}; older quotes
+  // store either a plain custom line-items array or nothing. Parse defensively so the
+  // receipt opens pre-filled with what was actually booked (still fully editable).
+  var rcSvcRows = [];
+  var rcLineItems = [];
+  try {
+    var _rli = JSON.parse(quote.line_items || 'null');
+    if (_rli && Array.isArray(_rli.svc)) {
+      rcSvcRows = _rli.svc;
+      rcLineItems = parseLineItems(JSON.stringify(_rli.custom || []));
+    } else if (Array.isArray(_rli)) {
+      rcLineItems = parseLineItems(quote.line_items);
+    }
+  } catch (_) {}
+  // Hidden seed so the page can rebuild the exact per-service price rows on load,
+  // preserving any booked-appointment price overrides.
+  var rcSvcSeed = JSON.stringify(rcSvcRows);
 
   // Service picker mirrors the quote tool: a multi-select of every service so the
   // owner can change/add what was actually done if the job grew on arrival.
@@ -2638,7 +2729,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   // Past receipts for this lead (lightweight history)
   var pastReceipts = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
 
-  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back to Lead</a>'
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link"><span class="bk-arrow">&#8592;</span>Back to Lead</a>'
     + '<div class="card">'
     + '<div class="row-sb" style="margin-bottom:6px;">'
     + '<div class="lead-name">' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
@@ -2681,6 +2772,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
         lineItems: rcLineItems,
         showCustomerNotes: false
       })
+    + '<input type="hidden" id="rcSvcSeed" value="' + esc(rcSvcSeed) + '">'
     + COLLAPSE_CLOSE
 
     + collapseOpen('rc_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true)
@@ -2720,8 +2812,14 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'document.getElementById("customWrap"+i).style.display=(v==="custom")?"block":"none";'
     + '}'
     + 'rPayToggle();cliInit();'
-    // Build the per-service rows from the pre-selected services and total up.
-    + 'rcInitRows();rcUpdateServiceHidden();rcRenderTags();rcHints();rccalc();'
+    // Build the per-service rows. If the booked quote/appointment saved an exact
+    // per-service breakdown, rebuild those rows with their booked price overrides;
+    // otherwise pull fresh defaults from the pricing table for the selected services.
+    + '(function(){var seed=[];try{seed=JSON.parse((document.getElementById("rcSvcSeed")||{}).value||"[]");}catch(e){}'
+    +   'if(Array.isArray(seed)&&seed.length){seed.forEach(function(it){rcAddPriceRow(it.service);var row=document.querySelector("#rcSvcPriceRows .svc-price-row[data-base=\'"+it.service+"\']");if(row){row.querySelector(".rc-parts-in").value=it.parts;row.querySelector(".rc-labor-in").value=it.labor;var mode=it.mode||"combined";row.querySelector(".svc-row-mode").value=mode;row.querySelectorAll(".svc-disp-btn").forEach(function(b,i){b.classList.toggle("active",(mode==="split")?i===1:i===0);});}});}'
+    +   'else{rcInitRows();}'
+    + '})();'
+    + 'rcUpdateServiceHidden();rcRenderTags();rcHints();rccalc();'
     + 'function bkAddAdvisory(pfx){'
     +   'for(var i=2;i<=4;i++){'
     +     'var r=document.getElementById((pfx||"")+"advRow"+i)||document.getElementById("advRow"+i);'
@@ -2903,7 +3001,7 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
       + '</div>'
     : '';
 
-  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link">&#8592; Back to Lead</a>'
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link"><span class="bk-arrow">&#8592;</span>Back to Lead</a>'
     + '<div class="card">'
     + '<div class="row-sb" style="margin-bottom:4px;">'
     + '<div class="lead-name">Receipt &middot; ' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
@@ -3233,7 +3331,7 @@ router.get('/quick', requireAuth, function(req, res) {
   if (req.query.err === 'email')   alert = '<div class="alert alert-error">An email address is required to send a quote or receipt. Use the copyable link instead, or add an email.</div>';
   if (req.query.msg === 'draft_saved') alert = '<div class="alert alert-success">Draft saved. Load it any time from the Saved Drafts list above.</div>';
 
-  var body = '<a href="/admin" class="back-link">&#8592; All Leads</a>'
+  var body = '<a href="/admin" class="back-link"><span class="bk-arrow">&#8592;</span>All Leads</a>'
     + alert
     + draftsHtml
     + '<div class="card">'
@@ -3640,7 +3738,7 @@ router.get('/quick', requireAuth, function(req, res) {
 // Result page for the copyable-link outcome: shows the branded customer URL in a
 // read-only field with a one-tap copy button, plus a link to the new lead.
 function quickLinkResult(req, lead, acceptUrl) {
-  var body = '<a href="/admin/quick" class="back-link">&#8592; New Quick Quote</a>'
+  var body = '<a href="/admin/quick" class="back-link"><span class="bk-arrow">&#8592;</span>New Quick Quote</a>'
     + '<div class="card">'
     + '<div class="section-title" style="color:#1a7a3a;">&#10003; Quote link ready</div>'
     + '<p style="color:#555;font-size:0.9rem;margin-bottom:12px;">A lead for <strong>' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</strong> was created in the Quoted stage and the quote was saved. Copy the link below and paste it into your text to the customer. They can review the quote and pick a time.</p>'
@@ -4054,7 +4152,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
   var alert = '';
   if (req.query.err === 'name') alert = '<div class="alert alert-error">First and last name are required.</div>';
 
-  var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
+  var body = '<a href="/admin/customers" class="back-link"><span class="bk-arrow">&#8592;</span>All Customers</a>'
     + alert
     + '<form method="POST" action="/admin/customer/new" data-autosave="custnew">'
     + '<div class="card">'
@@ -4175,7 +4273,7 @@ router.post('/customers/import-square/chunk', requireAuth, express.json(), async
 router.get('/customers/import-square', requireAuth, function(req, res) {
   var sqEnv = (!process.env.SQUARE_ACCESS_TOKEN || process.env.SQUARE_ENV === 'sandbox') ? 'sandbox' : 'production';
 
-  var body = '<a href="/admin/customers" class="back-link">&#8592; Customers</a>'
+  var body = '<a href="/admin/customers" class="back-link"><span class="bk-arrow">&#8592;</span>Customers</a>'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">Import from Square</h1>'
     + '<div class="card">'
     + '<p style="color:#444;line-height:1.6;margin:0 0 12px;">This pulls every customer from your Square account and adds them to the BK CRM. Anyone already in the CRM (matched by email or phone) is linked to their Square record, never duplicated.</p>'
@@ -4479,7 +4577,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + 'Save</button>'
     + '</div>';
 
-  var body = '<a href="/admin/customers" class="back-link">&#8592; All Customers</a>'
+  var body = '<a href="/admin/customers" class="back-link"><span class="bk-arrow">&#8592;</span>All Customers</a>'
     + alert
     + header
     + tagsCard
@@ -5028,7 +5126,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
       + '</div>'
     : '';
 
-  var body = '<a href="/admin/appointments" class="back-link">&#8592; Appointments</a>'
+  var body = '<a href="/admin/appointments" class="back-link"><span class="bk-arrow">&#8592;</span>Appointments</a>'
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">New Appointment</h1>'
     + fromLeadBanner
@@ -5589,7 +5687,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
 
   var inputStyle = 'width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;';
 
-  var body = '<a href="/admin/appointments" class="back-link">&#8592; Appointments</a>'
+  var body = '<a href="/admin/appointments" class="back-link"><span class="bk-arrow">&#8592;</span>Appointments</a>'
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:4px;">Edit Appointment</h1>'
     + '<div style="color:#888;font-size:0.85rem;margin-bottom:14px;">Update any details and save. Choose whether to email the customer an updated confirmation.</div>'
