@@ -2702,16 +2702,30 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     || {};
 
   var service   = quote.service || lead.service || '';
-  // Try structured vehicle from customer_vehicles; fall back to parsing lead.vehicle string.
-  var rcVehData = lead.customer_id
-    ? (db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(lead.customer_id) || null)
-    : null;
-  if (!rcVehData && lead.vehicle) {
+  // The receipt must reflect THIS lead's vehicle, not whatever car was most
+  // recently added to the customer profile (a customer can own several). Prefer
+  // the lead's own vehicle string; when set, upgrade it to the matching structured
+  // customer_vehicles row (for canonical year/make/model + VIN) only if that row's
+  // make matches. Fall back to the customer's most-recent vehicle ONLY when the
+  // lead itself has no vehicle on file.
+  var rcVehData = null;
+  if (lead.vehicle && lead.vehicle.trim()) {
     var _vp = lead.vehicle.trim().split(/\s+/);
     var _yr = /^(19|20)\d{2}$/.test(_vp[0]) ? _vp.shift() : '';
     var _mk = _vp.length > 1 ? _vp.shift() : (_vp[0] || '');
     var _mo = _vp.length > 0 ? _vp.join(' ') : '';
     rcVehData = { year: _yr, make: _mk, model: _mo };
+    if (lead.customer_id && _mk) {
+      var _vmatch = db.prepare(
+        "SELECT year, make, model, vin FROM customer_vehicles WHERE customer_id = ? "
+        + "AND LOWER(IFNULL(make,'')) = LOWER(?) "
+        + "AND (LOWER(IFNULL(model,'')) = LOWER(?) OR ? = '') "
+        + "ORDER BY id DESC LIMIT 1"
+      ).get(lead.customer_id, _mk, _mo, _mo);
+      if (_vmatch) rcVehData = _vmatch;
+    }
+  } else if (lead.customer_id) {
+    rcVehData = db.prepare('SELECT year, make, model, vin FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(lead.customer_id) || null;
   }
   rcVehData = rcVehData || {};
   // Prefer the chosen quote's location; otherwise pull the most recent service
