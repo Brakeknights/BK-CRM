@@ -2067,9 +2067,31 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'quick_saved')   quoteAlert = '<div class="alert alert-success">Lead created from Quick Quote and the quote was saved (not emailed).</div>';
   if (req.query.msg === 'quick_err')     quoteAlert = '<div class="alert alert-error">Lead and quote saved, but the email failed to send. Try resending from this page.</div>';
   if (req.query.msg === 'appt_created')  quoteAlert = '<div class="alert alert-success">Appointment created and confirmation email sent.</div>';
+  // Saves made from the embedded customer-profile cards redirect back here.
+  if (req.query.msg === 'saved')         quoteAlert = '<div class="alert alert-success">Customer profile saved.</div>';
+  if (req.query.msg === 'veh_removed')   quoteAlert = '<div class="alert alert-success">Vehicle removed.</div>';
+  if (req.query.msg === 'addr_removed')  quoteAlert = '<div class="alert alert-success">Address removed.</div>';
+  if (req.query.msg === 'added')         quoteAlert = '<div class="alert alert-success">Follow-up added.</div>';
 
   var custLink = lead.customer_id
     ? '<a href="/admin/customer/' + lead.customer_id + '" class="fwd-link">' + ic('user') + 'Customer Profile <span class="bk-arrow">&rarr;</span></a>'
+    : '';
+
+  // Full customer-profile cards embedded on the lead page so the owner has the
+  // complete, editable customer record (tags, contact, vehicles, saved addresses,
+  // job history, follow-ups, lifetime stats) without leaving the lead. Edits post
+  // to the same /admin/customer/:id/* endpoints and redirect back here. Only shown
+  // when this lead is linked to a customer record.
+  var custProfile = lead.customer_id
+    ? db.prepare('SELECT * FROM customers WHERE id = ?').get(lead.customer_id)
+    : null;
+  var custSec = custProfile
+    ? customerProfileSections(custProfile, { back: '/admin/quote/' + lead.id })
+    : null;
+  var custProfileBlock = custSec
+    ? '<div class="section-title" style="margin:26px 0 10px;">Customer Profile</div>'
+      + '<div style="font-size:0.8rem;color:#aaa;margin:-4px 0 12px;">The full customer record, shared across all their jobs. Edits here update the customer profile everywhere.</div>'
+      + custSec.tags + custSec.form + custSec.saveBar + custSec.jobs + custSec.fups + custSec.stats + custSec.script
     : '';
 
   // Back (left) and Customer Profile (right) sit in a spaced row so they are large,
@@ -2325,6 +2347,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     + COLLAPSE_CLOSE
     + '</div>'
     + '</div>'
+
+    // Full editable customer profile, mirrored from /admin/customer/:id
+    + custProfileBlock
 
     + '<script>'
     + 'var bqPRICING=' + pricingJson + ';'
@@ -4313,13 +4338,17 @@ router.get('/customers/import-square', requireAuth, function(req, res) {
   res.send(page('Import from Square', body, req));
 });
 
-// Customer profile.
-router.get('/customer/:id', requireAuth, function(req, res) {
-  var c = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
-  if (!c) return res.redirect('/admin/customers');
+// Shared builder for the editable customer-profile cards (Tags, Contact Info,
+// Internal Notes, Vehicles, Saved Addresses, Job History, Follow-ups, Lifetime
+// Stats). Rendered both on the customer profile page and embedded on the lead
+// page so the two surfaces show identical, fully editable customer data. The
+// forms post to the same /admin/customer/:id/* endpoints; `opts.back` controls
+// where they redirect afterward (defaults to the profile page).
+function customerProfileSections(c, opts) {
+  opts = opts || {};
+  var back = opts.back || ('/admin/customer/' + c.id);
+  var backInput = '<input type="hidden" name="back" value="' + esc(back) + '">';
   var s = customers.statsFor(c.id);
-  var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
-  var back = '/admin/customer/' + c.id;
 
   var vehicles  = db.prepare('SELECT * FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC').all(c.id);
   var addresses = db.prepare('SELECT * FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC').all(c.id);
@@ -4330,35 +4359,6 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + 'ORDER BY f.sent ASC, f.due_date ASC, f.id ASC'
   ).all(c.id);
   var recentLeadId = jobs.length ? jobs[0].id : null;
-
-  var alert = '';
-  if (req.query.msg === 'deleted')       alert = '<div class="alert alert-success">Customer deleted.</div>';
-  if (req.query.msg === 'created')       alert = '<div class="alert alert-success">Customer created successfully.</div>';
-  if (req.query.msg === 'saved')        alert = '<div class="alert alert-success">Saved.</div>';
-  if (req.query.msg === 'veh_added')    alert = '<div class="alert alert-success">Vehicle added.</div>';
-  if (req.query.msg === 'veh_removed')  alert = '<div class="alert alert-success">Vehicle removed.</div>';
-  if (req.query.msg === 'addr_added')   alert = '<div class="alert alert-success">Address saved.</div>';
-  if (req.query.msg === 'addr_removed') alert = '<div class="alert alert-success">Address removed.</div>';
-  if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
-  if (req.query.msg === 'contact_saved') alert = '<div class="alert alert-success">Contact info updated.</div>';
-
-  // Header — always visible: name, contact display, action buttons
-  var header = '<div class="card">'
-    + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
-    + '<div class="info-grid">'
-    + contactInfoRows(c,
-        '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
-        + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
-        + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : ''))
-    + '</div>'
-    + customerTagBadges(c.tags)
-    + contactActions(c)
-    + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
-    + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
-    + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
-    + (recentLeadId ? '<button type="button" onclick="openSection(\'cust_followups\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Follow-Up</button>' : '')
-    + '</div>'
-    + '</div>';
 
   // Contact info edit fields (inside unified save form)
   var contactCard = '<div class="card">'
@@ -4381,13 +4381,14 @@ router.get('/customer/:id', requireAuth, function(req, res) {
               return '<span style="display:inline-flex;align-items:center;gap:5px;background:#eef3ff;border:1.5px solid #4169e1;border-radius:8px;padding:5px 11px;">'
                 + '<span style="font-size:0.85rem;color:#1a4fc4;font-weight:600;">' + esc(t) + '</span>'
                 + '<form method="POST" action="/admin/customer/' + c.id + '/tag/remove" style="margin:0;line-height:0;">'
-                + '<input type="hidden" name="tag" value="' + esc(t) + '">'
+                + '<input type="hidden" name="tag" value="' + esc(t) + '">' + backInput
                 + '<button type="submit" title="Remove tag" style="background:none;border:none;color:#7a9cd8;font-size:1rem;cursor:pointer;line-height:1;padding:0 0 0 2px;">&#10005;</button>'
                 + '</form></span>';
             }).join('')
           + '</div>'
         : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:14px;">No tags yet.</div>')
     + '<form method="POST" action="/admin/customer/' + c.id + '/tag/add" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;">'
+    + backInput
     + '<div class="form-group" style="flex:1;min-width:150px;margin-bottom:0;"><label>Add tag</label><input type="text" name="tag" placeholder="Fleet, HOA, Referral..." maxlength="40"></div>'
     + '<button type="submit" class="btn btn-outline" style="width:auto;">+ Add</button>'
     + '</form>'
@@ -4397,7 +4398,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
         return '<div style="font-size:0.78rem;color:#888;">Quick add: '
           + quick.map(function(t) {
               return '<form method="POST" action="/admin/customer/' + c.id + '/tag/add" style="display:inline-block;margin:0 4px 4px 0;">'
-                + '<input type="hidden" name="tag" value="' + esc(t) + '">'
+                + '<input type="hidden" name="tag" value="' + esc(t) + '">' + backInput
                 + '<button type="submit" style="background:#f4f7fb;border:1px solid #dde3ea;border-radius:6px;padding:3px 9px;font-size:0.78rem;color:#555;font-weight:500;cursor:pointer;">' + esc(t) + '</button>'
                 + '</form>';
             }).join('')
@@ -4480,8 +4481,6 @@ router.get('/customer/:id', requireAuth, function(req, res) {
         var qt = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
         var totalVal = rc ? rc.total : (qt ? qt.total : null);
         var receiptSent = rc && rc.sent_at;
-        // Same card as the Leads list. Pipeline management tools are omitted here
-        // (this is a read-only history); the job total + receipt status slot in.
         var extra = (totalVal != null || receiptSent)
           ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;">'
             + '<span style="font-size:0.74rem;color:#1a7a3a;font-weight:700;">' + (receiptSent ? '&#10003; Receipt sent ' + shortDate(rc.sent_at) : '') + '</span>'
@@ -4510,7 +4509,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
               }).join('')
             + '</select></div>'
           : '<input type="hidden" name="lead_id" value="' + recentLeadId + '">')
-      + '<input type="hidden" name="back" value="' + back + '">'
+      + '<input type="hidden" name="back" value="' + esc(back) + '">'
       + '<div class="section-title" style="margin-bottom:10px;font-size:0.85rem;">Add a follow-up reminder</div>'
       + '<div class="form-group" style="margin-bottom:8px;"><label>Description</label><input type="text" name="description" placeholder="Check rear pads, recommend rotor service..."></div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
@@ -4536,7 +4535,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. A &ldquo;job&rdquo; is a completed service (receipt sent). Conversion rate is jobs completed out of quotes sent.</div>'
     + COLLAPSE_CLOSE;
 
-  var profileScript = '<style>'
+  var script = '<style>'
     + '@keyframes bkSavePop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}'
     + '</style>'
     + '<script>'
@@ -4577,25 +4576,82 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + 'Save</button>'
     + '</div>';
 
+  var form = '<form method="POST" action="/admin/customer/' + c.id + '/save" id="profileSaveForm">'
+    + backInput + contactCard + notesCard + vehCard + addrCard
+    + '</form>';
+
+  return {
+    s: s, recentLeadId: recentLeadId,
+    tags: tagsCard, form: form, saveBar: saveBar,
+    jobs: jobsCard, fups: fupCard, stats: statsCard, script: script
+  };
+}
+
+// Customer profile.
+router.get('/customer/:id', requireAuth, function(req, res) {
+  var c = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var name = (c.first_name + ' ' + c.last_name).trim() || 'Unnamed customer';
+
+  var sec = customerProfileSections(c, { back: '/admin/customer/' + c.id });
+  var s = sec.s;
+  var recentLeadId = sec.recentLeadId;
+
+  var alert = '';
+  if (req.query.msg === 'deleted')       alert = '<div class="alert alert-success">Customer deleted.</div>';
+  if (req.query.msg === 'created')       alert = '<div class="alert alert-success">Customer created successfully.</div>';
+  if (req.query.msg === 'saved')        alert = '<div class="alert alert-success">Saved.</div>';
+  if (req.query.msg === 'veh_added')    alert = '<div class="alert alert-success">Vehicle added.</div>';
+  if (req.query.msg === 'veh_removed')  alert = '<div class="alert alert-success">Vehicle removed.</div>';
+  if (req.query.msg === 'addr_added')   alert = '<div class="alert alert-success">Address saved.</div>';
+  if (req.query.msg === 'addr_removed') alert = '<div class="alert alert-success">Address removed.</div>';
+  if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
+  if (req.query.msg === 'contact_saved') alert = '<div class="alert alert-success">Contact info updated.</div>';
+
+  // Header — always visible: name, contact display, action buttons
+  var header = '<div class="card">'
+    + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
+    + '<div class="info-grid">'
+    + contactInfoRows(c,
+        '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
+        + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
+        + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : ''))
+    + '</div>'
+    + customerTagBadges(c.tags)
+    + contactActions(c)
+    + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
+    + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
+    + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
+    + (recentLeadId ? '<button type="button" onclick="openSection(\'cust_followups\')" class="btn btn-outline btn-sm" style="width:auto;">+ Add Follow-Up</button>' : '')
+    + '</div>'
+    + '</div>';
+
   var body = '<a href="/admin/customers" class="back-link"><span class="bk-arrow">&#8592;</span>All Customers</a>'
     + alert
     + header
-    + tagsCard
-    + '<form method="POST" action="/admin/customer/' + c.id + '/save" id="profileSaveForm">'
-    + contactCard
-    + notesCard
-    + vehCard
-    + addrCard
-    + '</form>'
-    + saveBar
-    + jobsCard
-    + fupCard
-    + statsCard
-    + profileScript
+    + sec.tags
+    + sec.form
+    + sec.saveBar
+    + sec.jobs
+    + sec.fups
+    + sec.stats
+    + sec.script
     + VEHICLE_CASCADE_JS;
 
   res.send(page(name, body, req));
 });
+
+// Redirect a customer-edit POST back to wherever the form was submitted from. When
+// the editable profile cards are embedded on a lead page they pass `back` so the
+// owner stays on the lead; otherwise we fall back to the customer profile. Only
+// internal /admin paths are honored (guards against open-redirect).
+function custEditRedirect(req, res, cid, msg) {
+  var back = (req.body.back || '').trim();
+  if (back && back.indexOf('/admin/') === 0 && back.indexOf('//') !== 0 && back.indexOf('\\') === -1) {
+    return res.redirect(back + (back.indexOf('?') >= 0 ? '&' : '?') + 'msg=' + msg);
+  }
+  return res.redirect('/admin/customer/' + cid + '?msg=' + msg);
+}
 
 router.post('/customer/:id/edit', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
@@ -4658,7 +4714,7 @@ router.post('/customer/:id/save', requireAuth, express.urlencoded({ extended: fa
     }
   }
 
-  res.redirect('/admin/customer/' + c.id + '?msg=saved');
+  custEditRedirect(req, res, c.id, 'saved');
 });
 
 router.post('/customer/:id/notes', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
@@ -4690,7 +4746,7 @@ router.post('/customer/:id/tag/add', requireAuth, express.urlencoded({ extended:
       db.prepare('UPDATE customers SET tags = ? WHERE id = ?').run(current.join(', '), c.id);
     }
   }
-  res.redirect('/admin/customer/' + c.id + '?msg=saved');
+  custEditRedirect(req, res, c.id, 'saved');
 });
 
 router.post('/customer/:id/tag/remove', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
@@ -4700,7 +4756,7 @@ router.post('/customer/:id/tag/remove', requireAuth, express.urlencoded({ extend
   var current = (c.tags || '').split(',').map(function(t) { return t.trim(); }).filter(Boolean);
   var updated = current.filter(function(t) { return t !== removeTag; });
   db.prepare('UPDATE customers SET tags = ? WHERE id = ?').run(updated.join(', ') || null, c.id);
-  res.redirect('/admin/customer/' + c.id + '?msg=saved');
+  custEditRedirect(req, res, c.id, 'saved');
 });
 
 router.post('/customer/:id/vehicle/add', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
@@ -4720,7 +4776,7 @@ router.post('/customer/:id/vehicle/add', requireAuth, express.urlencoded({ exten
 
 router.post('/customer/:id/vehicle/:vid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   db.prepare('DELETE FROM customer_vehicles WHERE id = ? AND customer_id = ?').run(req.params.vid, req.params.id);
-  res.redirect('/admin/customer/' + req.params.id + '?msg=veh_removed#vehicles');
+  custEditRedirect(req, res, req.params.id, 'veh_removed');
 });
 
 // Auto-fill source for scheduling forms: returns the customer's most recent saved
@@ -4764,7 +4820,7 @@ router.post('/customer/:id/address/add', requireAuth, express.urlencoded({ exten
 
 router.post('/customer/:id/address/:aid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
   db.prepare('DELETE FROM customer_addresses WHERE id = ? AND customer_id = ?').run(req.params.aid, req.params.id);
-  res.redirect('/admin/customer/' + req.params.id + '?msg=addr_removed');
+  custEditRedirect(req, res, req.params.id, 'addr_removed');
 });
 
 // Delete a customer and all their child records. Leads are unlinked (customer_id
@@ -4798,18 +4854,26 @@ function ownerTimeOptions(sel) {
 router.get('/appointments', requireAuth, function(req, res) {
   var today = easternToday();
 
-  var upcoming = db.prepare(
-    'SELECT l.*, q.id AS q_id, q.service AS q_service, q.total, q.pref_date, q.pref_time, q.pref_location '
+  // The appointment cards fall back to the customer profile for the service address
+  // and vehicle when the booked quote has none, so saving an address or vehicle on
+  // the profile is reflected on the card the next time this page loads. cust_addr is
+  // the most recent saved service address; cust_home_address backstops that.
+  var apptCols = 'SELECT l.*, q.id AS q_id, q.service AS q_service, q.total, q.pref_date, q.pref_time, q.pref_location, '
+    + 'cu.home_address AS cust_home_address, '
+    + "(SELECT ca.address FROM customer_addresses ca WHERE ca.customer_id = l.customer_id ORDER BY ca.id DESC LIMIT 1) AS cust_addr, "
+    + "(SELECT TRIM(COALESCE(cv.year,'') || ' ' || COALESCE(cv.make,'') || ' ' || COALESCE(cv.model,'')) FROM customer_vehicles cv WHERE cv.customer_id = l.customer_id ORDER BY cv.id DESC LIMIT 1) AS cust_vehicle "
     + 'FROM leads l '
     + 'JOIN quotes q ON q.lead_id = l.id AND q.status = \'approved\' AND q.pref_date IS NOT NULL '
+    + 'LEFT JOIN customers cu ON cu.id = l.customer_id ';
+
+  var upcoming = db.prepare(
+    apptCols
     + 'WHERE l.status = \'booked\' AND l.archived = 0 AND q.pref_date >= ? '
     + 'ORDER BY q.pref_date ASC, q.pref_time ASC'
   ).all(today);
 
   var past = db.prepare(
-    'SELECT l.*, q.id AS q_id, q.service AS q_service, q.total, q.pref_date, q.pref_time, q.pref_location '
-    + 'FROM leads l '
-    + 'JOIN quotes q ON q.lead_id = l.id AND q.status = \'approved\' AND q.pref_date IS NOT NULL '
+    apptCols
     + 'WHERE l.status = \'booked\' AND l.archived = 0 AND q.pref_date < ? '
     + 'ORDER BY q.pref_date DESC, q.pref_time DESC LIMIT 30'
   ).all(today);
@@ -4831,14 +4895,18 @@ router.get('/appointments', requireAuth, function(req, res) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
     var dateStr = fmtPrefDate(a.pref_date) + (a.pref_time ? ' at ' + a.pref_time : '');
     var tOpts = ownerTimeOptions(a.pref_time);
+    // Address + vehicle fall back to the customer profile so profile edits show here.
+    var loc = (a.pref_location || '').trim() || (a.cust_addr || '').trim() || (a.cust_home_address || '').trim();
+    var veh = (a.vehicle || '').trim() || (a.cust_vehicle || '').trim();
     return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
       + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(a.pref_date)) + '</span>'
       + '</div>'
       + '<div style="font-size:0.9rem;color:#444;margin-top:5px;">' + esc(a.q_service || 'Service TBD') + '</div>'
+      + (veh ? '<div style="font-size:0.82rem;color:#666;margin-top:2px;">' + esc(veh) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
-      + (a.pref_location ? '<div style="font-size:0.82rem;margin-top:2px;">' + mapsLink(a.pref_location, { style: 'color:#1a6fc4;font-size:0.82rem;text-decoration:none;' }) + '</div>' : '')
+      + (loc ? '<div style="font-size:0.82rem;margin-top:2px;">' + mapsLink(loc, { style: 'color:#1a6fc4;font-size:0.82rem;text-decoration:none;' }) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(a.total) + '</div>'
       + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
       + '<a href="/admin/appointments/' + a.id + '/edit" class="btn btn-sm" style="width:auto;background:#eef6ee;color:#1a7a3a;border:1px solid #b6dcc0;text-decoration:none;" onclick="event.stopPropagation();">' + ic('edit') + 'Edit</a>'
