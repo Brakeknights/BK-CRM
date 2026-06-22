@@ -198,6 +198,12 @@ addQuoteCol('discount_label',      'TEXT');
 const receiptCols = db.prepare("PRAGMA table_info(receipts)").all().map(c => c.name);
 if (!receiptCols.includes('custom_line_items')) db.exec("ALTER TABLE receipts ADD COLUMN custom_line_items TEXT");
 
+// Follow-ups: `kind` distinguishes the cron email to send. 'advisory' (default) is
+// the original receipt-advisory reminder; 'review_checkin' is the automatic one-week
+// post-service check-in that also asks for a Google review.
+const followupCols = db.prepare("PRAGMA table_info(followups)").all().map(c => c.name);
+if (!followupCols.includes('kind')) db.exec("ALTER TABLE followups ADD COLUMN kind TEXT NOT NULL DEFAULT 'advisory'");
+
 const leadCols = db.prepare("PRAGMA table_info(leads)").all().map(c => c.name);
 const addLeadCol = (name, def) => {
   if (!leadCols.includes(name)) db.exec(`ALTER TABLE leads ADD COLUMN ${name} ${def}`);

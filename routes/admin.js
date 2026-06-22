@@ -2988,6 +2988,23 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
       .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
   });
 
+  // Automatic one-week post-service check-in: a friendly "how are your brakes?"
+  // email to the customer that also asks for a Google review. Scheduled for 7 days
+  // after the service date (or today if the date is blank), only when we have an
+  // email to reach them and one isn't already queued for this lead.
+  if (lead.email) {
+    var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(lead.id);
+    if (!hasCheckin) {
+      var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+      var _p = baseDay.split('-');
+      var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
+      _dt.setUTCDate(_dt.getUTCDate() + 7);
+      var checkinDue = _dt.toISOString().slice(0, 10);
+      db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
+        .run(lead.id, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+    }
+  }
+
   // Baseline: job is done but the receipt isn't delivered yet → 'completed'
   // (this is the "needs receipt sent" state). Once the email goes out below,
   // the lead advances to the 'receipt' stage.
