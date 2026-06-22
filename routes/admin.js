@@ -469,7 +469,11 @@ const CSS = `
 --danger:#ef4444;--success:#22c55e;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray-50);min-height:100vh;color:#1a2a3a}
+/* Crisp mobile taps: touch-action:manipulation removes the iOS 300ms double-tap
+   delay and stops a quick second tap from being swallowed as a zoom gesture, so
+   every tap on a link/button/card/nav item registers on the first touch. */
+a,button,select,input,textarea,label,.nav-item,.card,.collapse-head,.back-link,.fwd-link,.btn,[onclick]{touch-action:manipulation}
+body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--gray-50);min-height:100vh;color:#1a2a3a;-webkit-text-size-adjust:100%}
 /* ── Sidebar nav ── */
 .sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;background:var(--navy);display:flex;flex-direction:column;z-index:200;transform:translateX(-100%);transition:transform .22s ease;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .sidebar.open{transform:translateX(0)}
@@ -477,9 +481,10 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .sidebar-logo img{width:26px;height:26px;border-radius:6px}
 .nav-section{padding:12px 0 4px}
 .nav-label{font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400);padding:6px 16px}
-.nav-item{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 16px;color:#cbd5e1;text-decoration:none;font-weight:500;font-size:0.92rem;border-left:3px solid transparent;transition:background .12s,color .12s}
+.nav-item{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 16px;color:#cbd5e1;text-decoration:none;font-weight:500;font-size:0.92rem;border-left:3px solid transparent;transition:background .08s,color .08s;-webkit-tap-highlight-color:transparent}
 .nav-item svg{width:22px;height:22px;flex-shrink:0}
-.nav-item:hover{background:var(--navy-mid);color:#fff}
+/* :active gives an instant press response on touch (iOS fires it on tap). */
+.nav-item:hover,.nav-item:active{background:var(--navy-mid);color:#fff}
 .nav-item.active{background:var(--navy-mid);color:#fff;border-left-color:var(--cta)}
 .nav-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;opacity:0;visibility:hidden;transition:opacity .2s}
 .nav-overlay.show{opacity:1;visibility:visible}
@@ -582,7 +587,7 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .back-link .bk-arrow{font-size:1.15rem;line-height:1;font-weight:700;margin-top:-1px}
 /* Row that holds the back button on the left and a forward/profile link on the right,
    spaced apart so they are never mistaken for each other or mis-tapped. */
-.nav-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.nav-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;position:relative;z-index:160}
 .nav-row .back-link{margin-bottom:0}
 .fwd-link{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:9px 14px;color:#1a6fc4;background:#eaf2ff;border:1px solid #b9d2ff;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.9rem;-webkit-tap-highlight-color:transparent;transition:background .12s}
 .fwd-link:hover,.fwd-link:active{background:#d8e8ff}
