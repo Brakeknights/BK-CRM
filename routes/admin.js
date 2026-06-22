@@ -976,6 +976,10 @@ function page(title, body, req) {
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
     + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
+    // The lead Customer Information card (contact + Send Receipt / Book Appointment)
+    // is the primary card, so it opens by default unless the owner explicitly closed
+    // it. Keeps the Send Receipt button visible and tappable without an extra tap.
+    + '(function(){try{var el=document.querySelector(".collapse[data-ckey=\\"cust\\"]");if(el&&localStorage.getItem("bkc_cust")!=="0")el.classList.remove("collapsed");}catch(e){}})();'
     // Keep the Build Quote section open after toggling Edit/New (those links reload the page with ?bq=1).
     + '(function(){try{if(/[?&]bq=1(&|$)/.test(location.search)){var el=document.querySelector(".collapse[data-ckey=\\"buildquote\\"]");if(el)el.classList.remove("collapsed");}}catch(e){}})();'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
