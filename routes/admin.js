@@ -8,6 +8,7 @@ const { sendStagePush } = require('../push');
 const PRICING = require('../pricing');
 const { client: squareClient } = require('../square');
 const { toEasternRfc3339 } = require('../datetime');
+const backup = require('../backup');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'brakeknights';
 
@@ -6956,5 +6957,25 @@ router.post('/settings/pricing/classify-unknown', requireAuth, express.json(), f
   } catch (err) { res.json({ ok: false, error: err.message }); }
 });
 router.get('/settings/templates', requireAuth, function(req, res) { placeholderPage(req, res, 'Templates', 'an upcoming phase'); });
+
+// ─── Database backup (Rule #1) ────────────────────────────────────────────────
+// Status + on-demand trigger for the off-server encrypted DB backup. Both behind
+// requireAuth. Never returns secrets, only config state and result metadata.
+router.get('/backup/status', requireAuth, function(req, res) {
+  res.json(backup.getStatus());
+});
+
+router.post('/backup/run', requireAuth, function(req, res) {
+  backup.runBackup()
+    .then(function(r) { res.json(r); })
+    .catch(function(err) { res.status(500).json({ ok: false, error: err.message }); });
+});
+
+// Restore drill: download + decrypt the newest backup and integrity-check it.
+router.get('/backup/verify', requireAuth, function(req, res) {
+  backup.verifyLatest()
+    .then(function(r) { res.json(r); })
+    .catch(function(err) { res.status(500).json({ ok: false, error: err.message }); });
+});
 
 module.exports = router;

@@ -5,6 +5,7 @@ const nodemailer = require('nodemailer');
 const { sendPush, sendNewLeadPush } = require('./push');
 const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 const { syncAllSquareCustomers } = require('./square-sync');
+const { safeRunBackup } = require('./backup');
 const { toEasternRfc3339 } = require('./datetime');
 const db = require('./db');
 const customers = require('./customers');
@@ -718,3 +719,10 @@ function runSquareAutoSync() {
 }
 setTimeout(runSquareAutoSync, 60 * 1000);            // first run ~1 min after boot
 setInterval(runSquareAutoSync, 6 * 60 * 60 * 1000);  // then every 6 hours
+
+// ─── Off-server database backups (Rule #1) ────────────────────────────────────
+// Encrypted snapshot of the customer database uploaded to a private cloud bucket.
+// Dormant no-op until BACKUP_ENABLED=true and the backup env vars are set (see
+// backup.js). Runs a few minutes after boot, then once every 24 hours.
+setTimeout(safeRunBackup, 3 * 60 * 1000);             // first run ~3 min after boot
+setInterval(safeRunBackup, 24 * 60 * 60 * 1000);     // then daily
