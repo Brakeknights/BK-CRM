@@ -600,9 +600,10 @@ function followupCustomerEmail(f) {
 }
 
 // Automatic one-week post-service check-in. Friendly "how are your brakes?" note
-// that also invites a Google review. The review link is the same one used across
-// the public site (the business's Google profile).
-var GOOGLE_REVIEW_URL = 'https://maps.google.com/?cid=3040088321757718744';
+// that also invites a Google review. The review link is the business's official
+// Google "review form" short link (opens the write-a-review screen directly on a
+// signed-in device). Overridable via env so it can change without a code deploy.
+var GOOGLE_REVIEW_URL = process.env.GOOGLE_REVIEW_URL || 'https://g.page/r/CdioLrg4kDAqEAE/review';
 function reviewCheckinEmail(f) {
   function e(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
