@@ -636,6 +636,8 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .push-btn.on{color:#1a7a3a}
 .push-btn.unsupported{color:#94a3b8}
 .nav-new-badge{background:#e07000;color:#fff;font-size:0.6rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;margin-left:auto;flex-shrink:0}
+/* Top loading bar for instant-feel client-side navigation (see bkBoost). */
+#navProgress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--cta);z-index:9999;opacity:0;transition:width .2s ease,opacity .25s ease;box-shadow:0 0 6px rgba(65,105,225,.6);pointer-events:none}
 /* ── Receipts filing cabinet ── */
 .file-tray{background:var(--navy);border-radius:12px;padding:18px 18px 16px;margin-bottom:18px;color:#fff}
 .file-tray.clear{background:#fff;border:1px solid var(--gray-200);color:#1a2a3a;text-align:center;padding:26px 18px}
@@ -1002,9 +1004,10 @@ function page(title, body, req) {
 
   return head
     + '<body>'
+    + '<div id="navProgress"></div>'
     + '<div id="navOverlay" class="nav-overlay" onclick="closeNav()"></div>'
     + sidebar
-    + '<div class="app">' + appbar + '<main class="content">' + body + '</main></div>'
+    + '<div class="app">' + appbar + '<main class="content" id="appMain">' + body + '</main></div>'
     + '<div id="deleteModal"><div id="deleteModalBox">'
     + '<div id="deleteModalTitle">' + ic('trash') + 'Permanently Delete Lead?</div>'
     + '<div id="deleteModalName"></div>'
@@ -1015,16 +1018,8 @@ function page(title, body, req) {
     + '</div></div></div>'
     + '<script>'
     + 'function fmtPhoneInput(el){var v=el.value.replace(/\\D/g,"");if(v.length===11&&v.charAt(0)==="1")v=v.slice(1);v=v.slice(0,10);if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);else if(v.length>=4)v=v.slice(0,3)+"-"+v.slice(3);el.value=v;}'
-    + 'document.querySelectorAll("input[type=\'tel\']").forEach(function(el){if(el.value)fmtPhoneInput(el);});'
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
-    + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
-    // The lead Customer Information card (contact + Send Receipt / Book Appointment)
-    // is the primary card, so it opens by default unless the owner explicitly closed
-    // it. Keeps the Send Receipt button visible and tappable without an extra tap.
-    + '(function(){try{var el=document.querySelector(".collapse[data-ckey=\\"cust\\"]");if(el&&localStorage.getItem("bkc_cust")!=="0")el.classList.remove("collapsed");}catch(e){}})();'
-    // Keep the Build Quote section open after toggling Edit/New (those links reload the page with ?bq=1).
-    + '(function(){try{if(/[?&]bq=1(&|$)/.test(location.search)){var el=document.querySelector(".collapse[data-ckey=\\"buildquote\\"]");if(el)el.classList.remove("collapsed");}}catch(e){}})();'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
     + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
     + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
@@ -1109,10 +1104,18 @@ function page(title, body, req) {
     +   'restore();'
     + '};'
     + 'window.bkClearDraft=function(key){try{localStorage.removeItem("bkdraft_"+key);}catch(_){}};'
-    // Auto-init: any form tagged data-autosave is wired here (this runs at end of body,
-    // so every form and its helper scripts are already defined). An optional
-    // data-autosave-after names a global finalizer the form's own script defines.
-    + '(function(){try{document.querySelectorAll("form[data-autosave]").forEach(function(f){var fn=f.getAttribute("data-autosave-after");var after=(fn&&window[fn])?window[fn]:null;bkAutosave(f,f.getAttribute("data-autosave"),after);});}catch(_){}})();'
+    // Per-page init that must re-run after each client-side content swap (see bkBoost):
+    // phone formatting, collapsed-section restore, the lead Customer Info card opening
+    // by default, the ?bq=1 Build Quote opener, and autosave wiring for any
+    // data-autosave form. Safe to call repeatedly (idempotent).
+    + 'window.bkInitPage=function(){'
+    +   'try{document.querySelectorAll("input[type=\'tel\']").forEach(function(el){if(el.value)fmtPhoneInput(el);});}catch(_){}'
+    +   'try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(_){}'
+    +   'try{var ce=document.querySelector(".collapse[data-ckey=\\"cust\\"]");if(ce&&localStorage.getItem("bkc_cust")!=="0")ce.classList.remove("collapsed");}catch(_){}'
+    +   'try{if(/[?&]bq=1(&|$)/.test(location.search)){var be=document.querySelector(".collapse[data-ckey=\\"buildquote\\"]");if(be)be.classList.remove("collapsed");}}catch(_){}'
+    +   'try{document.querySelectorAll("form[data-autosave]").forEach(function(f){if(f.getAttribute("data-autosaved"))return;f.setAttribute("data-autosaved","1");var fn=f.getAttribute("data-autosave-after");var after=(fn&&window[fn])?window[fn]:null;bkAutosave(f,f.getAttribute("data-autosave"),after);});}catch(_){}'
+    + '};'
+    + 'bkInitPage();'
     // Idle guard: auto-log-out after 30 min of no interaction, and verify the session
     // the instant the tab regains focus after being away. This is the safety net for
     // "I came back hours later" — instead of letting a stale form attempt an action
@@ -1129,6 +1132,55 @@ function page(title, body, req) {
     +       'if(!d||!d.authed){window.location.href="/admin/login?error=expired";}else{reset();}'
     +     '}).catch(function(){});'
     +   '});'
+    + '})();'
+    // ── bkBoost: instant client-side navigation ──────────────────────────────
+    // Intercepts same-origin /admin link clicks and swaps just the <main> content
+    // instead of reloading the whole page, so switching tabs feels instant (no
+    // white flash, no shell re-parse). Re-executes the new page scripts and re-runs
+    // bkInitPage(). Forms, logout, downloads, external/new-tab links, and modifier
+    // clicks are left as normal navigations. Any failure falls back to a full load.
+    + '(function(){'
+    +   'if(!window.history||!window.history.pushState||!window.fetch||!window.DOMParser)return;'
+    +   'var main=document.getElementById("appMain");if(!main)return;'
+    +   'var bar=document.getElementById("navProgress");var busy=false;'
+    +   'function prog(p){if(!bar)return;if(p<=0){bar.style.opacity="0";bar.style.width="0";}else{bar.style.opacity="1";bar.style.width=p+"%";}}'
+    +   'function execScripts(root){var ss=root.querySelectorAll("script");for(var i=0;i<ss.length;i++){var old=ss[i];var s=document.createElement("script");for(var j=0;j<old.attributes.length;j++){s.setAttribute(old.attributes[j].name,old.attributes[j].value);}s.textContent=old.textContent;old.parentNode.replaceChild(s,old);}}'
+    +   'function setActive(doc){try{var da=doc.querySelector(".nav-item.active");var href=da?da.getAttribute("href"):null;var items=document.querySelectorAll(".nav-item");for(var i=0;i<items.length;i++){items[i].classList.toggle("active",!!href&&items[i].getAttribute("href")===href);}}catch(_){}}'
+    +   'function navigate(url,push){if(busy)return;busy=true;prog(25);'
+    +     'fetch(url,{headers:{"X-Requested-With":"fetch"},credentials:"same-origin"}).then(function(r){'
+    +       'if(r.redirected&&/\\/admin\\/login/.test(r.url))throw new Error("auth");'
+    +       'if(!r.ok)throw new Error("status");'
+    +       'return r.text();'
+    +     '}).then(function(html){'
+    +       'prog(70);'
+    +       'var doc=new DOMParser().parseFromString(html,"text/html");'
+    +       'var nm=doc.getElementById("appMain");if(!nm)throw new Error("nomain");'
+    +       'if(doc.title)document.title=doc.title;'
+    +       'var nt=doc.querySelector(".appbar-title"),ct=document.querySelector(".appbar-title");if(nt&&ct)ct.textContent=nt.textContent;'
+    +       'setActive(doc);'
+    +       'main.innerHTML=nm.innerHTML;'
+    +       'execScripts(main);'
+    +       'if(window.bkInitPage)bkInitPage();'
+    +       'window.scrollTo(0,0);'
+    +       'if(push)history.pushState({bk:1},"",url);'
+    +       'prog(100);setTimeout(function(){prog(0);},250);busy=false;'
+    +     '}).catch(function(){busy=false;prog(0);window.location.href=url;});'
+    +   '}'
+    +   'document.addEventListener("click",function(e){'
+    +     'if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;'
+    +     'var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;'
+    +     'if(a.hasAttribute("download")||a.hasAttribute("data-noswap"))return;'
+    +     'var tgt=a.getAttribute("target");if(tgt&&tgt!=="_self")return;'
+    +     'var href=a.getAttribute("href");if(!href||href.charAt(0)==="#")return;'
+    +     'var u;try{u=new URL(a.href,location.href);}catch(_){return;}'
+    +     'if(u.origin!==location.origin)return;'
+    +     'if(u.pathname.indexOf("/admin")!==0)return;'
+    +     'if(/\\/admin\\/logout/.test(u.pathname))return;'
+    +     'e.preventDefault();'
+    +     'if(typeof closeNav==="function")closeNav();'
+    +     'navigate(u.pathname+u.search,true);'
+    +   '},false);'
+    +   'window.addEventListener("popstate",function(){navigate(location.pathname+location.search,false);});'
     + '})();'
     + '</script>'
     + '</body></html>';
