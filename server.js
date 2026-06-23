@@ -599,6 +599,31 @@ function followupCustomerEmail(f) {
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div></div>';
 }
 
+// Automatic one-week post-service check-in. Friendly "how are your brakes?" note
+// that also invites a Google review. The review link is the business's official
+// Google "review form" short link (opens the write-a-review screen directly on a
+// signed-in device). Overridable via env so it can change without a code deploy.
+var GOOGLE_REVIEW_URL = process.env.GOOGLE_REVIEW_URL || 'https://g.page/r/CdioLrg4kDAqEAE/review';
+function reviewCheckinEmail(f) {
+  function e(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
+    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
+    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service, Northern Virginia</p></div>'
+    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+    + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Hi ' + e(f.first_name) + ',</h2>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 16px;">It has been about a week since we serviced your brakes' + (f.vehicle ? ' on your <strong>' + e(f.vehicle) + '</strong>' : '') + '. We wanted to check in and make sure everything still feels right. Your brakes should be quiet and smooth, with firm, steady stops.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">If anything feels off, just reply to this email or call or text us at <a href="tel:7039774475" style="color:#1a6fc4;text-decoration:none;">703-977-4475</a> and we will come back out to take a look.</p>'
+    + '<div style="background:#f4f7fb;border:1px solid #dde7f2;border-radius:8px;padding:22px;text-align:center;">'
+    + '<p style="color:#0a1f3d;font-weight:700;margin:0 0 6px;font-size:1rem;">Happy with the work?</p>'
+    + '<p style="color:#555;line-height:1.6;margin:0 0 16px;font-size:0.92rem;">We are a small local team, and a quick Google review genuinely helps other drivers in the area find us.</p>'
+    + '<a href="' + GOOGLE_REVIEW_URL + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.98rem;text-decoration:none;padding:13px 30px;border-radius:8px;">Leave us a Google review</a>'
+    + '</div>'
+    + '<p style="color:#444;line-height:1.6;margin:22px 0 0;">Thanks for trusting Brake Knights with your vehicle.<br>The Brake Knights Team</p>'
+    + '</div>'
+    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div></div>';
+}
+
 setInterval(function() {
   if (!process.env.SMTP_PASS) return;
 
@@ -632,16 +657,45 @@ setInterval(function() {
       }).catch(function(err) { console.error('Follow-up owner email error:', err.message); });
     }
     if (toCustomer) {
+      var isCheckin = f.kind === 'review_checkin';
       transporter.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      f.lead_email,
         replyTo: 'greetings@brakeknights.com',
-        subject: 'A reminder from Brake Knights',
-        html:    followupCustomerEmail(f)
+        subject: isCheckin ? 'How are your brakes? A quick check-in from Brake Knights' : 'A reminder from Brake Knights',
+        html:    isCheckin ? reviewCheckinEmail(f) : followupCustomerEmail(f)
       }).catch(function(err) { console.error('Follow-up customer email error:', err.message); });
     }
   });
 }, 6 * 60 * 60 * 1000); // check every 6 hours
+
+// ─── Month-end receipt filing ─────────────────────────────────────────────────
+// At the turn of each month, automatically "file" the prior month's receipts:
+// archive their leads out of the active pipeline and stamp each receipt filed, so
+// the Receipt Sent list stays clean and fresh. The /admin/receipts cabinet still
+// shows them, organized by month. Self-healing: only ever touches still-loose
+// receipts whose month has already ended. Runs ~2 min after boot, then every 6h.
+function runMonthlyReceiptFiling() {
+  try {
+    var curMonth = new Date().toISOString().slice(0, 7);
+    var loose = db.prepare(
+      "SELECT DISTINCT l.id AS lead_id FROM receipts r JOIN leads l ON l.id = r.lead_id "
+      + "WHERE r.sent_at IS NOT NULL AND r.filed_at IS NULL AND l.status = 'receipt' AND l.archived = 0 "
+      + "AND substr(r.sent_at, 1, 7) < ?"
+    ).all(curMonth);
+    if (!loose.length) return;
+    var filed = 0;
+    loose.forEach(function(row) {
+      var rs = db.prepare("UPDATE receipts SET filed_at = datetime('now') WHERE lead_id = ? AND filed_at IS NULL AND sent_at IS NOT NULL").run(row.lead_id);
+      filed += rs.changes;
+      db.prepare("UPDATE leads SET archived = 1, archived_at = datetime('now') WHERE id = ?").run(row.lead_id);
+      db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Receipt filed', 'Auto-filed at month close')").run(row.lead_id);
+    });
+    if (filed) console.log('[receipt-filing] filed ' + filed + ' receipt(s) from prior months');
+  } catch (err) { console.error('[receipt-filing] error:', err.message); }
+}
+setTimeout(runMonthlyReceiptFiling, 2 * 60 * 1000);
+setInterval(runMonthlyReceiptFiling, 6 * 60 * 60 * 1000);
 
 // ─── Square auto-sync ─────────────────────────────────────────────────────────
 // Pulls new customers added directly in Square (not through BK Admin) into the

@@ -636,6 +636,48 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .push-btn.on{color:#1a7a3a}
 .push-btn.unsupported{color:#94a3b8}
 .nav-new-badge{background:#e07000;color:#fff;font-size:0.6rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;margin-left:auto;flex-shrink:0}
+/* Top loading bar for instant-feel client-side navigation (see bkBoost). */
+#navProgress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--cta);z-index:9999;opacity:0;transition:width .2s ease,opacity .25s ease;box-shadow:0 0 6px rgba(65,105,225,.6);pointer-events:none}
+/* ── Receipts filing cabinet ── */
+.file-tray{background:var(--navy);border-radius:12px;padding:18px 18px 16px;margin-bottom:18px;color:#fff}
+.file-tray.clear{background:#fff;border:1px solid var(--gray-200);color:#1a2a3a;text-align:center;padding:26px 18px}
+.file-tray-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between}
+.file-tray-ttl{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:9px}
+.file-tray-ttl svg{width:22px;height:22px;flex-shrink:0}
+.file-tray-sub{font-size:0.84rem;color:#9db4cf;margin-top:3px}
+.file-btn{background:var(--cta);color:#fff;border:none;border-radius:9px;padding:12px 20px;font-weight:700;font-size:0.92rem;min-height:44px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;-webkit-tap-highlight-color:transparent;white-space:nowrap}
+.file-btn:active{background:var(--cta-hover)}
+.file-clear-ic{color:#1a7a3a;display:inline-flex;margin-bottom:8px}
+.file-clear-ic svg{width:40px;height:40px}
+/* Folder = one month. Tabbed top edge drawn with a pseudo element. */
+.folder{position:relative;background:#fff;border:1px solid var(--gray-200);border-radius:4px 12px 12px 12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.folder::before{content:"";position:absolute;top:-7px;left:0;width:96px;height:9px;background:#fff;border:1px solid var(--gray-200);border-bottom:none;border-radius:7px 7px 0 0}
+.folder-head{width:100%;display:flex;align-items:center;gap:11px;background:none;border:none;cursor:pointer;padding:15px 16px;min-height:52px;font-family:inherit;text-align:left;-webkit-tap-highlight-color:transparent}
+.folder-head .fi{color:var(--cta);display:inline-flex;flex-shrink:0}
+.folder-head .fi svg{width:24px;height:24px}
+.folder-month{display:block;font-size:0.97rem;font-weight:700;color:#0a1f3d}
+.folder-meta{display:block;font-size:0.8rem;color:var(--gray-400);margin-top:1px}
+.folder-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.folder-total{font-size:0.97rem;font-weight:700;color:#0a1f3d}
+.folder-chev{width:18px;height:18px;color:var(--gray-400);transition:transform .18s}
+.folder.collapsed .folder-chev{transform:rotate(-90deg)}
+.folder-body{padding:0 12px 10px}
+.folder.collapsed .folder-body{display:none}
+.rrow{display:flex;align-items:center;gap:10px;padding:11px 6px;border-top:1px solid var(--gray-100);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.rrow:active{background:var(--gray-50)}
+.rrow-main{min-width:0;flex:1}
+.rrow-name{font-size:0.9rem;font-weight:600;color:#0a1f3d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow-sub{font-size:0.78rem;color:var(--gray-600);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow-right{text-align:right;flex-shrink:0}
+.rrow-amt{font-size:0.92rem;font-weight:700;color:#0a1f3d}
+.rrow-date{font-size:0.74rem;color:var(--gray-400);margin-top:2px}
+.rrow .unfiled{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--cta);flex-shrink:0}
+/* Satisfying "swept into the cabinet" confirmation after filing. */
+.file-done{background:#eef6ee;border:1px solid #b6dcc0;color:#1a7a3a;border-radius:10px;padding:13px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-weight:600;font-size:0.92rem;animation:fileDone .5s ease}
+.file-done svg{width:22px;height:22px;flex-shrink:0}
+@keyframes fileDone{0%{opacity:0;transform:translateY(-8px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes folderDrop{0%{opacity:0;transform:translateY(-14px) scale(.98)}60%{transform:translateY(2px) scale(1.005)}100%{opacity:1;transform:translateY(0) scale(1)}}
+.folder.just-filed{animation:folderDrop .55s cubic-bezier(.2,.8,.3,1)}
 `;
 
 // Heroicons (outline, 1.5px stroke). Inline so the admin stays dependency-free
@@ -658,6 +700,9 @@ var ICON_PATHS = {
   envelope:    '<path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/>',
   trash:       '<path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>',
   archive:     '<path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>',
+  folder:      '<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"/>',
+  check:       '<path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>',
+  'check-circle': '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>',
   user:        '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>',
   calendar:    '<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"/>',
   edit:        '<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"/>',
@@ -959,9 +1004,10 @@ function page(title, body, req) {
 
   return head
     + '<body>'
+    + '<div id="navProgress"></div>'
     + '<div id="navOverlay" class="nav-overlay" onclick="closeNav()"></div>'
     + sidebar
-    + '<div class="app">' + appbar + '<main class="content">' + body + '</main></div>'
+    + '<div class="app">' + appbar + '<main class="content" id="appMain">' + body + '</main></div>'
     + '<div id="deleteModal"><div id="deleteModalBox">'
     + '<div id="deleteModalTitle">' + ic('trash') + 'Permanently Delete Lead?</div>'
     + '<div id="deleteModalName"></div>'
@@ -972,16 +1018,8 @@ function page(title, body, req) {
     + '</div></div></div>'
     + '<script>'
     + 'function fmtPhoneInput(el){var v=el.value.replace(/\\D/g,"");if(v.length===11&&v.charAt(0)==="1")v=v.slice(1);v=v.slice(0,10);if(v.length>=7)v=v.slice(0,3)+"-"+v.slice(3,6)+"-"+v.slice(6);else if(v.length>=4)v=v.slice(0,3)+"-"+v.slice(3);el.value=v;}'
-    + 'document.querySelectorAll("input[type=\'tel\']").forEach(function(el){if(el.value)fmtPhoneInput(el);});'
     + 'function toggleCollapse(btn){var el=btn.closest(".collapse");if(!el)return;el.classList.toggle("collapsed");try{localStorage.setItem("bkc_"+el.getAttribute("data-ckey"),el.classList.contains("collapsed")?"0":"1");}catch(e){}}'
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
-    + '(function(){try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(e){}})();'
-    // The lead Customer Information card (contact + Send Receipt / Book Appointment)
-    // is the primary card, so it opens by default unless the owner explicitly closed
-    // it. Keeps the Send Receipt button visible and tappable without an extra tap.
-    + '(function(){try{var el=document.querySelector(".collapse[data-ckey=\\"cust\\"]");if(el&&localStorage.getItem("bkc_cust")!=="0")el.classList.remove("collapsed");}catch(e){}})();'
-    // Keep the Build Quote section open after toggling Edit/New (those links reload the page with ?bq=1).
-    + '(function(){try{if(/[?&]bq=1(&|$)/.test(location.search)){var el=document.querySelector(".collapse[data-ckey=\\"buildquote\\"]");if(el)el.classList.remove("collapsed");}}catch(e){}})();'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
     + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
     + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
@@ -1066,10 +1104,18 @@ function page(title, body, req) {
     +   'restore();'
     + '};'
     + 'window.bkClearDraft=function(key){try{localStorage.removeItem("bkdraft_"+key);}catch(_){}};'
-    // Auto-init: any form tagged data-autosave is wired here (this runs at end of body,
-    // so every form and its helper scripts are already defined). An optional
-    // data-autosave-after names a global finalizer the form's own script defines.
-    + '(function(){try{document.querySelectorAll("form[data-autosave]").forEach(function(f){var fn=f.getAttribute("data-autosave-after");var after=(fn&&window[fn])?window[fn]:null;bkAutosave(f,f.getAttribute("data-autosave"),after);});}catch(_){}})();'
+    // Per-page init that must re-run after each client-side content swap (see bkBoost):
+    // phone formatting, collapsed-section restore, the lead Customer Info card opening
+    // by default, the ?bq=1 Build Quote opener, and autosave wiring for any
+    // data-autosave form. Safe to call repeatedly (idempotent).
+    + 'window.bkInitPage=function(){'
+    +   'try{document.querySelectorAll("input[type=\'tel\']").forEach(function(el){if(el.value)fmtPhoneInput(el);});}catch(_){}'
+    +   'try{var els=document.querySelectorAll(".collapse");for(var i=0;i<els.length;i++){var v=localStorage.getItem("bkc_"+els[i].getAttribute("data-ckey"));if(v==="0")els[i].classList.add("collapsed");}}catch(_){}'
+    +   'try{var ce=document.querySelector(".collapse[data-ckey=\\"cust\\"]");if(ce&&localStorage.getItem("bkc_cust")!=="0")ce.classList.remove("collapsed");}catch(_){}'
+    +   'try{if(/[?&]bq=1(&|$)/.test(location.search)){var be=document.querySelector(".collapse[data-ckey=\\"buildquote\\"]");if(be)be.classList.remove("collapsed");}}catch(_){}'
+    +   'try{document.querySelectorAll("form[data-autosave]").forEach(function(f){if(f.getAttribute("data-autosaved"))return;f.setAttribute("data-autosaved","1");var fn=f.getAttribute("data-autosave-after");var after=(fn&&window[fn])?window[fn]:null;bkAutosave(f,f.getAttribute("data-autosave"),after);});}catch(_){}'
+    + '};'
+    + 'bkInitPage();'
     // Idle guard: auto-log-out after 30 min of no interaction, and verify the session
     // the instant the tab regains focus after being away. This is the safety net for
     // "I came back hours later" — instead of letting a stale form attempt an action
@@ -1086,6 +1132,55 @@ function page(title, body, req) {
     +       'if(!d||!d.authed){window.location.href="/admin/login?error=expired";}else{reset();}'
     +     '}).catch(function(){});'
     +   '});'
+    + '})();'
+    // ── bkBoost: instant client-side navigation ──────────────────────────────
+    // Intercepts same-origin /admin link clicks and swaps just the <main> content
+    // instead of reloading the whole page, so switching tabs feels instant (no
+    // white flash, no shell re-parse). Re-executes the new page scripts and re-runs
+    // bkInitPage(). Forms, logout, downloads, external/new-tab links, and modifier
+    // clicks are left as normal navigations. Any failure falls back to a full load.
+    + '(function(){'
+    +   'if(!window.history||!window.history.pushState||!window.fetch||!window.DOMParser)return;'
+    +   'var main=document.getElementById("appMain");if(!main)return;'
+    +   'var bar=document.getElementById("navProgress");var busy=false;'
+    +   'function prog(p){if(!bar)return;if(p<=0){bar.style.opacity="0";bar.style.width="0";}else{bar.style.opacity="1";bar.style.width=p+"%";}}'
+    +   'function execScripts(root){var ss=root.querySelectorAll("script");for(var i=0;i<ss.length;i++){var old=ss[i];var s=document.createElement("script");for(var j=0;j<old.attributes.length;j++){s.setAttribute(old.attributes[j].name,old.attributes[j].value);}s.textContent=old.textContent;old.parentNode.replaceChild(s,old);}}'
+    +   'function setActive(doc){try{var da=doc.querySelector(".nav-item.active");var href=da?da.getAttribute("href"):null;var items=document.querySelectorAll(".nav-item");for(var i=0;i<items.length;i++){items[i].classList.toggle("active",!!href&&items[i].getAttribute("href")===href);}}catch(_){}}'
+    +   'function navigate(url,push){if(busy)return;busy=true;prog(25);'
+    +     'fetch(url,{headers:{"X-Requested-With":"fetch"},credentials:"same-origin"}).then(function(r){'
+    +       'if(r.redirected&&/\\/admin\\/login/.test(r.url))throw new Error("auth");'
+    +       'if(!r.ok)throw new Error("status");'
+    +       'return r.text();'
+    +     '}).then(function(html){'
+    +       'prog(70);'
+    +       'var doc=new DOMParser().parseFromString(html,"text/html");'
+    +       'var nm=doc.getElementById("appMain");if(!nm)throw new Error("nomain");'
+    +       'if(doc.title)document.title=doc.title;'
+    +       'var nt=doc.querySelector(".appbar-title"),ct=document.querySelector(".appbar-title");if(nt&&ct)ct.textContent=nt.textContent;'
+    +       'setActive(doc);'
+    +       'main.innerHTML=nm.innerHTML;'
+    +       'execScripts(main);'
+    +       'if(window.bkInitPage)bkInitPage();'
+    +       'window.scrollTo(0,0);'
+    +       'if(push)history.pushState({bk:1},"",url);'
+    +       'prog(100);setTimeout(function(){prog(0);},250);busy=false;'
+    +     '}).catch(function(){busy=false;prog(0);window.location.href=url;});'
+    +   '}'
+    +   'document.addEventListener("click",function(e){'
+    +     'if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;'
+    +     'var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;'
+    +     'if(a.hasAttribute("download")||a.hasAttribute("data-noswap"))return;'
+    +     'var tgt=a.getAttribute("target");if(tgt&&tgt!=="_self")return;'
+    +     'var href=a.getAttribute("href");if(!href||href.charAt(0)==="#")return;'
+    +     'var u;try{u=new URL(a.href,location.href);}catch(_){return;}'
+    +     'if(u.origin!==location.origin)return;'
+    +     'if(u.pathname.indexOf("/admin")!==0)return;'
+    +     'if(/\\/admin\\/logout/.test(u.pathname))return;'
+    +     'e.preventDefault();'
+    +     'if(typeof closeNav==="function")closeNav();'
+    +     'navigate(u.pathname+u.search,true);'
+    +   '},false);'
+    +   'window.addEventListener("popstate",function(){navigate(location.pathname+location.search,false);});'
     + '})();'
     + '</script>'
     + '</body></html>';
@@ -2702,16 +2797,30 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     || {};
 
   var service   = quote.service || lead.service || '';
-  // Try structured vehicle from customer_vehicles; fall back to parsing lead.vehicle string.
-  var rcVehData = lead.customer_id
-    ? (db.prepare('SELECT year, make, model FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(lead.customer_id) || null)
-    : null;
-  if (!rcVehData && lead.vehicle) {
+  // The receipt must reflect THIS lead's vehicle, not whatever car was most
+  // recently added to the customer profile (a customer can own several). Prefer
+  // the lead's own vehicle string; when set, upgrade it to the matching structured
+  // customer_vehicles row (for canonical year/make/model + VIN) only if that row's
+  // make matches. Fall back to the customer's most-recent vehicle ONLY when the
+  // lead itself has no vehicle on file.
+  var rcVehData = null;
+  if (lead.vehicle && lead.vehicle.trim()) {
     var _vp = lead.vehicle.trim().split(/\s+/);
     var _yr = /^(19|20)\d{2}$/.test(_vp[0]) ? _vp.shift() : '';
     var _mk = _vp.length > 1 ? _vp.shift() : (_vp[0] || '');
     var _mo = _vp.length > 0 ? _vp.join(' ') : '';
     rcVehData = { year: _yr, make: _mk, model: _mo };
+    if (lead.customer_id && _mk) {
+      var _vmatch = db.prepare(
+        "SELECT year, make, model, vin FROM customer_vehicles WHERE customer_id = ? "
+        + "AND LOWER(IFNULL(make,'')) = LOWER(?) "
+        + "AND (LOWER(IFNULL(model,'')) = LOWER(?) OR ? = '') "
+        + "ORDER BY id DESC LIMIT 1"
+      ).get(lead.customer_id, _mk, _mo, _mo);
+      if (_vmatch) rcVehData = _vmatch;
+    }
+  } else if (lead.customer_id) {
+    rcVehData = db.prepare('SELECT year, make, model, vin FROM customer_vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1').get(lead.customer_id) || null;
   }
   rcVehData = rcVehData || {};
   // Prefer the chosen quote's location; otherwise pull the most recent service
@@ -2973,6 +3082,23 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
       .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
   });
+
+  // Automatic one-week post-service check-in: a friendly "how are your brakes?"
+  // email to the customer that also asks for a Google review. Scheduled for 7 days
+  // after the service date (or today if the date is blank), only when we have an
+  // email to reach them and one isn't already queued for this lead.
+  if (lead.email) {
+    var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(lead.id);
+    if (!hasCheckin) {
+      var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+      var _p = baseDay.split('-');
+      var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
+      _dt.setUTCDate(_dt.getUTCDate() + 7);
+      var checkinDue = _dt.toISOString().slice(0, 10);
+      db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
+        .run(lead.id, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+    }
+  }
 
   // Baseline: job is done but the receipt isn't delivered yet → 'completed'
   // (this is the "needs receipt sent" state). Once the email goes out below,
@@ -6297,10 +6423,22 @@ router.get('/reports/services', requireAuth, function(req, res) {
 });
 
 // ─── Placeholder pages for not-yet-built sidebar items ────────────────────────
+var MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function monthLabel(ym) {
+  var p = String(ym || '').split('-');
+  if (p.length < 2) return ym || '';
+  return (MONTH_NAMES[(+p[1]) - 1] || '') + ' ' + p[0];
+}
+// A receipt is "loose" (still on the desk, clogging the pipeline) when its lead is
+// in the Receipt Sent stage and hasn't been archived/filed yet.
+function isLooseReceipt(r) {
+  return !r.filed_at && r.lead_status === 'receipt' && !r.lead_archived;
+}
+
 router.get('/receipts', requireAuth, function(req, res) {
   var rows = db.prepare(
-    "SELECT r.id, r.lead_id, r.service, r.vehicle, r.service_date, r.total, r.payment_method, r.sent_at, "
-    + "l.first_name, l.last_name, l.email "
+    "SELECT r.id, r.lead_id, r.service, r.vehicle, r.service_date, r.total, r.payment_method, r.sent_at, r.filed_at, "
+    + "l.first_name, l.last_name, l.email, l.status AS lead_status, l.archived AS lead_archived "
     + "FROM receipts r LEFT JOIN leads l ON l.id = r.lead_id "
     + "WHERE r.sent_at IS NOT NULL "
     + "ORDER BY r.sent_at DESC"
@@ -6308,71 +6446,144 @@ router.get('/receipts', requireAuth, function(req, res) {
 
   var totalRevenue = rows.reduce(function(s, r) { return s + (r.total || 0); }, 0);
   var totalCount   = rows.length;
-  var now = new Date();
-  var monthPfx = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  var thisMonthRows = rows.filter(function(r) { return (r.sent_at || '').slice(0, 7) === monthPfx; });
-  var thisMonthRev  = thisMonthRows.reduce(function(s, r) { return s + (r.total || 0); }, 0);
+  var curMonth = easternToday().slice(0, 7);
 
-  var cards = rows.length === 0
-    ? '<div class="empty" id="rcptEmpty"><div style="margin-bottom:10px;">' + icon('document') + '</div>No receipts sent yet.</div>'
-    : '<div id="rcptEmpty" style="display:none;padding:32px;text-align:center;color:#888;">No receipts match your search.</div>'
-      + rows.map(function(r) {
-          var name = ((r.first_name || '') + ' ' + (r.last_name || '')).trim() || 'Unknown customer';
-          var searchText = (name + ' ' + (r.service || '') + ' ' + (r.vehicle || '') + ' ' + (r.email || '')).toLowerCase();
-          var dateStr = r.service_date || (r.sent_at || '').slice(0, 10);
-          var svcs = (r.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-          return '<div class="card rcpt-card" data-search="' + esc(searchText) + '" onclick="window.location=\'/admin/quote/' + r.lead_id + '\';" style="cursor:pointer;border-left:3px solid var(--cta);">'
-            + '<div class="row-sb">'
-            + '<div class="lead-name">' + esc(name) + '</div>'
-            + '<span style="font-size:1rem;font-weight:700;color:#0a1f3d;">$' + money(r.total || 0) + '</span>'
-            + '</div>'
-            + (r.vehicle ? '<div class="lead-meta" style="margin-top:3px;">' + esc(r.vehicle) + '</div>' : '')
-            + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'
-            + svcs.map(function(s) { return '<span style="background:#eef3ff;color:#1a4fc4;border-radius:6px;padding:3px 8px;font-size:0.78rem;font-weight:600;">' + esc(s) + '</span>'; }).join('')
-            + '</div>'
-            + '<div style="display:flex;gap:18px;margin-top:10px;font-size:0.82rem;color:#555;flex-wrap:wrap;">'
-            + '<span>' + esc(r.payment_method || 'Unknown payment') + '</span>'
-            + '<span>Sent ' + shortDate(r.sent_at) + '</span>'
-            + (dateStr ? '<span>Service date ' + esc(dateStr) + '</span>' : '')
-            + '</div>'
-            + '</div>';
-        }).join('');
+  // Loose receipts waiting to be filed (these are the ones cluttering the pipeline).
+  var loose = rows.filter(isLooseReceipt);
+  var looseTotal = loose.reduce(function(s, r) { return s + (r.total || 0); }, 0);
+  var looseMonths = {};
+  loose.forEach(function(r) { looseMonths[(r.sent_at || '').slice(0, 7)] = true; });
+  var looseMonthLabels = Object.keys(looseMonths).sort().reverse().map(monthLabel);
+
+  // The satisfying confirmation after a filing sweep.
+  var filedBanner = '';
+  if (req.query.filed) {
+    var n = parseInt(req.query.filed, 10) || 0;
+    if (n > 0) filedBanner = '<div class="file-done">' + ic('check-circle') + 'Filed ' + n + ' receipt' + (n === 1 ? '' : 's') + ' away. Your desk is clear.</div>';
+  }
+
+  // The "to file" tray.
+  var tray;
+  if (loose.length) {
+    tray = '<div class="file-tray">'
+      + '<div class="file-tray-row">'
+      + '<div><div class="file-tray-ttl">' + ic('archive') + loose.length + ' receipt' + (loose.length === 1 ? '' : 's') + ' ready to file</div>'
+      + '<div class="file-tray-sub">$' + money(looseTotal) + ' from ' + esc(looseMonthLabels.join(', ')) + '. Filing tucks them into their monthly folders and clears your pipeline.</div></div>'
+      + '<form method="POST" action="/admin/receipts/file" style="margin:0;">'
+      + '<button type="submit" class="file-btn">' + ic('folder') + 'File them away</button>'
+      + '</form>'
+      + '</div></div>';
+  } else {
+    tray = '<div class="file-tray clear">'
+      + '<div class="file-clear-ic">' + ic('check-circle') + '</div>'
+      + '<div style="font-weight:700;font-size:0.98rem;color:#0a1f3d;">All caught up</div>'
+      + '<div style="color:#888;font-size:0.86rem;margin-top:3px;">Every receipt is filed. Nothing waiting on your desk.</div>'
+      + '</div>';
+  }
+
+  // Group receipts into monthly folders, newest month first.
+  var monthsOrder = [];
+  var byMonth = {};
+  rows.forEach(function(r) {
+    var ym = (r.sent_at || '').slice(0, 7);
+    if (!byMonth[ym]) { byMonth[ym] = []; monthsOrder.push(ym); }
+    byMonth[ym].push(r);
+  });
+
+  function receiptRow(r) {
+    var name = ((r.first_name || '') + ' ' + (r.last_name || '')).trim() || 'Unknown customer';
+    var dateStr = r.service_date || (r.sent_at || '').slice(0, 10);
+    var svcs = (r.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean).join(', ');
+    var searchText = (name + ' ' + (r.service || '') + ' ' + (r.vehicle || '') + ' ' + (r.email || '')).toLowerCase();
+    var subBits = [r.vehicle, svcs].filter(Boolean).join('  ·  ');
+    return '<div class="rrow" data-search="' + esc(searchText) + '" onclick="window.location=\'/admin/quote/' + r.lead_id + '\';">'
+      + (isLooseReceipt(r) ? '<span class="unfiled" title="Not filed yet"></span>' : '')
+      + '<div class="rrow-main"><div class="rrow-name">' + esc(name) + '</div>'
+      + (subBits ? '<div class="rrow-sub">' + esc(subBits) + '</div>' : '')
+      + '</div>'
+      + '<div class="rrow-right"><div class="rrow-amt">$' + money(r.total || 0) + '</div>'
+      + '<div class="rrow-date">' + esc(dateStr) + '</div></div>'
+      + '</div>';
+  }
+
+  var folders = monthsOrder.map(function(ym) {
+    var list = byMonth[ym];
+    var mTotal = list.reduce(function(s, r) { return s + (r.total || 0); }, 0);
+    var mLoose = list.filter(isLooseReceipt).length;
+    var isCur = ym === curMonth;
+    var collapsed = isCur ? '' : ' collapsed';
+    return '<div class="folder' + collapsed + '" data-default="' + (isCur ? 'open' : 'closed') + '">'
+      + '<button type="button" class="folder-head" onclick="rcptToggle(this)">'
+      + '<span class="fi">' + icon('folder') + '</span>'
+      + '<span><span class="folder-month">' + esc(monthLabel(ym)) + '</span>'
+      + '<span class="folder-meta">' + list.length + ' job' + (list.length === 1 ? '' : 's')
+      + (mLoose ? ' · ' + mLoose + ' to file' : '') + '</span></span>'
+      + '<span class="folder-right"><span class="folder-total">$' + money(mTotal) + '</span>'
+      + '<svg class="folder-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>'
+      + '</span></button>'
+      + '<div class="folder-body">' + list.map(receiptRow).join('') + '</div>'
+      + '</div>';
+  }).join('');
+
+  var cabinet = rows.length === 0
+    ? '<div class="empty"><div style="margin-bottom:10px;">' + icon('document') + '</div>No receipts sent yet.</div>'
+    : '<div id="rcptCabinet">' + folders + '</div>'
+      + '<div id="rcptEmpty" style="display:none;padding:32px;text-align:center;color:#888;">No receipts match your search.</div>';
 
   res.send(page('Receipts',
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">'
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;">Receipts</h1>'
-    + '<span style="color:#aaa;font-size:0.83rem;" id="rcptCount">' + totalCount + ' total</span>'
+    + '<span style="color:#aaa;font-size:0.83rem;">' + totalCount + ' filed &amp; current</span>'
     + '</div>'
-    + '<div class="stat-grid" style="margin-bottom:14px;">'
+    + filedBanner
+    + tray
+    + '<div class="stat-grid" style="margin-bottom:16px;">'
     + statBox('$' + money(totalRevenue), 'Total Revenue')
     + statBox(totalCount, 'Receipts Sent')
-    + statBox('$' + money(thisMonthRev), 'This Month')
-    + statBox(thisMonthRows.length, 'Jobs This Month')
     + '</div>'
-    + '<input type="text" id="rcptSearch" placeholder="Search by customer, service, or vehicle..." '
-    + 'style="width:100%;padding:9px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;box-sizing:border-box;margin-bottom:14px;" autocomplete="off">'
-    + '<div id="rcptList">' + cards + '</div>'
-    + '<script>(function(){'
-    + 'var inp=document.getElementById("rcptSearch");'
-    + 'var count=document.getElementById("rcptCount");'
+    + (rows.length
+        ? '<input type="text" id="rcptSearch" placeholder="Search by customer, service, or vehicle..." '
+          + 'style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.9rem;background:#fff;box-sizing:border-box;margin-bottom:14px;" autocomplete="off">'
+        : '')
+    + cabinet
+    + '<script>'
+    + 'function rcptToggle(btn){var f=btn.closest(".folder");if(f)f.classList.toggle("collapsed");}'
+    + '(function(){'
+    + 'var inp=document.getElementById("rcptSearch");if(!inp)return;'
     + 'var empty=document.getElementById("rcptEmpty");'
-    + 'var total=' + totalCount + ';'
-    + 'if(!inp)return;'
     + 'inp.addEventListener("input",function(){'
     +   'var q=inp.value.trim().toLowerCase();'
-    +   'var cards=document.querySelectorAll(".rcpt-card");'
-    +   'var shown=0;'
-    +   'cards.forEach(function(el){'
-    +     'var match=!q||el.dataset.search.indexOf(q)!==-1;'
-    +     'el.style.display=match?"":"none";'
-    +     'if(match)shown++;'
+    +   'var anyShown=0;'
+    +   'document.querySelectorAll(".folder").forEach(function(f){'
+    +     'var vis=0;'
+    +     'f.querySelectorAll(".rrow").forEach(function(row){'
+    +       'var m=!q||row.dataset.search.indexOf(q)!==-1;row.style.display=m?"":"none";if(m)vis++;'
+    +     '});'
+    +     'if(q){f.style.display=vis?"":"none";if(vis)f.classList.remove("collapsed");anyShown+=vis;}'
+    +     'else{f.style.display="";if(f.dataset.default==="open")f.classList.remove("collapsed");else f.classList.add("collapsed");}'
     +   '});'
-    +   'if(count)count.textContent=q?(shown+" of "+total+" total"):(total+" total");'
-    +   'if(empty)empty.style.display=(shown===0&&q)?"block":"none";'
+    +   'if(empty)empty.style.display=(q&&anyShown===0)?"block":"none";'
     + '});'
     + '})();</script>',
     req
   ));
+});
+
+// File the loose receipts: archive their leads out of the active pipeline and stamp
+// each receipt as filed. The Receipts cabinet still shows them, organized by month.
+router.post('/receipts/file', requireAuth, function(req, res) {
+  var loose = db.prepare(
+    "SELECT DISTINCT l.id AS lead_id FROM receipts r JOIN leads l ON l.id = r.lead_id "
+    + "WHERE r.sent_at IS NOT NULL AND r.filed_at IS NULL AND l.status = 'receipt' AND l.archived = 0"
+  ).all();
+  var filed = 0;
+  loose.forEach(function(row) {
+    var rs = db.prepare("UPDATE receipts SET filed_at = datetime('now') WHERE lead_id = ? AND filed_at IS NULL AND sent_at IS NOT NULL").run(row.lead_id);
+    filed += rs.changes;
+    db.prepare("UPDATE leads SET archived = 1, archived_at = datetime('now') WHERE id = ?").run(row.lead_id);
+    logHistory(row.lead_id, 'Receipt filed', 'Filed into the monthly receipts cabinet');
+  });
+  res.redirect('/admin/receipts?filed=' + filed);
 });
 // ─── Phase 8A: Pricing & Tiers settings ────────────────────────────────────────
 
