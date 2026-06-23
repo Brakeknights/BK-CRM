@@ -167,4 +167,59 @@ function safeRunBackup() {
     .catch((err) => console.error('[backup] error:', err.message));
 }
 
-module.exports = { runBackup, safeRunBackup, getStatus };
+// Restore drill: download the newest backup back from the bucket, decrypt it with
+// the same key, and run a SQLite integrity check + row count. Proves the backup is
+// genuinely recoverable. All server-side: no secret or customer data leaves the box.
+async function verifyLatest() {
+  if (!ENABLED) return { ok: false, skipped: 'BACKUP_ENABLED is not true' };
+  const missing = missingConfig();
+  if (missing.length) return { ok: false, skipped: 'missing config: ' + missing.join(', ') };
+
+  const key = loadKey();
+  const { ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
+  const client = s3client();
+
+  // Find the newest object under the prefix.
+  let objs = [], token;
+  do {
+    const r = await client.send(new ListObjectsV2Command({ Bucket: BUCKET, Prefix: PREFIX + '/', ContinuationToken: token }));
+    objs = objs.concat(r.Contents || []);
+    token = r.IsTruncated ? r.NextContinuationToken : undefined;
+  } while (token);
+  if (!objs.length) return { ok: false, error: 'no backups found in bucket' };
+  objs.sort((a, b) => new Date(b.LastModified) - new Date(a.LastModified));
+  const objKey = objs[0].Key;
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bk-verify-'));
+  const encPath = path.join(tmpDir, 'dl.enc');
+  const dbPath  = path.join(tmpDir, 'restored.db');
+  try {
+    // Download.
+    const res = await client.send(new GetObjectCommand({ Bucket: BUCKET, Key: objKey }));
+    await pipeline(res.Body, fs.createWriteStream(encPath));
+
+    // Decrypt: [12-byte IV][ciphertext][16-byte tag] -> gunzip -> db file.
+    const size = fs.statSync(encPath).size;
+    const fd = fs.openSync(encPath, 'r');
+    const iv = Buffer.alloc(12); fs.readSync(fd, iv, 0, 12, 0);
+    const tag = Buffer.alloc(16); fs.readSync(fd, tag, 0, 16, size - 16);
+    fs.closeSync(fd);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    await pipeline(fs.createReadStream(encPath, { start: 12, end: size - 17 }), decipher, zlib.createGunzip(), fs.createWriteStream(dbPath));
+
+    // Open the restored DB and sanity-check it.
+    const Database = require('better-sqlite3');
+    const test = new Database(dbPath, { readonly: true });
+    const integrity = test.pragma('integrity_check')[0].integrity_check;
+    let leads = null;
+    try { leads = test.prepare('SELECT count(*) AS c FROM leads').get().c; } catch (_) {}
+    test.close();
+
+    return { ok: integrity === 'ok', key: objKey, integrity, leads };
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+module.exports = { runBackup, safeRunBackup, verifyLatest, getStatus };

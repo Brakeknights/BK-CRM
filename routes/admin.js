@@ -6971,4 +6971,11 @@ router.post('/backup/run', requireAuth, function(req, res) {
     .catch(function(err) { res.status(500).json({ ok: false, error: err.message }); });
 });
 
+// Restore drill: download + decrypt the newest backup and integrity-check it.
+router.get('/backup/verify', requireAuth, function(req, res) {
+  backup.verifyLatest()
+    .then(function(r) { res.json(r); })
+    .catch(function(err) { res.status(500).json({ ok: false, error: err.message }); });
+});
+
 module.exports = router;
