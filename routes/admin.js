@@ -1022,6 +1022,15 @@ function page(title, body, req) {
     + 'function openSection(k){var el=document.querySelector(".collapse[data-ckey=\\""+k+"\\"]");if(el){el.classList.remove("collapsed");try{localStorage.setItem("bkc_"+k,"1");}catch(e){}el.scrollIntoView({behavior:"smooth",block:"start"});}}'
     + 'function openNav(){document.getElementById("sidebar").classList.add("open");document.getElementById("navOverlay").classList.add("show");}'
     + 'function closeNav(){document.getElementById("sidebar").classList.remove("open");document.getElementById("navOverlay").classList.remove("show");}'
+    // Smart Back: return to the previous screen when there is in-app history,
+    // otherwise fall to a known page (the href). Bypasses the client-side router so
+    // it can never get stuck; history.back triggers the router via popstate when it
+    // applies, and the link href is a hard fallback if JS is unavailable.
+    + 'function bkBack(fallback){try{var safe=false;'
+    +   'if(window.__bkPushed)safe=true;'
+    +   'if(!safe&&document.referrer){var u=new URL(document.referrer);if(u.origin===location.origin&&u.pathname.indexOf("/admin")===0)safe=true;}'
+    +   'if(safe){history.back();return false;}'
+    + '}catch(_){}window.location.href=fallback||"/admin";return false;}'
     + 'function copyEmail(btn,addr){var orig=btn.innerHTML;navigator.clipboard.writeText(addr).then(function(){btn.innerHTML="&#10003; Copied!";btn.style.color="#1a7a3a";setTimeout(function(){btn.innerHTML=orig;btn.style.color="";},1600);}).catch(function(){window.location.href="mailto:"+addr;});}'
     + 'var _delForm=null;'
     + 'function showDeleteConfirm(btn){_delForm=btn.closest("form");var n=btn.getAttribute("data-name");document.getElementById("deleteModalName").textContent="You are about to delete: "+n;document.getElementById("deleteModal").classList.add("active");}'
@@ -1147,7 +1156,10 @@ function page(title, body, req) {
     +   'function execScripts(root){var ss=root.querySelectorAll("script");for(var i=0;i<ss.length;i++){var old=ss[i];var s=document.createElement("script");for(var j=0;j<old.attributes.length;j++){s.setAttribute(old.attributes[j].name,old.attributes[j].value);}s.textContent=old.textContent;old.parentNode.replaceChild(s,old);}}'
     +   'function setActive(doc){try{var da=doc.querySelector(".nav-item.active");var href=da?da.getAttribute("href"):null;var items=document.querySelectorAll(".nav-item");for(var i=0;i<items.length;i++){items[i].classList.toggle("active",!!href&&items[i].getAttribute("href")===href);}}catch(_){}}'
     +   'function navigate(url,push){if(busy)return;busy=true;prog(25);'
-    +     'fetch(url,{headers:{"X-Requested-With":"fetch"},credentials:"same-origin"}).then(function(r){'
+    +     'var ctrl=("AbortController" in window)?new AbortController():null;'
+    +     'var to=setTimeout(function(){if(ctrl){try{ctrl.abort();}catch(_){}}},7000);'
+    +     'fetch(url,{headers:{"X-Requested-With":"fetch"},credentials:"same-origin",signal:ctrl?ctrl.signal:undefined}).then(function(r){'
+    +       'clearTimeout(to);'
     +       'if(r.redirected&&/\\/admin\\/login/.test(r.url))throw new Error("auth");'
     +       'if(!r.ok)throw new Error("status");'
     +       'return r.text();'
@@ -1162,9 +1174,9 @@ function page(title, body, req) {
     +       'execScripts(main);'
     +       'if(window.bkInitPage)bkInitPage();'
     +       'window.scrollTo(0,0);'
-    +       'if(push)history.pushState({bk:1},"",url);'
+    +       'if(push){history.pushState({bk:1},"",url);window.__bkPushed=true;}'
     +       'prog(100);setTimeout(function(){prog(0);},250);busy=false;'
-    +     '}).catch(function(){busy=false;prog(0);window.location.href=url;});'
+    +     '}).catch(function(){clearTimeout(to);busy=false;prog(0);window.location.href=url;});'
     +   '}'
     +   'document.addEventListener("click",function(e){'
     +     'if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;'
@@ -2200,7 +2212,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   // Back (left) and Customer Profile (right) sit in a spaced row so they are large,
   // distinct tap targets and never mistaken for one another.
-  var body = '<div class="nav-row"><a href="/admin" class="back-link"><span class="bk-arrow">&#8592;</span> All Leads</a>' + custLink + '</div>'
+  var body = '<div class="nav-row"><a href="/admin" data-noswap class="back-link" onclick="return bkBack(\'/admin\');"><span class="bk-arrow">&#8592;</span> Back</a>' + custLink + '</div>'
     + quoteAlert
     + stageTracker(lead.status)
     + nextStageHint(lead)
@@ -4761,7 +4773,7 @@ router.get('/customer/:id', requireAuth, function(req, res) {
     + '</div>'
     + '</div>';
 
-  var body = '<a href="/admin/customers" class="back-link"><span class="bk-arrow">&#8592;</span>All Customers</a>'
+  var body = '<a href="/admin/customers" data-noswap class="back-link" onclick="return bkBack(\'/admin/customers\');"><span class="bk-arrow">&#8592;</span>Back</a>'
     + alert
     + header
     + sec.tags
