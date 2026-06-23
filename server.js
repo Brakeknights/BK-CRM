@@ -669,6 +669,34 @@ setInterval(function() {
   });
 }, 6 * 60 * 60 * 1000); // check every 6 hours
 
+// ─── Month-end receipt filing ─────────────────────────────────────────────────
+// At the turn of each month, automatically "file" the prior month's receipts:
+// archive their leads out of the active pipeline and stamp each receipt filed, so
+// the Receipt Sent list stays clean and fresh. The /admin/receipts cabinet still
+// shows them, organized by month. Self-healing: only ever touches still-loose
+// receipts whose month has already ended. Runs ~2 min after boot, then every 6h.
+function runMonthlyReceiptFiling() {
+  try {
+    var curMonth = new Date().toISOString().slice(0, 7);
+    var loose = db.prepare(
+      "SELECT DISTINCT l.id AS lead_id FROM receipts r JOIN leads l ON l.id = r.lead_id "
+      + "WHERE r.sent_at IS NOT NULL AND r.filed_at IS NULL AND l.status = 'receipt' AND l.archived = 0 "
+      + "AND substr(r.sent_at, 1, 7) < ?"
+    ).all(curMonth);
+    if (!loose.length) return;
+    var filed = 0;
+    loose.forEach(function(row) {
+      var rs = db.prepare("UPDATE receipts SET filed_at = datetime('now') WHERE lead_id = ? AND filed_at IS NULL AND sent_at IS NOT NULL").run(row.lead_id);
+      filed += rs.changes;
+      db.prepare("UPDATE leads SET archived = 1, archived_at = datetime('now') WHERE id = ?").run(row.lead_id);
+      db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Receipt filed', 'Auto-filed at month close')").run(row.lead_id);
+    });
+    if (filed) console.log('[receipt-filing] filed ' + filed + ' receipt(s) from prior months');
+  } catch (err) { console.error('[receipt-filing] error:', err.message); }
+}
+setTimeout(runMonthlyReceiptFiling, 2 * 60 * 1000);
+setInterval(runMonthlyReceiptFiling, 6 * 60 * 60 * 1000);
+
 // ─── Square auto-sync ─────────────────────────────────────────────────────────
 // Pulls new customers added directly in Square (not through BK Admin) into the
 // CRM automatically, so the owner never has to remember to run the manual import.

@@ -197,6 +197,9 @@ addQuoteCol('discount_label',      'TEXT');
 // already exists on receipts as the advisory array.
 const receiptCols = db.prepare("PRAGMA table_info(receipts)").all().map(c => c.name);
 if (!receiptCols.includes('custom_line_items')) db.exec("ALTER TABLE receipts ADD COLUMN custom_line_items TEXT");
+// filed_at: set when a receipt is "filed" into its monthly folder (its lead is
+// archived out of the active pipeline). Null = still loose on the desk.
+if (!receiptCols.includes('filed_at')) db.exec("ALTER TABLE receipts ADD COLUMN filed_at TEXT");
 
 // Follow-ups: `kind` distinguishes the cron email to send. 'advisory' (default) is
 // the original receipt-advisory reminder; 'review_checkin' is the automatic one-week
