@@ -125,7 +125,14 @@ Form pages: [title] [stacked fields] [live calc] [sticky bottom action bar mobil
 
 ## Icons
 
-Heroicons, stroke-based, 1.5px stroke, 20px inline / 24px nav. No emoji in admin UI ever.
+Heroicons, stroke-based, 1.5px stroke, 20px inline / 24px nav. No emoji in admin UI ever. (Inline SVG paths live in `ICON_PATHS` in `routes/admin.js`; `icon(name)` = 24px nav, `ic(name)` = 16px inline. Added recently: `folder`, `check`, `check-circle`.)
+
+## Recent components / patterns (2026-06-24)
+
+- **Receipts filing cabinet** (`/admin/receipts`): months as `.folder` cards (folder-tab drawn with `::before`, navy/blue — NOT amber), collapsible, each with job count + month total; a navy "to file" `.file-tray` with a "File them away" button and a calm "All caught up" empty state. Mobile-first rows.
+- **Top nav progress bar** `#navProgress`: thin `--cta` bar for the instant client-side navigation (bkBoost). Don't remove.
+- **Stale-session banner** `#bkStale`: fixed full-width `#7a1f1f` bar shown when the 30-min session expires while a page sits open. White "Refresh & sign in" button.
+- **Instant nav** swaps `<main id="appMain">`; keep that id and don't wrap pages in a way that breaks the swap. See the brakeknights-crm skill "Client-side navigation (bkBoost)" for the scripting rules (re-run-safe scripts, `bkInitPage()`, `data-noswap`).
 
 ---
 
