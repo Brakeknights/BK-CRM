@@ -340,11 +340,18 @@
 
           <div class="form-row">
             <div class="form-group">
-              <input type="tel" id="phone" placeholder="Phone Number" required>
+              <input type="tel" id="phone" placeholder="Phone Number">
             </div>
             <div class="form-group">
               <input type="email" id="email" placeholder="Email" required>
             </div>
+          </div>
+
+          <div class="form-group sms-consent-group">
+            <label class="sms-consent-label">
+              <input type="checkbox" id="sms-consent" name="smsConsent">
+              <span>I agree to receive text messages from Brake Knights about my request. Msg &amp; data rates may apply. Msg frequency varies. Reply STOP to opt out, HELP for help. Mobile information will not be shared with third parties for marketing or promotional purposes. View our <a href="/privacy-policy">Privacy Policy</a>.</span>
+            </label>
           </div>
 
           <div class="form-group">
@@ -404,7 +411,6 @@
           <button type="submit" class="btn-primary" style="width:100%;padding:14px;">Submit Your Request</button>
 
           <p class="form-legal">
-            By submitting, you agree to receive text messages from Brake Knights about your request. Msg & data rates may apply. Msg frequency varies. Reply STOP to opt out, HELP for help.
             View our <a href="/privacy-policy">Privacy Policy</a> and <a href="/terms-and-conditions">Terms &amp; Conditions</a>.
           </p>
         </form>
