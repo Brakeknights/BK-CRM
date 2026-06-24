@@ -18,6 +18,16 @@ Protecting customer data is the number one priority for everything built in this
 - Login brute-force lockout (5 fails per IP → 15 min lock), constant-time compare, session regeneration on login
 - Security headers site-wide: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, HSTS in prod
 - Parameterized SQL everywhere; admin behind auth; tokenized customer quote links; DB gitignored
+- Automated encrypted off-server DB backups (see "Database Backups" below) — the recovery path for the customer database
+
+## Database Backups (Rule #1 recovery path)
+The customer database is the crown jewel and now has automatic, encrypted, off-server backups.
+- **What runs:** `backup.js` takes a consistent SQLite snapshot (`better-sqlite3` `.backup()`), gzips it, encrypts it with AES-256-GCM, and uploads it to a private Backblaze B2 bucket. Scheduled in `server.js` ~3 min after boot, then every 24h. Logs only sizes/keys/timestamps, never PII.
+- **Encrypted at rest:** a leaked bucket exposes no customer data without `BACKUP_ENCRYPTION_KEY`. Dev and prod use **separate** encryption keys (stored in the owner's password manager — losing the prod key means prod backups can never be decrypted).
+- **Separation:** prod backups live under prefix `brakeknights-prod/`, dev under `brakeknights-dev/`, in bucket `brakeknights-crm-backups`. Each prefix keeps its 30 newest backups (`BACKUP_RETENTION`), independent of the other.
+- **Env vars (set in Hostinger hPanel per site, never committed):** `BACKUP_ENABLED`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_KEY_ID`, `BACKUP_S3_APP_KEY`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_S3_PREFIX`. The code is a dormant no-op until these are present, so it can ship before being switched on.
+- **Admin tools (behind `requireAuth`):** `GET /admin/backup/status` (config state, no secrets), `POST /admin/backup/run` (manual backup), `GET /admin/backup/verify` (server-side restore drill: downloads the newest backup, decrypts, runs `integrity_check` + leads count).
+- **Emergency restore:** `scripts/restore-backup.js --latest restored.db` with the prod env vars set, then swap the file in for the live DB. Verified working on both dev and master (2026-06-23).
 
 ## Session Startup Checklist (Run These First, Every Session)
 1. `git config core.hooksPath .githooks` — activates the master push block
@@ -263,7 +273,7 @@ Update this section at the end of each session to stay caught up next time.
 ⚠️ Single source of truth. Update every time an item is completed or added.
 
 ### Pending
-- [ ] ⚠️ **Hostinger GitHub auto-deploy reconnect** — both sites "Disconnected from GitHub" since ~6/16 (Hostinger Node.js migration dropped the link). Ticket open with Hostinger. Until fixed, deploy via Hostinger MCP archive (see DEPLOYMENT BROKEN note at top). Once Hostinger re-links it, test a push auto-builds, then remove the note.
+- [ ] ⚠️ **Hostinger GitHub auto-deploy reconnect** — both sites "Disconnected from GitHub" since ~6/16 (Hostinger Node.js migration dropped the link). Ticket open with Hostinger. Until fixed, deploy via Hostinger MCP archive (see DEPLOYMENT BROKEN note at top). Once Hostinger re-links it, test a push auto-builds, then remove the note. NOTE (2026-06-23): now that encrypted off-server DB backups exist (PR #58), the "delete website and re-add" reconnect path Hostinger suggested is de-risked but still optional — auto-deploy is only a convenience, and the MCP archive deploy works fine. If ever attempting the delete/re-add, take a fresh verified backup first.
 - [x] 🔒 **Upgrade nodemailer 8 → 9** (flagged 2026-06-19 by npm audit) — DONE and verified live on 2026-06-22. Bumped to `^9.0.1`, deployed to dev and master, and confirmed working: a test contact-form submission on dev returned HTTP 200 (the route only responds after both `await transporter.sendMail()` calls resolve, so 200 = send path works under nodemailer 9), and both the internal notification and customer confirmation emails were delivered to greetings@brakeknights.com. Email send code unchanged (plain Hostinger SMTP, port 465). The three flagged CVEs all hit features we don't use (`List-*` headers, `jsonTransport`, `raw` message option). The other two original audit items — `hono` and `form-data` — need no action: `hono` is local-only via the Hostinger MCP and never deployed; `form-data` is internal to the Square SDK with no attacker-controlled input.
 - [ ] Custom line items + notes to customer on the **Quick Quote** tool (`/admin/quick`) — already shipped on the per-lead Build Quote + Receipt builder (custom priced lines with Taxed/Not-taxed toggle, taxed-as-parts, hidden from customer; free-text notes). Quick Quote still needs the same treatment for consistency.
 - [ ] Phase 6C: Square auto-trigger (Square events fire receipt + follow-up flow) — deferred, spec later
@@ -281,6 +291,7 @@ Update this section at the end of each session to stay caught up next time.
 - [ ] Job photo feature: upload photos mid-job (from lead profile, before receipt exists) and attach to receipt email; tokenized public serve route (/photos/:token); customer profile gallery across all jobs. Storage in /data/uploads/ outside git. multer for uploads, job_photos table in SQLite.
 
 ### Completed This Session
+- [x] PR #58: Automated encrypted off-server database backups (Rule #1). `backup.js` snapshots the SQLite DB, gzips + AES-256-GCM encrypts it, uploads to a private Backblaze B2 bucket (`brakeknights-crm-backups`); runs ~3 min after boot then every 24h. Admin routes `/admin/backup/status`, `POST /admin/backup/run`, `/admin/backup/verify`; `scripts/restore-backup.js` recovery path. Prod under `brakeknights-prod/` (separate encryption key), dev under `brakeknights-dev/`. Verified end-to-end on dev and master (live: 24 leads, integrity ok). Closes the single-copy customer-DB risk. Also fixed `.gitignore` (`.env`/`*.db` were not actually ignored). See "Database Backups" section above.
 - [x] PR #44: CRM login → Appointments landing; saved-address auto-fill on address forms; prevent duplicate saved addresses on profile save; phone formatting fix for numbers stored with leading country code 1; push notification reliability fix. Merged to master, live. dev and master in sync.
 - [x] PR #29: Vehicle cascade dropdowns (NHTSA API, "Other" free-text fallback) applied to Quick Quote and Receipt Builder; appointments Clear Selection now zeroes prices; Preview Email button on New Appointment form; required year/make/model validation on public contact forms (index.html + contact.html).
 
