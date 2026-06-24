@@ -384,8 +384,8 @@ function schedulingPanel(lead, quote, compact) {
     + (quote.pref_location ? '<div style="font-size:0.83rem;margin-top:2px;">' + mapsLink(quote.pref_location, { style: 'color:#1a6fc4;text-decoration:none;' }) + '</div>' : '')
     + (quote.scheduling_notes ? '<div style="font-size:0.82rem;color:#666;font-style:italic;margin-top:4px;">' + esc(quote.scheduling_notes) + '</div>' : '')
     + '<div style="display:flex;gap:8px;margin-top:12px;">'
-    + '<a href="/admin/quote/' + lead.id + '/approve-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#1a7a3a;color:#fff;border:none;">&#10003; Approve Time</a>'
-    + '<a href="/admin/quote/' + lead.id + '/deny-schedule" class="btn btn-sm" style="flex:1;text-align:center;background:#c0392b;color:#fff;border:none;">&#10005; Not Available</a>'
+    + '<a href="/admin/quote/' + lead.id + '/approve-schedule" data-noswap class="btn btn-sm" style="flex:1;text-align:center;background:#1a7a3a;color:#fff;border:none;">&#10003; Approve Time</a>'
+    + '<a href="/admin/quote/' + lead.id + '/deny-schedule" data-noswap class="btn btn-sm" style="flex:1;text-align:center;background:#c0392b;color:#fff;border:none;">&#10005; Not Available</a>'
     + '</div></div>';
 }
 
@@ -639,6 +639,9 @@ body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;ba
 .nav-new-badge{background:#e07000;color:#fff;font-size:0.6rem;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;margin-left:auto;flex-shrink:0}
 /* Top loading bar for instant-feel client-side navigation (see bkBoost). */
 #navProgress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--cta);z-index:9999;opacity:0;transition:width .2s ease,opacity .25s ease;box-shadow:0 0 6px rgba(65,105,225,.6);pointer-events:none}
+/* Stale-session banner: shown when the 30-min session has expired while the page sat open. */
+#bkStale{position:fixed;left:0;right:0;top:0;z-index:10000;background:#7a1f1f;color:#fff;padding:12px 16px;font-size:0.9rem;font-weight:600;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+#bkStale button{background:#fff;color:#7a1f1f;border:none;border-radius:6px;padding:9px 16px;font-weight:700;font-size:0.86rem;cursor:pointer;-webkit-tap-highlight-color:transparent}
 /* ── Receipts filing cabinet ── */
 .file-tray{background:var(--navy);border-radius:12px;padding:18px 18px 16px;margin-bottom:18px;color:#fff}
 .file-tray.clear{background:#fff;border:1px solid var(--gray-200);color:#1a2a3a;text-align:center;padding:26px 18px}
@@ -1143,6 +1146,25 @@ function page(title, body, req) {
     +     '}).catch(function(){});'
     +   '});'
     + '})();'
+    // Stale-session banner: the 30-min session refreshes on each server request (page
+    // load or boosted nav), tracked in __bkActivity. If no request has refreshed it
+    // for ~30 min, the session is dead even though the page still shows old content —
+    // so a fixed banner appears telling the owner to refresh and sign in, instead of
+    // the next tap failing silently. Foreground-only (timers pause when backgrounded;
+    // the visibilitychange check above covers the refocus case).
+    + 'window.__bkActivity=Date.now();'
+    + '(function(){'
+    +   'var STALE_MS=30*60*1000;'
+    +   'function showStale(){'
+    +     'if(document.getElementById("bkStale"))return;'
+    +     'var d=document.createElement("div");d.id="bkStale";'
+    +     'var s=document.createElement("span");s.textContent="Your session timed out after 30 minutes of inactivity. Refresh and sign in to continue.";'
+    +     'var btn=document.createElement("button");btn.type="button";btn.textContent="Refresh & sign in";'
+    +     'btn.onclick=function(){window.location.href="/admin/login?error=expired";};'
+    +     'd.appendChild(s);d.appendChild(btn);document.body.appendChild(d);'
+    +   '}'
+    +   'setInterval(function(){if(Date.now()-(window.__bkActivity||Date.now())>STALE_MS)showStale();},20000);'
+    + '})();'
     // ── bkBoost: instant client-side navigation ──────────────────────────────
     // Intercepts same-origin /admin link clicks and swaps just the <main> content
     // instead of reloading the whole page, so switching tabs feels instant (no
@@ -1161,7 +1183,7 @@ function page(title, body, req) {
     +     'var to=setTimeout(function(){if(ctrl){try{ctrl.abort();}catch(_){}}},7000);'
     +     'fetch(url,{headers:{"X-Requested-With":"fetch"},credentials:"same-origin",signal:ctrl?ctrl.signal:undefined}).then(function(r){'
     +       'clearTimeout(to);'
-    +       'if(r.redirected&&/\\/admin\\/login/.test(r.url))throw new Error("auth");'
+    +       'if(r.redirected&&/\\/admin\\/login/.test(r.url)){var ae=new Error("auth");ae.bkAuth=true;throw ae;}'
     +       'if(!r.ok)throw new Error("status");'
     +       'return r.text();'
     +     '}).then(function(html){'
@@ -1174,10 +1196,11 @@ function page(title, body, req) {
     +       'main.innerHTML=nm.innerHTML;'
     +       'execScripts(main);'
     +       'if(window.bkInitPage)bkInitPage();'
+    +       'window.__bkActivity=Date.now();'
     +       'window.scrollTo(0,0);'
     +       'if(push){history.pushState({bk:1},"",url);window.__bkPushed=true;}'
     +       'prog(100);setTimeout(function(){prog(0);},250);busy=false;'
-    +     '}).catch(function(){clearTimeout(to);busy=false;prog(0);window.location.href=url;});'
+    +     '}).catch(function(err){clearTimeout(to);busy=false;prog(0);if(err&&err.bkAuth){window.location.href="/admin/login?error=expired";}else{window.location.href=url;}});'
     +   '}'
     +   'document.addEventListener("click",function(e){'
     +     'if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;'
