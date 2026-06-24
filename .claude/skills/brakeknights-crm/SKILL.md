@@ -145,8 +145,15 @@ with technical terms.
 | 5 | Receipt builder — service performed, vehicle, date, address, payment method, up to 4 advisories, office notes, receipt email, auto-advance lead to Completed, follow-up storage |
 | 6 | Follow-up reminder system — cron every 6h, `/admin/followups` dashboard, due/upcoming/sent sections, reschedule/done/cancel actions, topbar badge, ad-hoc reminders on lead pages. Round 2: receipt service multi-select + tier toggle + price auto-fill, VIN + Internal Notes card, Receipt Sent amber stage, clickable receipt preview link, full lead-history event logging, Text/Email action buttons |
 | 7A | Quick Quote / Receipt Generator at `/admin/quick` — standalone tool for phone/text inquiries, quote/receipt mode switch, service multi-select + tier toggle, live price recalc, field overrides, three outcomes (calculator only / Send / Copy Link), receipt mode with Google Maps autocomplete, auto-save to localStorage, Preview Email button, nav active state, SQLite session store, inspection fee note |
+| 7 / 7B / 7C | Full CRM — `customers` table + auto-link by email/phone; customer list (`/admin/customers`) + full profile (`/admin/customer/:id`: vehicles, saved addresses, notes, tags, job history, follow-ups, lifetime stats); dashboard (`/admin/dashboard`) + reports (revenue / conversions / services). Sidebar nav. |
+| 8 (in progress) | NHTSA year/make/model cascading vehicle dropdowns site-wide; full Appointments tab (`/admin/appointments`, monthly calendar); Eastern Time timestamps; Square customer import; per-vehicle pricing foundation tables. **Automated quotes still pending (needs pricing matrix).** |
+| 8E / 8F | Browser push notifications — bell, service worker (`/sw.js`), VAPID keys, `push_subscriptions`, fires on every new lead. |
+| Backups | Encrypted off-server DB backups (`backup.js` → Backblaze B2, AES-256-GCM); admin routes `/admin/backup/{status,run,verify}`; `scripts/restore-backup.js`. See CLAUDE.md "Database Backups". |
+| 2026-06-24 batch | Mobile tap fix (`touch-action`); instant client-side nav (**bkBoost**, swaps `<main id="appMain">`); Receipts filing cabinet (`/admin/receipts`, monthly folders + month-end auto-file cron); auto 1-week post-service check-in + Google review email; reliable `bkBack()` + nav 7s timeout; stale-session banner (`#bkStale`); receipt-vehicle fix. TEMP 10DLC compliance form changes (optional-looking phone + SMS consent checkbox) — see CLAUDE.md, revert after campaign approval. |
 
-**Current status: Phase 7A complete and live on master. Phase 7 (full CRM dashboard) not yet started.**
+**Current status (2026-06-24): Phases 1–7C + 8E/8F + the 2026-06-24 batch are LIVE on master (tip `da4502a`, dev and master in sync). Phase 8 automated quotes still pending the per-vehicle pricing matrix. Auto-deploy is broken — deploy via the Hostinger MCP archive (CLAUDE.md DEPLOYMENT BROKEN note).**
+
+**Schema additions since this skill was first written (also in `db.js`):** tables `customers`, `customer_vehicles`, `customer_addresses`, `push_subscriptions`, `personal_events`, `quick_drafts`, plus pricing/vehicle-mapping foundation tables. New columns: `leads.customer_id`/`vin`/`internal_notes`/`interaction_notes`/`archived`, `receipts.custom_line_items`/`filed_at` (set when a receipt is filed into its month folder), `followups.kind` (`'advisory'` default | `'review_checkin'` for the auto 1-week check-in email).
 
 ---
 
@@ -209,6 +216,15 @@ Same first/last name + phone within 2 minutes → second contact form submission
 **Email from `greetings@brakeknights.com` only.** Reply-to set to customer email on internal notifications so owner can reply directly.
 
 **No em dashes in copy.** House style: use a colon, comma, or rewrite. Applies to HTML, email templates, and all copy.
+
+**Client-side navigation (bkBoost) — know this before touching admin nav or scripts.** The admin shell intercepts same-origin `/admin` `<a>` clicks and swaps only `<main id="appMain">` via fetch (instant, no full reload). Implications when writing admin pages:
+- Per-page inline `<script>` blocks ARE re-executed on each swap (so use `var`/`function`, never top-level `let`/`const`/`class` — they'd throw "already declared" on re-run). Immediate IIFEs are fine.
+- Per-page "on load" init (collapse restore, autosave wiring, the lead Customer-Info-open-by-default, `?bq=1` opener, phone formatting) lives in `window.bkInitPage()`, which runs on first load AND after every swap. Put new "run once per page view" init there, not in a bare IIFE that only fires on full load.
+- Global functions (defined once in the shell, outside `#appMain`) persist across swaps: `toggleCollapse`, `openNav`/`closeNav`, `bkBack`, `showDeleteConfirm`, push/idle/staleness logic, etc.
+- Add `data-noswap` to any `<a>` that should do a NORMAL full navigation instead of a swap: slow/mutating GET actions (e.g. `approve-schedule`), `logout`, and the smart Back links. Forms, downloads, `target=_blank`, external, and modifier-clicks are already left as full navigations.
+- `bkBack(fallback)` = smart Back (previous in-app screen, else the fallback URL). The fetch has a 7s timeout that falls back to a full page load.
+
+**Stale-session handling.** Sessions are 30-min idle (rolling). A `#bkStale` banner appears when ~30 min pass with no server request (`window.__bkActivity`), and a dead session mid-action redirects to `/admin/login?error=expired`. Don't add periodic server polling that would keep the rolling session alive forever and defeat the idle logout.
 
 **Branch workflow:**
 - Feature branch → screenshot → wait for Alex's approval → merge to `dev` → wait for approval → merge to `master`
