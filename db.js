@@ -206,6 +206,10 @@ if (!receiptCols.includes('filed_at')) db.exec("ALTER TABLE receipts ADD COLUMN 
 // holds what the job was billed at, so the shortfall is visible internally. Null
 // when the customer paid in full (then `total` already equals the billed amount).
 if (!receiptCols.includes('billed_total')) db.exec("ALTER TABLE receipts ADD COLUMN billed_total REAL");
+// tip: gratuity collected on top of the job, tracked SEPARATELY from the sale.
+// Tips are not taxable (and not part of taxable sales), so `total` excludes the
+// tip and revenue reporting stays clean; tips are reported on their own line.
+if (!receiptCols.includes('tip')) db.exec("ALTER TABLE receipts ADD COLUMN tip REAL NOT NULL DEFAULT 0");
 
 // Follow-ups: `kind` distinguishes the cron email to send. 'advisory' (default) is
 // the original receipt-advisory reminder; 'review_checkin' is the automatic one-week

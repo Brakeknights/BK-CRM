@@ -2801,7 +2801,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
 
 // ─── Phase 5: Job summary + custom receipt ────────────────────────────────────
 
-var PAYMENT_METHODS = ['Credit/Debit Card', 'Cash', 'Other'];
+var PAYMENT_METHODS = ['Cash', 'Zelle', 'Credit/Debit Card', 'Other'];
 
 // Renders one advisory row: a customer-facing note plus an optional date-picker
 // follow-up reminder. Pass hidden=true for rows 2-4 (shown via "+ Add Advisory").
@@ -2961,6 +2961,10 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<div class="form-group" style="margin:16px 0 0;border-top:1px solid #eef1f5;padding-top:14px;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total above)</span></label>'
     + '<input class="price-input" type="number" name="amountReceived" id="rcReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="rcReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
     + '<div id="rcReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
+    // Tip — gratuity tracked separately from the sale (not taxed, not in revenue).
+    + '<div class="form-group" style="margin:14px 0 0;"><label>Tip <span style="color:#bbb;font-weight:400;">(optional — not taxed, reported separately from sales)</span></label>'
+    + '<input class="price-input" type="number" name="tip" id="rcTip" min="0" step="0.01" placeholder="0.00" oninput="rcReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    + '<div id="rcTipNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     + COLLAPSE_CLOSE
 
     + collapseOpen('rc_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true)
@@ -2990,12 +2994,16 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'if(!recEl||!note)return;'
     +   'var billed=parseFloat((document.getElementById("rctotalH")||{}).value||"0")||0;'
     +   'var raw=recEl.value.trim();'
-    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";return;}'
-    +   'var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";return;}'
-    +   'var diff=Math.round((billed-rec)*100)/100;'
-    +   'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
-    +   'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
-    +   'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}'
+    +   'var saleRecorded=billed;'
+    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
+    +   'else{var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";saleRecorded=billed;}else{saleRecorded=rec;var diff=Math.round((billed-rec)*100)/100;'
+    +     'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
+    +     'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
+    +     'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}}}'
+    +   'var tipEl=document.getElementById("rcTip"),tnote=document.getElementById("rcTipNote");'
+    +   'if(tipEl&&tnote){var tip=parseFloat(tipEl.value)||0;'
+    +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
+    +     'else{tnote.textContent="";}}'
     + '}'
     + 'function bkRecalc(){rccalc();rcReceivedHint();}'
     // Receipt labels: the customer summary reads "Customer Receipt" / "Total Paid".
@@ -3123,6 +3131,9 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
   var storedBilled   = hasAdjustment ? billedTotal : null;
   total = storedTotal;
+  // Tip is tracked separately from the sale (not taxed, not in revenue).
+  var tip          = Math.round((parseFloat(req.body.tip) || 0) * 100) / 100;
+  if (tip < 0) tip = 0;
   var payment      = (req.body.paymentMethod || '').trim();
   if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
   var officeNotes  = (req.body.officeNotes || '').trim() || null;
@@ -3143,9 +3154,9 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id);
 
   var info = db.prepare(
-    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
+    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
   var receiptId = info.lastInsertRowid;
 
   // Unify the service address + vehicle entered on the receipt back onto the
@@ -3191,6 +3202,7 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
   var receiptDetail = '$' + total.toFixed(2)
     + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+    + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
     + (payment ? ' · ' + payment : '')
     + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
@@ -3254,6 +3266,9 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
     + '<div style="font-weight:700;color:#0a1f3d;">$' + money(receipt.total) + '</div>'
     + '</div>'
     + '<div style="color:#999;font-size:0.82rem;">' + esc(when) + (receipt.payment_method ? ' &middot; ' + esc(receipt.payment_method) : '') + '</div>'
+    + ((receipt.tip && receipt.tip > 0)
+        ? '<div style="color:#1a4a7a;font-size:0.82rem;margin-top:6px;">Includes a $' + money(receipt.tip) + ' tip (tracked separately, not taxed). Sale: $' + money(receipt.total) + ' &middot; Customer total: $' + money((receipt.total || 0) + receipt.tip) + '.</div>'
+        : '')
     + '</div>'
 
     // Short-payment panel — shown only when the owner accepted less (or more) than
@@ -3331,8 +3346,13 @@ function buildReceiptEmail(lead, r, notes) {
       }).join('')
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(r.shop_supplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(r.tax) + '</td></tr>'
-    + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
-    + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(r.total) + '</td></tr>'
+    + ((r.tip && r.tip > 0)
+        ? '<tr style="border-top:1px solid #e6ebf1;"><td style="padding:8px 0 0;color:#444;">Subtotal</td><td style="text-align:right;padding:8px 0 0;">$' + money(r.total) + '</td></tr>'
+          + '<tr><td style="padding:6px 0 0;color:#444;">Tip</td><td style="text-align:right;padding:6px 0 0;">$' + money(r.tip) + '</td></tr>'
+          + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+          + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money((r.total || 0) + (r.tip || 0)) + '</td></tr>'
+        : '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+          + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(r.total) + '</td></tr>')
     + (r.payment_method ? '<tr><td style="padding:8px 0 0;color:#888;">Payment</td><td style="text-align:right;padding:8px 0 0;">' + esc(r.payment_method) + '</td></tr>' : '')
     + '</table></div>'
 
@@ -3656,6 +3676,9 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="form-group" style="margin-bottom:0;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
     + '<input class="price-input" type="number" name="amountReceived" id="qReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
     + '<div id="qReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Tip <span style="color:#bbb;font-weight:400;">(optional — not taxed, reported separately from sales)</span></label>'
+    + '<input class="price-input" type="number" name="tip" id="qTip" min="0" step="0.01" placeholder="0.00" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    + '<div id="qTipNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     + COLLAPSE_CLOSE
 
     // Shared quote pricing block (services + per-service breakdown, custom line
@@ -3774,13 +3797,16 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var recEl=document.getElementById("qReceived"),note=document.getElementById("qReceivedNote");'
     +   'if(!recEl||!note)return;'
     +   'var billed=parseFloat((document.getElementById("qtotalH")||{}).value||"0")||0;'
-    +   'var raw=recEl.value.trim();'
-    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";return;}'
-    +   'var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";return;}'
-    +   'var diff=Math.round((billed-rec)*100)/100;'
-    +   'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
-    +   'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
-    +   'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}'
+    +   'var raw=recEl.value.trim();var saleRecorded=billed;'
+    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
+    +   'else{var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";saleRecorded=billed;}else{saleRecorded=rec;var diff=Math.round((billed-rec)*100)/100;'
+    +     'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
+    +     'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
+    +     'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}}}'
+    +   'var tipEl=document.getElementById("qTip"),tnote=document.getElementById("qTipNote");'
+    +   'if(tipEl&&tnote){var tip=parseFloat(tipEl.value)||0;'
+    +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
+    +     'else{tnote.textContent="";}}'
     + '}'
     + 'function bkRecalc(){qcalc();qReceivedHint();}'
     + 'function qUpdateServices(){qUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
@@ -3890,6 +3916,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'var qqcChip=document.getElementById("qqCustChip");if(qqcChip){qqcChip.innerHTML="";qqcChip.style.display="none";}'
     +   'var qqcSrch=document.getElementById("qqCustSearch");if(qqcSrch)qqcSrch.value="";'
     +   'var qrcv=document.getElementById("qReceived");if(qrcv)qrcv.value="";'
+    +   'var qtp=document.getElementById("qTip");if(qtp)qtp.value="";'
     +   'qSetMode("quote");qSetTier("standard");qcalc();qReceivedHint();'
     +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
     + '}'
@@ -4212,6 +4239,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     && !isNaN(amountReceived) && Math.abs(amountReceived - billedTotal) >= 0.005;
   var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
   var storedBilled   = hasAdjustment ? billedTotal : null;
+  // Tip tracked separately from the sale (not taxed, not in revenue).
+  var tip            = Math.round((parseFloat(req.body.tip) || 0) * 100) / 100;
+  if (tip < 0) tip = 0;
 
   // Customer advisories + any timed follow-ups attached to them.
   var notes = [];
@@ -4226,9 +4256,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
   var receiptId = rInfo.lastInsertRowid;
 
   // Unify the service address + vehicle back onto the customer record.
@@ -4252,6 +4282,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
   var receiptDetail = '$' + storedTotal.toFixed(2)
     + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+    + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
     + (payment ? ' · ' + payment : '')
     + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
@@ -6320,6 +6351,8 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
   var totalRevenue = db.prepare("SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
   var totalJobs    = db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
   var avgJobValue  = totalJobs > 0 ? totalRevenue / totalJobs : 0;
+  // Tips are tracked separately from sales (not taxed) and reported on their own line.
+  var totalTips    = db.prepare("SELECT COALESCE(SUM(tip),0) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
 
   // Period-filtered stats — all receipts with sent_at, used client-side for the dropdown filter
   var allReceiptsForFilter = db.prepare("SELECT total, sent_at FROM receipts WHERE sent_at IS NOT NULL").all();
@@ -6422,6 +6455,7 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
     + '</div>'
     + statBox(totalJobs, 'Jobs Completed')
     + statBox('$' + money(avgJobValue), 'Avg Job Value')
+    + statBox('$' + money(totalTips), 'Tips Collected (not taxed)')
     + '</div>'
     + '<div class="card" style="margin-bottom:12px;">'
     + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:14px;">Monthly Revenue — Last 12 Months</div>'
