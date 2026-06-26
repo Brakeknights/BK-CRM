@@ -905,6 +905,38 @@ var VEHICLE_CASCADE_JS = '<script>'
   + '})();'
   + '</script>';
 
+// Shared floating Save button — the navy chip pinned top-right (same look, place,
+// and crisp first-tap behavior as the customer/lead profile Save bar). Used on
+// every main form so saving is consistent and always reachable.
+//   opts.form    — id of the form it submits (required)
+//   opts.label   — button text (default "Save")
+//   opts.btnId   — unique button id (default opts.form + "Float")
+//   opts.name/value — optional submitter name/value (e.g. send_email=0)
+//   opts.onclick — optional JS expression to run instead of submitting the form
+//                  (for multi-action forms like Quick Quote); when set, the form
+//                  is not auto-submitted — the expression drives the action.
+// Fires on pointerdown so the first tap always registers (even with an input
+// focused or the Google Places dropdown open), gives instant "Saving…" feedback,
+// validates first so it never sticks disabled, and guards against double submits.
+function floatingSaveBar(opts) {
+  opts = opts || {};
+  var btnId = opts.btnId || (opts.form + 'Float');
+  var nameAttr = opts.name ? ' name="' + esc(opts.name) + '" value="' + esc(opts.value || '') + '"' : '';
+  return '<div style="position:fixed;top:66px;right:16px;z-index:150;">'
+    + '<button type="' + (opts.onclick ? 'button' : 'submit') + '" id="' + esc(btnId) + '"' + (opts.onclick ? '' : ' form="' + esc(opts.form) + '"' + nameAttr)
+    + ' style="background:#0d1b2a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;box-shadow:0 3px 14px rgba(13,27,42,.3);display:flex;align-items:center;gap:6px;white-space:nowrap;">'
+    + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
+    + esc(opts.label || 'Save') + '</button></div>'
+    + '<script>(function(){var btn=document.getElementById(' + JSON.stringify(btnId) + ');if(!btn)return;var saving=false;'
+    + (opts.onclick
+        ? 'function go(){if(saving)return;saving=true;btn.disabled=true;btn.style.opacity="0.7";btn.innerHTML="Working\\u2026";setTimeout(function(){saving=false;btn.disabled=false;btn.style.opacity="1";btn.innerHTML=' + JSON.stringify('✓ ' + (opts.label || 'Save')) + ';},4000);try{' + opts.onclick + ';}catch(e){saving=false;btn.disabled=false;btn.style.opacity="1";}}'
+        : 'var f=document.getElementById(' + JSON.stringify(opts.form) + ');if(!f)return;'
+          + 'function go(){if(saving)return;if(f.checkValidity&&!f.checkValidity()){if(f.reportValidity)f.reportValidity();return;}saving=true;btn.disabled=true;btn.style.opacity="0.7";btn.innerHTML="Saving\\u2026";try{if(f.requestSubmit){f.requestSubmit(btn);}else{f.submit();}}catch(_){try{f.submit();}catch(e){}}}')
+    + 'btn.addEventListener("pointerdown",function(e){e.preventDefault();go();});'
+    + 'btn.addEventListener("click",function(e){e.preventDefault();go();});'
+    + '})();<\/script>';
+}
+
 function page(title, body, req) {
   var authed = req.session && req.session.adminAuthed;
   var head = '<!DOCTYPE html><html lang="en"><head>'
@@ -2999,8 +3031,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + (lead.email ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The receipt will be saved but not emailed.</div>')
     + '<button type="button" class="btn btn-outline" onclick="toggleReceiptPreview()" id="rPrevBtn" style="margin-bottom:10px;">Preview Receipt Email</button>'
     + '<div id="rPreviewBox" style="display:none;margin-bottom:10px;"></div>'
-    + '<button type="submit" class="btn btn-blue">&#10003; Complete Job &amp; Send Receipt</button>'
     + '</form>'
+    + floatingSaveBar({ form: 'rf', label: 'Send Receipt' })
 
     + '<script>'
     + 'var rcPRICING=' + rPricingJson + ';'
@@ -3716,19 +3748,20 @@ router.get('/quick', requireAuth, function(req, res) {
     // Action buttons
     + '<div class="card">'
     + '<div class="qQuoteActions">'
-    + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'quote_send\')">Send Quote to Customer</button>'
-    + '<button type="button" class="btn btn-navy" style="margin-top:8px;" onclick="qSubmit(\'quote_link\')">Get Copyable Quote Link</button>'
+    + '<button type="button" class="btn btn-navy" onclick="qSubmit(\'quote_link\')">Get Copyable Quote Link</button>'
     + '<button type="button" class="btn" style="margin-top:8px;background:#e0e0e0;border:1.5px solid #b4b4b4;color:#444;" onclick="qSubmit(\'quote_save\')">Save as New Lead (no email)</button>'
     + '</div>'
-    + '<div class="qReceiptActions" style="display:none;">'
-    + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'receipt_send\')">&#10003; Send Receipt to Customer</button>'
-    + '</div>'
+    + '<div class="qReceiptActions" style="display:none;"></div>'
     + '<button type="button" id="qPreviewBtn" class="btn btn-outline" style="margin-top:8px;" onclick="qPreview()">Preview Email</button>'
     + '<div id="qPreviewBox" style="display:none;margin-top:8px;"></div>'
     + '<button type="button" class="btn btn-outline" style="margin-top:8px;border-color:#aaa;color:#555;" onclick="qSaveDraft()">' + ic('document') + 'Save Draft</button>'
     + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="if(confirm(\'Clear the form and start over? Nothing will be saved.\'))qClearAll()">&#10005; Clear &amp; Start Over</button>'
     + '</div>'
     + '</form>'
+    // Floating primary action mirrors the mode: Send Quote (quote mode) / Send
+    // Receipt (receipt mode). The other outcomes (copy link, save as lead, draft)
+    // stay inline since they are distinct outcomes, not duplicate saves.
+    + floatingSaveBar({ form: 'qqf', label: 'Send', btnId: 'qqFloat', onclick: "qSubmit(document.getElementById('qmode').value==='receipt'?'receipt_send':'quote_send')" })
 
     + '<script>'
     + 'var qPRICING=' + pricingJson + ';'
@@ -4524,7 +4557,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
 
   var body = '<a href="/admin/customers" class="back-link"><span class="bk-arrow">&#8592;</span>All Customers</a>'
     + alert
-    + '<form method="POST" action="/admin/customer/new" data-autosave="custnew">'
+    + '<form method="POST" action="/admin/customer/new" id="newCustForm" data-autosave="custnew">'
     + '<div class="card">'
     + '<div class="section-title">Contact</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
@@ -4551,10 +4584,10 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group" style="margin-bottom:0;"><label>Internal Notes</label><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times..."></textarea></div>'
     + '</div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-top:4px;">'
-    + '<button type="submit" class="btn btn-navy" style="flex:1;">Create Customer</button>'
     + '<a href="/admin/customer/new" class="btn btn-outline" style="width:auto;" onclick="bkClearDraft(\'custnew\')">Start Over</a>'
     + '</div>'
     + '</form>'
+    + floatingSaveBar({ form: 'newCustForm', label: 'Create Customer' })
     + VEHICLE_CASCADE_JS;
 
   res.send(page('New Customer', body, req));
@@ -5554,7 +5587,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">New Appointment</h1>'
     + fromLeadBanner
-    + '<form method="POST" action="/admin/appointments/new" data-autosave="apptnew-' + esc(fromLeadId || 'new') + '" data-autosave-after="bkApptAfter">'
+    + '<form method="POST" action="/admin/appointments/new" id="apptNewForm" data-autosave="apptnew-' + esc(fromLeadId || 'new') + '" data-autosave-after="bkApptAfter">'
     + (fromLeadId ? '<input type="hidden" name="from_lead" value="' + esc(fromLeadId) + '">' : '')
 
     + '<div class="card">'
@@ -5636,10 +5669,10 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<button type="button" id="apptPreviewBtn" class="btn btn-outline" style="margin-bottom:8px;" onclick="apptPreview()">Preview Email</button>'
     + '<div id="apptPreviewBox" style="display:none;margin-bottom:12px;"></div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-bottom:24px;">'
-    + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="flex:1;">Create Appointment</button>'
     + '<a href="/admin/appointments/new" class="btn btn-outline" style="width:auto;" onclick="bkClearDraft(\'apptnew-' + esc(fromLeadId || 'new') + '\')">Start Over</a>'
     + '</div>'
     + '</form>'
+    + floatingSaveBar({ form: 'apptNewForm', label: 'Create Appointment' })
     + '<script>(function(){'
     + 'var form=document.querySelector("form[action=\'/admin/appointments/new\']");'
     + 'if(form)form.addEventListener("submit",function(){'
@@ -6125,7 +6158,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:4px;">Edit Appointment</h1>'
     + '<div style="color:#888;font-size:0.85rem;margin-bottom:14px;">Update any details and save. Choose whether to email the customer an updated confirmation.</div>'
-    + '<form method="POST" action="/admin/appointments/' + lead.id + '/edit">'
+    + '<form method="POST" action="/admin/appointments/' + lead.id + '/edit" id="apptEditForm">'
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
@@ -6184,10 +6217,10 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + (preEmail ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The updated confirmation can\'t be emailed.</div>')
     + '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">'
     + (preEmail ? '<button type="submit" name="send_email" value="1" class="btn btn-blue">Save &amp; Email Updated Confirmation</button>' : '')
-    + '<button type="submit" name="send_email" value="0" class="btn btn-navy">Save Changes (no email)</button>'
     + '<a href="/admin/appointments" class="btn btn-outline" style="text-align:center;">Cancel</a>'
     + '</div>'
     + '</form>'
+    + floatingSaveBar({ form: 'apptEditForm', label: 'Save Changes', name: 'send_email', value: '0' })
 
     + '<script>'
     + 'var apptPRICING=' + pricingJson + ';'
