@@ -683,6 +683,9 @@ setInterval(function() {
       transporter.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      f.lead_email,
+        // CC the owner on the one-week check-in so it's visible when (and that) it
+        // actually went out. A copy lands in greetings@brakeknights.com.
+        cc:      isCheckin ? 'greetings@brakeknights.com' : undefined,
         replyTo: 'greetings@brakeknights.com',
         subject: isCheckin ? 'How are your brakes? A quick check-in from Brake Knights' : 'A reminder from Brake Knights',
         html:    isCheckin ? reviewCheckinEmail(f) : followupCustomerEmail(f)

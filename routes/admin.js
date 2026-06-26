@@ -4279,6 +4279,22 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
       .run(leadId, receiptId, f.description, f.due_date, f.recipient);
   });
 
+  // Automatic one-week post-service check-in (same as the per-lead receipt flow):
+  // a friendly "how are your brakes?" + Google review email 7 days out, to the
+  // customer, only when we have an email and one isn't already queued for this lead.
+  if (email) {
+    var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(leadId);
+    if (!hasCheckin) {
+      var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+      var _p = baseDay.split('-');
+      var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
+      _dt.setUTCDate(_dt.getUTCDate() + 7);
+      var checkinDue = _dt.toISOString().slice(0, 10);
+      db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
+        .run(leadId, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+    }
+  }
+
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
   var receiptDetail = '$' + storedTotal.toFixed(2)
     + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
