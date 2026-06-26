@@ -635,7 +635,7 @@ function reviewCheckinEmail(f) {
     + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
     + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Hi ' + e(f.first_name) + ',</h2>'
     + '<p style="color:#444;line-height:1.6;margin:0 0 16px;">It has been about a week since we serviced your brakes' + (f.vehicle ? ' on your <strong>' + e(f.vehicle) + '</strong>' : '') + '. We wanted to check in and make sure everything still feels right. Your brakes should be quiet and smooth, with firm, steady stops.</p>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">If anything feels off, just reply to this email or call or text us at <a href="tel:7039774475" style="color:#1a6fc4;text-decoration:none;">703-977-4475</a> and we will come back out to take a look.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">If anything feels off, please don&rsquo;t hesitate to reach out to discuss any concerns you may have. You can reach us at <a href="tel:7039774475" style="color:#1a6fc4;text-decoration:none;">703-977-4475</a>.</p>'
     + '<div style="background:#f4f7fb;border:1px solid #dde7f2;border-radius:8px;padding:22px;text-align:center;">'
     + '<p style="color:#0a1f3d;font-weight:700;margin:0 0 6px;font-size:1rem;">Happy with the work?</p>'
     + '<p style="color:#555;line-height:1.6;margin:0 0 16px;font-size:0.92rem;">We are a small local team, and a quick Google review genuinely helps other drivers in the area find us.</p>'
