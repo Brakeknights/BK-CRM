@@ -2150,7 +2150,7 @@ function quotePricingJs(pfx) {
     +   'document.getElementById("' + P + 'svcHidden").value=all.join(", ");'
     + '}'
     + 'var ' + P + 'PFX_MAP={"Caliper":"Caliper Replacement","Brake Hose":"Brake Hose Replacement"};'
-    + 'function ' + P + 'AddPriceRow(svcName){'
+    + 'function ' + P + 'AddPriceRow(svcName,addSupplies){'
     +   'if(document.querySelector("#' + P + 'SvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']"))return;'
     +   'var pfx=svcName.split(" - ");var lookupKey=pfx.length===2&&' + P + 'PFX_MAP[pfx[0]]?' + P + 'PFX_MAP[pfx[0]]:svcName;'
     +   'var p=' + P + 'PRICING[lookupKey];var td=p&&(p[' + P + 'tier]||p.standard);'
@@ -2167,12 +2167,11 @@ function quotePricingJs(pfx) {
     +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input ' + P + '-parts-in\' type=\'number\' min=\'0\' step=\'0.01\' value=\'"+(dParts.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
     +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input ' + P + '-labor-in\' type=\'number\' min=\'0\' step=\'0.01\' value=\'"+(dLabor.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
     +     '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
-    // Shop supplies is a flat per-visit fee, NOT per service. Only raise the field
-    // to a single service\'s supply amount if it is currently lower; never add on
-    // top. This keeps it stable no matter how many services are picked or how many
-    // times the form is rebuilt from a saved/auto-saved draft (which previously
-    // stacked another $10 every time the page reopened).
-    +   'if(dSS>0){var curSS=parseFloat(document.getElementById("' + P + 'ss").value)||0;if(dSS>curSS)document.getElementById("' + P + 'ss").value=dSS.toFixed(2);}'
+    // Add this service\'s shop-supplies amount ($10) ONLY when the owner actually
+    // selects the service (addSupplies=true from the checkbox handlers). Rebuilding
+    // the rows from a saved/auto-saved draft passes no flag, so it never re-adds —
+    // that double-counting was the bug where supplies crept up $10 on every reopen.
+    +   'if(addSupplies&&dSS>0){var curSS=parseFloat(document.getElementById("' + P + 'ss").value)||0;document.getElementById("' + P + 'ss").value=(curSS+dSS).toFixed(2);}'
     +   'document.getElementById("' + P + 'SvcPriceRows").appendChild(row);'
     + '}'
     + 'function ' + P + 'RowMode(btn,mode){'
@@ -2185,12 +2184,12 @@ function quotePricingJs(pfx) {
     +   'if(row)row.parentNode.removeChild(row);'
     + '}'
     + 'function ' + P + 'SvcCbChange(cb){'
-    +   'if(cb.checked)' + P + 'AddPriceRow(cb.value);else ' + P + 'RemovePriceRow(cb.value);'
+    +   'if(cb.checked)' + P + 'AddPriceRow(cb.value,true);else ' + P + 'RemovePriceRow(cb.value);'
     +   P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
     + '}'
     + 'function ' + P + 'PosCbChange(cb){'
     +   'var rowName=cb.getAttribute("data-prefix")+" - "+cb.getAttribute("data-pos");'
-    +   'if(cb.checked)' + P + 'AddPriceRow(rowName);else ' + P + 'RemovePriceRow(rowName);'
+    +   'if(cb.checked)' + P + 'AddPriceRow(rowName,true);else ' + P + 'RemovePriceRow(rowName);'
     +   P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
     + '}'
     + 'function ' + P + 'UpdateRowPrices(){'
@@ -4130,7 +4129,12 @@ router.get('/quick', requireAuth, function(req, res) {
     + '}'
 
     // Auto-save form state to localStorage so navigating away and back preserves work.
+    // qRestoring guards against saving an empty/half-built state while qRestoreState
+    // is still applying a draft (qSetMode/qSetTier would otherwise fire qSaveState
+    // before services are restored, wiping the saved draft).
+    + 'var qRestoring=false;'
     + 'function qSaveState(){'
+    +   'if(qRestoring)return;'
     +   'try{'
     +     'var adv=[1,2,3,4].map(function(i){'
     +       'return {'
@@ -4167,6 +4171,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   '}catch(_){}'
     + '}'
     + 'function qRestoreState(){'
+    +   'qRestoring=true;'
     +   'try{'
     +     'var s=QDRAFT;'
     +     'if(!s){var raw=localStorage.getItem("bk_qq_state");if(!raw)return;s=JSON.parse(raw);if(s&&s.savedAt&&Date.now()-s.savedAt>24*60*60*1000){try{localStorage.removeItem("bk_qq_state");}catch(_){}return;}}'
@@ -4216,7 +4221,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'var allVis=[2,3,4].every(function(i){var r=document.getElementById("advRow"+i);return !r||r.style.display!=="none";});'
     +     'if(allVis){var ab=document.getElementById("qqAddAdvBtn");if(ab)ab.style.display="none";}'
     +     'qqUpdateServiceHidden();qRenderTags();qHints();qPayToggle();qcalc();'
-    +   '}catch(_){}'
+    +   '}catch(_){}finally{qRestoring=false;}'
     + '}'
 
     + 'function qSaveDraft(){'
