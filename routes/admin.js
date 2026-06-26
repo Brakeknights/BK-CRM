@@ -4911,11 +4911,24 @@ function customerProfileSections(c, opts) {
     +   '}'
     +   'form.addEventListener("input",showSave);'
     +   'form.addEventListener("change",showSave);'
+    // Crisp, first-tap save. The button fires on pointerdown so the very first touch
+    // submits, even when an input still has focus or the Google Places address
+    // dropdown is open (which otherwise eats the first tap). Instant feedback +
+    // a guard stop double submits and the "tap it a few times" feeling.
+    +   'var btn=document.getElementById("profileSaveBtn");'
+    +   'if(btn){var saving=false;'
+    +     'function doSave(){if(saving)return;'
+    +       'if(form.checkValidity&&!form.checkValidity()){if(form.reportValidity)form.reportValidity();return;}'
+    +       'saving=true;btn.disabled=true;btn.style.opacity="0.7";btn.innerHTML="Saving\\u2026";'
+    +       'try{if(form.requestSubmit){form.requestSubmit();}else{form.submit();}}catch(_){try{form.submit();}catch(e){}}}'
+    +     'btn.addEventListener("pointerdown",function(e){e.preventDefault();doSave();});'
+    +     'btn.addEventListener("click",function(e){e.preventDefault();doSave();});'
+    +   '}'
     + '})();'
     + '</script>';
 
   var saveBar = '<div id="profileSaveBar" style="display:none;position:fixed;top:66px;right:16px;z-index:150;">'
-    + '<button type="submit" form="profileSaveForm"'
+    + '<button type="submit" id="profileSaveBtn" form="profileSaveForm"'
     + ' style="background:#0d1b2a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;box-shadow:0 3px 14px rgba(13,27,42,.3);display:flex;align-items:center;gap:6px;white-space:nowrap;">'
     + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
     + 'Save</button>'
