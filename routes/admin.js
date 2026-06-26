@@ -926,6 +926,15 @@ function page(title, body, req) {
     + '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">'
     + '<title>BK Admin' + (title && title !== 'Leads' ? ' — ' + esc(title) : '') + '</title>'
     + '<style>' + CSS + '</style>'
+    // Google Maps Places loaded ONCE for the whole admin shell (not per page). The
+    // API can only load once per page; loading it per-page broke address autocomplete
+    // after the first client-side (bkBoost) navigation. bkInitAddrAC() (defined in the
+    // shell script) attaches autocomplete to any address input on screen, and re-runs
+    // after every content swap via bkInitPage().
+    + (authed && process.env.GOOGLE_MAPS_API_KEY
+        ? '<script>window.bkMapsReady=false;function bkMapsInit(){window.bkMapsReady=true;if(window.bkInitAddrAC)window.bkInitAddrAC();}</script>'
+          + '<script async src="https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(process.env.GOOGLE_MAPS_API_KEY) + '&libraries=places&loading=async&callback=bkMapsInit"></script>'
+        : '')
     + '</head>';
 
   // Login (and any unauthed) page: no sidebar/header chrome, just centered content.
@@ -1117,6 +1126,16 @@ function page(title, body, req) {
     +   'restore();'
     + '};'
     + 'window.bkClearDraft=function(key){try{localStorage.removeItem("bkdraft_"+key);}catch(_){}};'
+    // Attach Google Places autocomplete to any address input marked data-addr-ac.
+    // Idempotent (skips inputs already wired) and safe to call before Maps loads —
+    // it no-ops until google.maps.places exists, then bkMapsInit/bkInitPage re-run it.
+    + 'window.bkInitAddrAC=function(){'
+    +   'if(!(window.google&&window.google.maps&&google.maps.places&&google.maps.places.Autocomplete))return;'
+    +   'var ins=document.querySelectorAll("input[data-addr-ac]");'
+    +   'for(var i=0;i<ins.length;i++){var el=ins[i];if(el.getAttribute("data-ac-done"))continue;el.setAttribute("data-ac-done","1");'
+    +     'try{new google.maps.places.Autocomplete(el,{fields:["formatted_address"],componentRestrictions:{country:"us"},types:["address"]});}catch(_){}'
+    +   '}'
+    + '};'
     // Per-page init that must re-run after each client-side content swap (see bkBoost):
     // phone formatting, collapsed-section restore, the lead Customer Info card opening
     // by default, the ?bq=1 Build Quote opener, and autosave wiring for any
@@ -1127,6 +1146,7 @@ function page(title, body, req) {
     +   'try{var ce=document.querySelector(".collapse[data-ckey=\\"cust\\"]");if(ce&&localStorage.getItem("bkc_cust")!=="0")ce.classList.remove("collapsed");}catch(_){}'
     +   'try{if(/[?&]bq=1(&|$)/.test(location.search)){var be=document.querySelector(".collapse[data-ckey=\\"buildquote\\"]");if(be)be.classList.remove("collapsed");}}catch(_){}'
     +   'try{document.querySelectorAll("form[data-autosave]").forEach(function(f){if(f.getAttribute("data-autosaved"))return;f.setAttribute("data-autosaved","1");var fn=f.getAttribute("data-autosave-after");var after=(fn&&window[fn])?window[fn]:null;bkAutosave(f,f.getAttribute("data-autosave"),after);});}catch(_){}'
+    +   'try{if(window.bkInitAddrAC)window.bkInitAddrAC();}catch(_){}'
     + '};'
     + 'bkInitPage();'
     // Idle guard: auto-log-out after 30 min of no interaction, and verify the session
@@ -2939,7 +2959,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<div class="form-group" id="rpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
     + '<input type="text" name="paymentOther" id="rpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
-    + '<input type="text" id="receiptAddr" name="serviceAddress" autocomplete="off" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
+    + '<input type="text" id="receiptAddr" name="serviceAddress" data-addr-ac autocomplete="off" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
     + COLLAPSE_CLOSE
 
     // Shared quote pricing block (per-service breakdown, custom line items,
@@ -3088,11 +3108,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'rccalc();'
     + '};'
     + '</script>'
-    + VEHICLE_CASCADE_JS
-    + (process.env.GOOGLE_MAPS_API_KEY
-        ? '<script>function initBkRecAddr(){var el=document.getElementById("receiptAddr");if(!el||!window.google||!google.maps||!google.maps.places)return;var ac=new google.maps.places.Autocomplete(el,{fields:["formatted_address"],componentRestrictions:{country:"us"},types:["address"]});ac.addListener("place_changed",function(){if(ac.getPlace())el.value=ac.getPlace().formatted_address||el.value;});}<\/script>'
-          + '<script src="https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(process.env.GOOGLE_MAPS_API_KEY) + '&libraries=places&loading=async&callback=initBkRecAddr" async><\/script>'
-        : '');
+    + VEHICLE_CASCADE_JS;
+  // Address autocomplete is wired centrally via the shell (data-addr-ac on the input).
 
   res.send(page('Receipt — ' + lead.first_name + ' ' + lead.last_name, body, req));
 });
@@ -3672,7 +3689,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<div class="form-group" id="qpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
     + '<input type="text" name="paymentOther" id="qpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
     + '<div class="form-group"><label>Service address</label>'
-    + '<input type="text" name="serviceAddress" placeholder="Where the work was performed"></div>'
+    + '<input type="text" name="serviceAddress" data-addr-ac autocomplete="off" placeholder="Where the work was performed"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
     + '<input class="price-input" type="number" name="amountReceived" id="qReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
     + '<div id="qReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
@@ -4518,7 +4535,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" placeholder="customer@email.com"></div>'
     + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" data-addr-ac placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>'
     + '<div class="card">'
     + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
@@ -4697,7 +4714,7 @@ function customerProfileSections(c, opts) {
     + '</div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" value="' + esc(c.email || '') + '" placeholder="customer@email.com"></div>'
     + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" data-addr-ac value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>';
 
   // Tags card (collapsible) — removable pills + free-text add + preset quick picks
@@ -4797,7 +4814,7 @@ function customerProfileSections(c, opts) {
     + '</div>'
     + '<div class="form-group" style="margin-bottom:0;">'
     + '<label>Address</label>'
-    + '<input type="text" name="addr_address" placeholder="123 Main St, Sterling, VA">'
+    + '<input type="text" name="addr_address" data-addr-ac autocomplete="off" placeholder="123 Main St, Sterling, VA">'
     + '</div>'
     + '</div>'
     + COLLAPSE_CLOSE;
@@ -5506,10 +5523,8 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     : [];
   var timeOpts = ownerTimeOptions('');
 
-  var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
-  var mapsScript = mapsKey
-    ? '<script async defer src="https://maps.googleapis.com/maps/api/js?key=' + esc(mapsKey) + '&libraries=places&callback=apptInitMaps"></script>'
-    : '';
+  // Maps is loaded once by the shell; the address input uses data-addr-ac.
+  var mapsScript = '';
 
   var alert = '';
   if (req.query.err === 'name') alert = '<div class="alert alert-error">Customer first and last name are required for new customers.</div>';
@@ -5558,7 +5573,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
     + '<div class="form-group" style="margin-top:14px;margin-bottom:0;">'
-    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Service address" autocomplete="off" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
+    + '<input type="text" name="pref_location" id="apptAddr" data-addr-ac placeholder="Service address" autocomplete="off" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
     + '</div>'
     + '</div>'
 
@@ -5705,7 +5720,6 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
     + quotePricingJs('appt')
     + 'apptInitRows();apptUpdateServiceHidden();apptRenderTags();apptHints();apptcalc();'
-    + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
     + 'function apptPreview(){'
     +   'var box=document.getElementById("apptPreviewBox"),btn=document.getElementById("apptPreviewBtn");'
     +   'if(box.style.display!=="none"&&box.innerHTML){box.style.display="none";box.innerHTML="";btn.textContent="Preview Email";return;}'
@@ -6087,9 +6101,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
   var apptSvcSeed = JSON.stringify(apptSvcRows);
 
   var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
-  var mapsScript = mapsKey
-    ? '<script async defer src="https://maps.googleapis.com/maps/api/js?key=' + esc(mapsKey) + '&libraries=places&callback=apptInitMaps"></script>'
-    : '';
+  var mapsScript = ''; // Maps loaded once by the shell; input uses data-addr-ac.
 
   var alert = '';
   if (req.query.err === 'name') alert = '<div class="alert alert-error">Customer first and last name are required.</div>';
@@ -6113,7 +6125,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Email</label><input type="email" name="cust_email" value="' + esc(preEmail) + '" placeholder="customer@email.com" style="' + inputStyle + '"></div>'
     + '</div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
-    + '<input type="text" name="pref_location" id="apptAddr" value="' + esc(q.pref_location || '') + '" placeholder="Service address" autocomplete="off" style="' + inputStyle + '"></div>'
+    + '<input type="text" name="pref_location" id="apptAddr" data-addr-ac value="' + esc(q.pref_location || '') + '" placeholder="Service address" autocomplete="off" style="' + inputStyle + '"></div>'
     + '</div>'
 
     + '<div class="card">'
@@ -6171,7 +6183,6 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + 'function bkRecalc(){apptcalc();}'
     // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
     + quotePricingJs('appt')
-    + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
     // On load: rebuild the saved per-service rows (preserving booked-appointment
     // price overrides), or pull fresh defaults if none were stored, then total up.
     + '(function(){'
