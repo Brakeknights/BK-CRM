@@ -2864,6 +2864,10 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   // different quote than the one we prefilled from).
   var address   = quote.pref_location
     || (db.prepare("SELECT pref_location FROM quotes WHERE lead_id = ? AND pref_location IS NOT NULL AND TRIM(pref_location) != '' ORDER BY id DESC LIMIT 1").get(lead.id) || {}).pref_location
+    // Fall back to the customer's saved service address / home address so a phone-
+    // booked job that only has the address on the customer profile still pre-fills.
+    || (lead.customer_id ? ((db.prepare("SELECT address FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC LIMIT 1").get(lead.customer_id) || {}).address) : '')
+    || (lead.customer_id ? ((db.prepare("SELECT home_address FROM customers WHERE id = ?").get(lead.customer_id) || {}).home_address) : '')
     || '';
   var partsLabor = (quote.price_parts || 0) + (quote.price_labor || 0);
   var shopSupplies = quote.shop_supplies || 0;
@@ -2952,6 +2956,11 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
         showCustomerNotes: false
       })
     + '<input type="hidden" id="rcSvcSeed" value="' + esc(rcSvcSeed) + '">'
+    // Amount actually received — only when the owner accepted a different amount than
+    // the billed total (e.g. cash/Zelle a few dollars short). Blank = paid in full.
+    + '<div class="form-group" style="margin:16px 0 0;border-top:1px solid #eef1f5;padding-top:14px;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total above)</span></label>'
+    + '<input class="price-input" type="number" name="amountReceived" id="rcReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="rcReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    + '<div id="rcReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     + COLLAPSE_CLOSE
 
     + collapseOpen('rc_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true)
@@ -2976,7 +2985,19 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + CLI_JS
     // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
     + quotePricingJs('rc')
-    + 'function bkRecalc(){rccalc();}'
+    + 'function rcReceivedHint(){'
+    +   'var recEl=document.getElementById("rcReceived"),note=document.getElementById("rcReceivedNote");'
+    +   'if(!recEl||!note)return;'
+    +   'var billed=parseFloat((document.getElementById("rctotalH")||{}).value||"0")||0;'
+    +   'var raw=recEl.value.trim();'
+    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";return;}'
+    +   'var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";return;}'
+    +   'var diff=Math.round((billed-rec)*100)/100;'
+    +   'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
+    +   'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
+    +   'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}'
+    + '}'
+    + 'function bkRecalc(){rccalc();rcReceivedHint();}'
     // Receipt labels: the customer summary reads "Customer Receipt" / "Total Paid".
     + '(function(){var sl=document.getElementById("rcSummaryLabel");if(sl)sl.textContent="Customer Receipt";var tl=document.getElementById("rcTotalLabel");if(tl)tl.textContent="Total Paid";})();'
     + 'function rPayToggle(){'
@@ -2998,7 +3019,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'if(Array.isArray(seed)&&seed.length){seed.forEach(function(it){rcAddPriceRow(it.service);var row=document.querySelector("#rcSvcPriceRows .svc-price-row[data-base=\'"+it.service+"\']");if(row){row.querySelector(".rc-parts-in").value=it.parts;row.querySelector(".rc-labor-in").value=it.labor;var mode=it.mode||"combined";row.querySelector(".svc-row-mode").value=mode;row.querySelectorAll(".svc-disp-btn").forEach(function(b,i){b.classList.toggle("active",(mode==="split")?i===1:i===0);});}});}'
     +   'else{rcInitRows();}'
     + '})();'
-    + 'rcUpdateServiceHidden();rcRenderTags();rcHints();rccalc();'
+    + 'rcUpdateServiceHidden();rcRenderTags();rcHints();rccalc();rcReceivedHint();'
     + 'function bkAddAdvisory(pfx){'
     +   'for(var i=2;i<=4;i++){'
     +     'var r=document.getElementById((pfx||"")+"advRow"+i)||document.getElementById("advRow"+i);'
@@ -3089,6 +3110,19 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
   var cliSum       = lineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
   var total        = partsLabor + shopSupplies + cliSum + tax - discount;
+  // Short-payment handling: the owner may accept less than the billed total (cash
+  // or Zelle a few dollars short). When an Amount Received is entered and differs
+  // from the billed total, store what was actually collected as `total` (so revenue
+  // reporting is accurate) and keep the billed amount in `billed_total` so the
+  // shortfall stays visible internally. Paid-in-full leaves billed_total null.
+  var billedTotal    = Math.round(total * 100) / 100;
+  var rawReceived    = req.body.amountReceived;
+  var amountReceived = parseFloat(rawReceived);
+  var hasAdjustment  = rawReceived != null && String(rawReceived).trim() !== ''
+    && !isNaN(amountReceived) && Math.abs(amountReceived - billedTotal) >= 0.005;
+  var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
+  var storedBilled   = hasAdjustment ? billedTotal : null;
+  total = storedTotal;
   var payment      = (req.body.paymentMethod || '').trim();
   if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
   var officeNotes  = (req.body.officeNotes || '').trim() || null;
@@ -3109,10 +3143,23 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id);
 
   var info = db.prepare(
-    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, total, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
+    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
   var receiptId = info.lastInsertRowid;
+
+  // Unify the service address + vehicle entered on the receipt back onto the
+  // customer record so the profile and every other form stay in sync.
+  if (lead.customer_id) {
+    customers.syncCustomerData(lead.customer_id, {
+      phone: lead.phone, email: lead.email, address: address,
+      vehicle: {
+        year:  (req.body.veh_year  || '').trim(),
+        make:  (req.body.veh_make  || '').trim(),
+        model: (req.body.veh_model || '').trim()
+      }
+    });
+  }
 
   followups.forEach(function(f) {
     db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
@@ -3142,7 +3189,10 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   db.prepare("UPDATE leads SET status = 'completed', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
 
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
-  var receiptDetail = '$' + total.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+  var receiptDetail = '$' + total.toFixed(2)
+    + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+    + (payment ? ' · ' + payment : '')
+    + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
   if (process.env.SMTP_PASS && lead.email) {
     try {
@@ -3205,6 +3255,23 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
     + '</div>'
     + '<div style="color:#999;font-size:0.82rem;">' + esc(when) + (receipt.payment_method ? ' &middot; ' + esc(receipt.payment_method) : '') + '</div>'
     + '</div>'
+
+    // Short-payment panel — shown only when the owner accepted less (or more) than
+    // the billed total. Internal only; the customer's receipt shows what they paid.
+    + ((receipt.billed_total != null && Math.abs(receipt.billed_total - receipt.total) >= 0.005)
+        ? '<div class="card" style="background:#fff7ed;border:1px solid #f0c890;">'
+          + '<div class="section-title" style="color:#9a3412;">'
+          + (receipt.billed_total > receipt.total ? 'Short payment recorded' : 'Overpayment recorded')
+          + '</div>'
+          + '<div style="font-size:0.9rem;color:#7a3a10;line-height:1.7;">'
+          + 'Billed: $' + money(receipt.billed_total) + '<br>'
+          + 'Received: $' + money(receipt.total) + '<br>'
+          + '<strong>Difference: $' + money(Math.abs(receipt.billed_total - receipt.total))
+          + (receipt.billed_total > receipt.total ? ' (not collected)' : ' (extra)') + '</strong>'
+          + '</div>'
+          + '<div style="font-size:0.8rem;color:#a06a3a;margin-top:6px;">Sales reports count the received amount ($' + money(receipt.total) + ').</div>'
+          + '</div>'
+        : '')
 
     // Internal panel (office notes + follow-ups) — never sent to the customer.
     + ((receipt.office_notes || fus.length)
@@ -3584,8 +3651,11 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</div>'
     + '<div class="form-group" id="qpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
     + '<input type="text" name="paymentOther" id="qpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
+    + '<div class="form-group"><label>Service address</label>'
     + '<input type="text" name="serviceAddress" placeholder="Where the work was performed"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
+    + '<input class="price-input" type="number" name="amountReceived" id="qReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    + '<div id="qReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     + COLLAPSE_CLOSE
 
     // Shared quote pricing block (services + per-service breakdown, custom line
@@ -3700,7 +3770,19 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'qSaveState();'
     + '}'
 
-    + 'function bkRecalc(){qcalc();}'
+    + 'function qReceivedHint(){'
+    +   'var recEl=document.getElementById("qReceived"),note=document.getElementById("qReceivedNote");'
+    +   'if(!recEl||!note)return;'
+    +   'var billed=parseFloat((document.getElementById("qtotalH")||{}).value||"0")||0;'
+    +   'var raw=recEl.value.trim();'
+    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";return;}'
+    +   'var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";return;}'
+    +   'var diff=Math.round((billed-rec)*100)/100;'
+    +   'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
+    +   'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
+    +   'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}'
+    + '}'
+    + 'function bkRecalc(){qcalc();qReceivedHint();}'
     + 'function qUpdateServices(){qUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
 
     + 'function qPayToggle(){'
@@ -3807,7 +3889,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qqCustId").value="";'
     +   'var qqcChip=document.getElementById("qqCustChip");if(qqcChip){qqcChip.innerHTML="";qqcChip.style.display="none";}'
     +   'var qqcSrch=document.getElementById("qqCustSearch");if(qqcSrch)qqcSrch.value="";'
-    +   'qSetMode("quote");qSetTier("standard");qcalc();'
+    +   'var qrcv=document.getElementById("qReceived");if(qrcv)qrcv.value="";'
+    +   'qSetMode("quote");qSetTier("standard");qcalc();qReceivedHint();'
     +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
     + '}'
 
@@ -4119,6 +4202,17 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var officeNotes = (req.body.officeNotes || '').trim() || null;
   var partsLabor  = parts + labor;
 
+  // Short-payment handling (see /receipt/:id/send): when an Amount Received is
+  // entered and differs from the billed total, store what was collected as `total`
+  // and keep the billed amount in `billed_total`.
+  var billedTotal    = Math.round(totalAmt * 100) / 100;
+  var rawReceived    = req.body.amountReceived;
+  var amountReceived = parseFloat(rawReceived);
+  var hasAdjustment  = rawReceived != null && String(rawReceived).trim() !== ''
+    && !isNaN(amountReceived) && Math.abs(amountReceived - billedTotal) >= 0.005;
+  var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
+  var storedBilled   = hasAdjustment ? billedTotal : null;
+
   // Customer advisories + any timed follow-ups attached to them.
   var notes = [];
   var followups = [];
@@ -4132,10 +4226,23 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, totalAmt, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
   var receiptId = rInfo.lastInsertRowid;
+
+  // Unify the service address + vehicle back onto the customer record.
+  var qqLead = db.prepare('SELECT customer_id, phone, email FROM leads WHERE id = ?').get(leadId);
+  if (qqLead && qqLead.customer_id) {
+    customers.syncCustomerData(qqLead.customer_id, {
+      phone: qqLead.phone, email: qqLead.email, address: address,
+      vehicle: {
+        year:  (req.body.veh_year  || '').trim(),
+        make:  (req.body.veh_make  || '').trim(),
+        model: (req.body.veh_model || '').trim()
+      }
+    });
+  }
 
   followups.forEach(function(f) {
     db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
@@ -4143,7 +4250,10 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   });
 
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
-  var receiptDetail = '$' + totalAmt.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+  var receiptDetail = '$' + storedTotal.toFixed(2)
+    + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+    + (payment ? ' · ' + payment : '')
+    + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
   if (action === 'receipt_send' && process.env.SMTP_PASS && email) {
     try {
@@ -5780,26 +5890,19 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
     if (!cust) return res.redirect('/admin/appointments/new?err=name');
   }
 
-  // Save the structured vehicle to the customer's profile if it's new, so it's
-  // reusable on future appointments and feeds Phase 8 tier lookup.
-  var vYear  = (req.body.veh_year  || '').trim() || null;
-  var vMake  = (req.body.veh_make  || '').trim() || null;
-  var vModel = (req.body.veh_model || '').trim() || null;
-  var vVin   = (req.body.veh_vin   || '').trim() || null;
-  var vPlate = (req.body.veh_plate || '').trim() || null;
-  if (vMake || vModel || vVin || vPlate) {
-    var dupe = db.prepare(
-      'SELECT id FROM customer_vehicles WHERE customer_id = ? AND IFNULL(year,\'\')=? AND IFNULL(make,\'\')=? AND IFNULL(model,\'\')=?'
-    ).get(cust.id, vYear || '', vMake || '', vModel || '');
-    if (!dupe) {
-      db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)')
-        .run(cust.id, vYear, vMake, vModel, vVin, vPlate);
-    } else if (vVin || vPlate) {
-      // Update VIN/plate on existing vehicle row if those fields are new
-      db.prepare('UPDATE customer_vehicles SET vin = COALESCE(NULLIF(?,\'\'),vin), license_plate = COALESCE(NULLIF(?,\'\'),license_plate) WHERE id = ?')
-        .run(vVin, vPlate, dupe.id);
+  // Unify everything entered here back onto the customer record (vehicle, service
+  // address, and any contact details), so it shows on the profile and pre-fills
+  // every other form. Enter it once, it lives everywhere.
+  customers.syncCustomerData(cust.id, {
+    phone: cust.phone, email: cust.email, address: pref_location,
+    vehicle: {
+      year:  (req.body.veh_year  || '').trim(),
+      make:  (req.body.veh_make  || '').trim(),
+      model: (req.body.veh_model || '').trim(),
+      vin:   (req.body.veh_vin   || '').trim(),
+      license_plate: (req.body.veh_plate || '').trim()
     }
-  }
+  });
 
   // If booking from an existing quoted/quote_accepted lead, advance that lead
   // instead of creating a duplicate. This is the fix for the Daniel Kim case.
@@ -5814,6 +5917,26 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
         [service, pref_date, pref_time].filter(Boolean).join(' - ')
       );
       leadId = existingLead.id;
+    }
+  }
+
+  // No explicit "from lead", but this customer may already have an open lead in the
+  // pipeline (e.g. a contact-form lead we're now booking by phone). Advance that
+  // existing lead instead of creating a duplicate that leaves the original stuck in
+  // its old stage. This is the Ken Dobson fix.
+  if (!leadId) {
+    var openLead = db.prepare(
+      "SELECT * FROM leads WHERE customer_id = ? AND IFNULL(archived,0) = 0 "
+      + "AND status IN ('new','quoted','follow_up','quote_accepted') ORDER BY id DESC LIMIT 1"
+    ).get(cust.id);
+    if (openLead) {
+      db.prepare("UPDATE leads SET status = 'booked', vehicle = COALESCE(?,vehicle), service = COALESCE(?,service), status_updated_at = datetime('now') WHERE id = ?")
+        .run(vehicle, service, openLead.id);
+      db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Appointment booked from existing lead', ?)").run(
+        openLead.id,
+        [service, pref_date, pref_time].filter(Boolean).join(' - ')
+      );
+      leadId = openLead.id;
     }
   }
 
@@ -6068,6 +6191,16 @@ router.post('/appointments/:lead_id/edit', requireAuth, express.urlencoded({ ext
   if (lead.customer_id) {
     db.prepare('UPDATE customers SET first_name = ?, last_name = ?, phone = COALESCE(NULLIF(?,\'\'), phone), email = COALESCE(?, email) WHERE id = ?')
       .run(firstName, lastName, phone, email, lead.customer_id);
+    // Unify the service address + vehicle onto the customer so they show on the
+    // profile and pre-fill every other form.
+    customers.syncCustomerData(lead.customer_id, {
+      phone: phone, email: email, address: pref_location,
+      vehicle: {
+        year:  (req.body.veh_year  || '').trim(),
+        make:  (req.body.veh_make  || '').trim(),
+        model: (req.body.veh_model || '').trim()
+      }
+    });
   }
 
   logHistory(lead.id, 'Appointment updated', [service, pref_date, pref_time].filter(Boolean).join(' - ') + (sendEmail ? ' (customer emailed)' : ''));

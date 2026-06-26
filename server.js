@@ -7,6 +7,7 @@ const { verifyConnection, createOrFindSquareCustomer } = require('./square');
 const { syncAllSquareCustomers } = require('./square-sync');
 const { safeRunBackup } = require('./backup');
 const { toEasternRfc3339 } = require('./datetime');
+const PRICING = require('./pricing');
 const db = require('./db');
 const customers = require('./customers');
 const SqliteStore = require('./sqlite-session-store');
@@ -489,6 +490,24 @@ function buildReminderEmail(q, soonText) {
     return WD[dt.getDay()] + ', ' + MO[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
   }
   var calendarUrl = 'https://brakeknights.com/quote/' + q.id + '/' + q.accept_token + '/calendar.ics';
+  // Direct "Add to Google Calendar" link, matching the booking confirmation email so
+  // the reminder offers both calendar options (Google for browsers, .ics for Apple/Outlook).
+  function icsUtcStamp(d) { return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); }
+  var gcalUrl = '';
+  var apptStartRfc = toEasternRfc3339(q.pref_date, q.pref_time);
+  if (apptStartRfc) {
+    var apptMins = String(q.service || '').split(', ').reduce(function(sum, name) {
+      var sv = PRICING.services[name.trim()];
+      return sum + ((sv && sv.minutes) || 0);
+    }, 0) || 60;
+    var gStart = new Date(apptStartRfc);
+    var gEnd = new Date(gStart.getTime() + apptMins * 60000);
+    gcalUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+      + '&text=' + encodeURIComponent('Brake Knights — ' + (q.service || 'Brake Service'))
+      + '&dates=' + icsUtcStamp(gStart) + '/' + icsUtcStamp(gEnd)
+      + '&details=' + encodeURIComponent('Mobile brake service. Questions? Call or text 703-977-4475.')
+      + '&location=' + encodeURIComponent(q.pref_location || '');
+  }
   return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
     + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
     + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
@@ -503,9 +522,11 @@ function buildReminderEmail(q, soonText) {
     + '<tr><td style="padding:5px 0;color:#888;">Time</td><td style="padding:5px 0;">' + e(q.pref_time || '—') + '</td></tr>'
     + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Location</td><td style="padding:5px 0;">' + e(q.pref_location || '—') + '</td></tr>'
     + '</table></div>'
-    + '<div style="text-align:center;margin:0 0 24px;">'
-    + '<a href="' + calendarUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 30px;border-radius:8px;">&#128197; Add to Calendar</a>'
+    + '<div style="text-align:center;margin:0 0 6px;">'
+    + (gcalUrl ? '<a href="' + gcalUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">&#128197; Add to Google Calendar</a>' : '')
+    + '<a href="' + calendarUrl + '" style="display:inline-block;background:#0a1f3d;color:#fff;font-weight:700;font-size:0.95rem;text-decoration:none;padding:13px 28px;border-radius:8px;margin:0 4px 8px;">&#128197; Apple / Outlook (.ics)</a>'
     + '</div>'
+    + '<p style="color:#888;font-size:0.8rem;text-align:center;margin:0 0 24px;">Google Calendar opens in your browser. The .ics works with Apple Calendar and Outlook.</p>'
     + '<div style="text-align:center;margin:0 0 24px;">'
     + '<p style="color:#888;font-size:0.85rem;margin:0 0 10px;">Need to make a change?</p>'
     + '<a href="https://brakeknights.com/quote/' + q.id + '/' + q.accept_token + '?action=reschedule" style="display:inline-block;background:#fff;border:2px solid #4169e1;color:#4169e1;font-weight:700;font-size:0.9rem;text-decoration:none;padding:11px 22px;border-radius:8px;margin:0 4px 8px;">Reschedule</a>'

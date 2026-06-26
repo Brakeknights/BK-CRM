@@ -200,6 +200,12 @@ if (!receiptCols.includes('custom_line_items')) db.exec("ALTER TABLE receipts AD
 // filed_at: set when a receipt is "filed" into its monthly folder (its lead is
 // archived out of the active pipeline). Null = still loose on the desk.
 if (!receiptCols.includes('filed_at')) db.exec("ALTER TABLE receipts ADD COLUMN filed_at TEXT");
+// billed_total: the originally calculated/quoted total, stored ONLY when the owner
+// accepts a short payment (cash/Zelle under the quote). In that case `total` holds
+// what was actually collected (so revenue reporting is accurate) and billed_total
+// holds what the job was billed at, so the shortfall is visible internally. Null
+// when the customer paid in full (then `total` already equals the billed amount).
+if (!receiptCols.includes('billed_total')) db.exec("ALTER TABLE receipts ADD COLUMN billed_total REAL");
 
 // Follow-ups: `kind` distinguishes the cron email to send. 'advisory' (default) is
 // the original receipt-advisory reminder; 'review_checkin' is the automatic one-week
