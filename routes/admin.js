@@ -2167,7 +2167,12 @@ function quotePricingJs(pfx) {
     +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input ' + P + '-parts-in\' type=\'number\' min=\'0\' step=\'0.01\' value=\'"+(dParts.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
     +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input ' + P + '-labor-in\' type=\'number\' min=\'0\' step=\'0.01\' value=\'"+(dLabor.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
     +     '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
-    +   'if(dSS>0){var curSS=parseFloat(document.getElementById("' + P + 'ss").value)||0;document.getElementById("' + P + 'ss").value=(curSS+dSS).toFixed(2);}'
+    // Shop supplies is a flat per-visit fee, NOT per service. Only raise the field
+    // to a single service\'s supply amount if it is currently lower; never add on
+    // top. This keeps it stable no matter how many services are picked or how many
+    // times the form is rebuilt from a saved/auto-saved draft (which previously
+    // stacked another $10 every time the page reopened).
+    +   'if(dSS>0){var curSS=parseFloat(document.getElementById("' + P + 'ss").value)||0;if(dSS>curSS)document.getElementById("' + P + 'ss").value=dSS.toFixed(2);}'
     +   'document.getElementById("' + P + 'SvcPriceRows").appendChild(row);'
     + '}'
     + 'function ' + P + 'RowMode(btn,mode){'
