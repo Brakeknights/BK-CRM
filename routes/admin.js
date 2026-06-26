@@ -2182,6 +2182,12 @@ function quotePricingJs(pfx) {
     + 'function ' + P + 'RemovePriceRow(svcName){'
     +   'var row=document.querySelector("#' + P + 'SvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']");'
     +   'if(row)row.parentNode.removeChild(row);'
+    // Subtract this service\'s shop supplies (symmetric with AddPriceRow), so
+    // unchecking a service takes its $10 back out. Floors at 0. Only ever called
+    // from user actions (uncheck / remove tag), never from a rebuild.
+    +   'var pfx=svcName.split(" - ");var lookupKey=pfx.length===2&&' + P + 'PFX_MAP[pfx[0]]?' + P + 'PFX_MAP[pfx[0]]:svcName;'
+    +   'var p=' + P + 'PRICING[lookupKey];var td=p&&(p[' + P + 'tier]||p.standard);var dSS=td?td.shopSupplies:0;'
+    +   'if(dSS>0){var ssEl=document.getElementById("' + P + 'ss");var curSS=parseFloat(ssEl.value)||0;ssEl.value=Math.max(0,curSS-dSS).toFixed(2);}'
     + '}'
     + 'function ' + P + 'SvcCbChange(cb){'
     +   'if(cb.checked)' + P + 'AddPriceRow(cb.value,true);else ' + P + 'RemovePriceRow(cb.value);'
