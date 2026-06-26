@@ -3220,7 +3220,14 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var veh=[(document.querySelector("[name=veh_year]")||{}).value||"",(document.querySelector("[name=veh_make]")||{}).value||"",(document.querySelector("[name=veh_model]")||{}).value||""].filter(Boolean).join(" ");'
     +   'var svcDate=(document.querySelector("[name=serviceDate]")||{}).value||"";'
     +   'var pm=(document.getElementById("rpm")||{}).value||"";'
-    +   'var tot=document.getElementById("rctotalAmt").textContent||"$0.00";'
+    // Reflect what the customer actually paid: billed total, minus/plus any
+    // amount-received adjustment, plus any tip — mirrors the sent receipt email.
+    +   'var billed=parseFloat((document.getElementById("rctotalAmt").textContent||"").replace(/[^0-9.]/g,""))||0;'
+    +   'var rcvRaw=(document.getElementById("rcReceived")||{}).value||"";var rcv=parseFloat(rcvRaw);'
+    +   'var tip=parseFloat((document.getElementById("rcTip")||{}).value||"")||0;'
+    +   'var sale=(rcvRaw.trim()!==""&&!isNaN(rcv))?rcv:billed;'
+    +   'var adj=Math.round((sale-billed)*100)/100;var grand=Math.round((sale+tip)*100)/100;'
+    +   'var totHtml;if(adj===0&&tip===0){totHtml="<div style=\'margin-top:4px;\'><strong>Total Paid:</strong> $"+rmoney(billed)+"</div>";}else{totHtml="<div style=\'margin-top:4px;\'>Subtotal: $"+rmoney(billed)+"</div>";if(adj!==0)totHtml+="<div style=\'margin-top:2px;\'>Adjustment: "+(adj<0?"\\u2212$"+rmoney(-adj):"+$"+rmoney(adj))+"</div>";if(tip>0)totHtml+="<div style=\'margin-top:2px;\'>Tip: $"+rmoney(tip)+"</div>";totHtml+="<div style=\'margin-top:4px;\'><strong>Total Paid:</strong> $"+rmoney(grand)+"</div>";}'
     +   'var advNotes=[];for(var i=1;i<=4;i++){var n=(document.querySelector("[name=custNote"+i+"]")||{}).value||"";if(n)advNotes.push(n);}'
     +   'var toLine="' + esc(lead.email || '') + '"||"<em style=\'color:#e07000\'>(no email on file)</em>";'
     +   'box.innerHTML="<div class=\'preview-box\'>"'
@@ -3234,7 +3241,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     '+(veh?"<div style=\'margin-top:4px;\'><strong>Vehicle:</strong> "+veh+"</div>":"")'
     +     '+(svcDate?"<div style=\'margin-top:4px;\'><strong>Date:</strong> "+svcDate+"</div>":"")'
     +     '+cliCollect().map(function(it){return "<div style=\'margin-top:4px;\'><strong>"+it.label.replace(/</g,"&lt;")+":</strong> $"+rmoney(it.amount)+"</div>";}).join("")'
-    +     '+"<div style=\'margin-top:4px;\'><strong>Total:</strong> "+tot+"</div>"'
+    +     '+totHtml'
     +     '+(pm?"<div style=\'margin-top:4px;\'><strong>Payment:</strong> "+pm+"</div>":"")'
     +     '+"</div>"'
     +     '+(advNotes.length?"<div style=\'margin-top:10px;\'><strong>Notes to customer:</strong><ul style=\'margin:6px 0 0 18px;padding:0;font-size:0.86rem;\'>"+advNotes.map(function(n){return"<li>"+n+"</li>";}).join("")+"</ul></div>":"")'
@@ -3518,13 +3525,26 @@ function buildReceiptEmail(lead, r, notes) {
       }).join('')
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(r.shop_supplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(r.tax) + '</td></tr>'
-    + ((r.tip && r.tip > 0)
-        ? '<tr style="border-top:1px solid #e6ebf1;"><td style="padding:8px 0 0;color:#444;">Subtotal</td><td style="text-align:right;padding:8px 0 0;">$' + money(r.total) + '</td></tr>'
-          + '<tr><td style="padding:6px 0 0;color:#444;">Tip</td><td style="text-align:right;padding:6px 0 0;">$' + money(r.tip) + '</td></tr>'
-          + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
-          + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money((r.total || 0) + (r.tip || 0)) + '</td></tr>'
-        : '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
-          + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(r.total) + '</td></tr>')
+    + (function() {
+        // The line items above sum to the billed amount. When the owner accepted a
+        // different amount (short/over pay), show a Subtotal + Adjustment so the math
+        // reconciles and Total Paid reflects what the customer actually paid. Tip is
+        // added on top (never taxed). Paid-in-full with no tip = a single Total Paid.
+        var tip = r.tip || 0;
+        var billed = (r.billed_total != null) ? r.billed_total : (r.total || 0);
+        var adj = Math.round(((r.total || 0) - billed) * 100) / 100;
+        var grand = Math.round(((r.total || 0) + tip) * 100) / 100;
+        if (adj === 0 && tip === 0) {
+          return '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+            + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(r.total) + '</td></tr>';
+        }
+        var rows = '<tr style="border-top:1px solid #e6ebf1;"><td style="padding:8px 0 0;color:#444;">Subtotal</td><td style="text-align:right;padding:8px 0 0;">$' + money(billed) + '</td></tr>';
+        if (adj !== 0) rows += '<tr><td style="padding:6px 0 0;color:#444;">Adjustment</td><td style="text-align:right;padding:6px 0 0;">' + (adj < 0 ? '−$' + money(-adj) : '+$' + money(adj)) + '</td></tr>';
+        if (tip > 0) rows += '<tr><td style="padding:6px 0 0;color:#444;">Tip</td><td style="text-align:right;padding:6px 0 0;">$' + money(tip) + '</td></tr>';
+        rows += '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+          + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(grand) + '</td></tr>';
+        return rows;
+      })()
     + (r.payment_method ? '<tr><td style="padding:8px 0 0;color:#888;">Payment</td><td style="text-align:right;padding:8px 0 0;">' + esc(r.payment_method) + '</td></tr>' : '')
     + '</table></div>'
 
@@ -4050,7 +4070,17 @@ router.get('/quick', requireAuth, function(req, res) {
     +   '}'
     +   'if(rec){'
     +     'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+money(it.amount)+"</td></tr>";});'
-    +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
+    +     'var qBilled=parseFloat((document.getElementById("qtotalAmt").textContent||"").replace(/[^0-9.]/g,""))||0;'
+    +     'var qRcvRaw=(document.getElementById("qReceived")||{}).value||"";var qRcv=parseFloat(qRcvRaw);'
+    +     'var qTipV=parseFloat((document.getElementById("qTip")||{}).value||"")||0;'
+    +     'var qSale=(qRcvRaw.trim()!==""&&!isNaN(qRcv))?qRcv:qBilled;'
+    +     'var qAdj=Math.round((qSale-qBilled)*100)/100;var qGrand=Math.round((qSale+qTipV)*100)/100;'
+    +     'if(qAdj===0&&qTipV===0){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>$"+money(qBilled)+"</td></tr>";}else{'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Subtotal</td><td style=\'padding:5px 0;\'>$"+money(qBilled)+"</td></tr>";'
+    +       'if(qAdj!==0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Adjustment</td><td style=\'padding:5px 0;\'>"+(qAdj<0?"\\u2212$"+money(-qAdj):"+$"+money(qAdj))+"</td></tr>";'
+    +       'if(qTipV>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tip</td><td style=\'padding:5px 0;\'>$"+money(qTipV)+"</td></tr>";'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>$"+money(qGrand)+"</td></tr>";'
+    +     '}'
     +     'var pm=(document.getElementById("qpm")||{}).value||"";'
     +     'var pmo=(document.getElementById("qpmOther")||{}).value||"";'
     +     'var svcDate=(document.querySelector("[name=serviceDate]")||{}).value||"";'
