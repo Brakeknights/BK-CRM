@@ -98,6 +98,64 @@ function attachSquareId(customerId, squareCustomerId) {
   ).run(squareCustomerId, customerId);
 }
 
+// Save contact/address/vehicle details entered on ANY form back to the customer
+// record, so data stays unified across the whole dashboard (enter it once, it
+// shows everywhere). Non-destructive by design:
+//   • phone/email — filled only when the customer is missing it (never clobbered)
+//   • address     — added to the saved-address list (deduped); set as the primary
+//                   home_address only when none is on file yet
+//   • vehicle     — added to customer_vehicles (deduped by year/make/model); VIN /
+//                   plate backfilled onto a matching row when newly provided
+// `data` = { phone, email, address, vehicle:{year,make,model,vin,license_plate} }.
+function syncCustomerData(customerId, data) {
+  if (!customerId || !data) return;
+  var c = db.prepare('SELECT id, phone, email, home_address FROM customers WHERE id = ?').get(customerId);
+  if (!c) return;
+
+  var sets = [], vals = [];
+  var phone = (data.phone || '').trim();
+  var email = (data.email || '').trim();
+  if (!(c.phone || '').trim() && phone) { sets.push('phone = ?'); vals.push(phone); }
+  if (!(c.email || '').trim() && email) { sets.push('email = ?'); vals.push(email); }
+
+  var addr = (data.address || '').trim();
+  if (addr) {
+    if (!(c.home_address || '').trim()) { sets.push('home_address = ?'); vals.push(addr); }
+    var existsAddr = db.prepare(
+      "SELECT id FROM customer_addresses WHERE customer_id = ? AND LOWER(TRIM(address)) = LOWER(?)"
+    ).get(customerId, addr);
+    if (!existsAddr) {
+      db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)')
+        .run(customerId, null, addr);
+    }
+  }
+
+  if (sets.length) {
+    vals.push(customerId);
+    var stmt = db.prepare('UPDATE customers SET ' + sets.join(', ') + ' WHERE id = ?');
+    stmt.run.apply(stmt, vals);
+  }
+
+  var v = data.vehicle || {};
+  var vYear  = (v.year  || '').trim();
+  var vMake  = (v.make  || '').trim();
+  var vModel = (v.model || '').trim();
+  var vVin   = (v.vin   || '').trim();
+  var vPlate = (v.license_plate || v.plate || '').trim();
+  if (vMake || vModel || vVin || vPlate) {
+    var dupe = db.prepare(
+      "SELECT id FROM customer_vehicles WHERE customer_id = ? AND IFNULL(year,'')=? AND IFNULL(make,'')=? AND IFNULL(model,'')=?"
+    ).get(customerId, vYear, vMake, vModel);
+    if (!dupe) {
+      db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)')
+        .run(customerId, vYear || null, vMake || null, vModel || null, vVin || null, vPlate || null);
+    } else if (vVin || vPlate) {
+      db.prepare("UPDATE customer_vehicles SET vin = COALESCE(NULLIF(?,''),vin), license_plate = COALESCE(NULLIF(?,''),license_plate) WHERE id = ?")
+        .run(vVin, vPlate, dupe.id);
+    }
+  }
+}
+
 // Lifetime stats for one customer, computed from their leads + receipts.
 //   leadCount      — total leads (all inquiries) tied to this customer
 //   quotesSent     — leads that have had a quote actually sent to the customer
@@ -162,6 +220,7 @@ module.exports = {
   findOrCreateForLead,
   linkLead,
   attachSquareId,
+  syncCustomerData,
   statsFor,
   runBackfill
 };
