@@ -163,6 +163,84 @@ function contactActions(p, marginTop) {
     + '</div>';
 }
 
+// One inline-editable contact field row. Click the value to edit it and save in
+// place (AJAX to /admin/customer/:id/field). `field` must be one of the allowlisted
+// customer columns. Used to build the single unified customer card.
+function inlineField(custId, field, label, rawValue) {
+  var raw = rawValue == null ? '' : String(rawValue);
+  var has = raw.trim() !== '';
+  var lc = label.toLowerCase();
+  var disp;
+  if (!has) disp = '<span style="color:#bbb;">Add ' + esc(lc) + '</span>';
+  else if (field === 'phone') disp = '<a href="tel:' + esc(raw) + '" style="color:#1a6fc4;text-decoration:none;">' + esc(fmtPhone(raw)) + '</a>';
+  else if (field === 'home_address') disp = mapsLink(raw);
+  else disp = esc(raw);
+  var inputType = field === 'email' ? 'email' : (field === 'phone' ? 'tel' : 'text');
+  var extra = (field === 'phone' ? ' oninput="fmtPhoneInput(this)" maxlength="12"' : '')
+            + (field === 'home_address' ? ' data-addr-ac autocomplete="off"' : '');
+  return '<div class="bk-ief" data-cust="' + custId + '" data-field="' + esc(field) + '" data-label="' + esc(lc) + '" data-raw="' + esc(raw) + '" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f2f6;">'
+    + '<span style="width:70px;flex-shrink:0;font-size:0.72rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.03em;">' + esc(label) + '</span>'
+    + '<span style="flex:1;min-width:0;">'
+    +   '<span class="bk-ief-view" tabindex="0" role="button" title="Tap to edit" style="cursor:pointer;font-size:0.92rem;color:#0f172a;border-bottom:1px dashed #cbd5e1;display:inline-block;max-width:100%;">' + disp + '</span>'
+    +   '<span class="bk-ief-edit" style="display:none;align-items:center;gap:6px;">'
+    +     '<input type="' + inputType + '" class="bk-ief-input"' + extra + ' value="' + esc(raw) + '" style="flex:1;min-width:0;padding:7px 9px;border:1.5px solid #4169e1;border-radius:7px;font-size:0.92rem;">'
+    +     '<button type="button" class="bk-ief-save" title="Save" style="background:#0d1b2a;color:#fff;border:none;border-radius:7px;width:32px;height:32px;font-size:0.95rem;cursor:pointer;flex-shrink:0;">&#10003;</button>'
+    +     '<button type="button" class="bk-ief-cancel" title="Cancel" style="background:#eef1f5;color:#64748b;border:none;border-radius:7px;width:32px;height:32px;font-size:0.85rem;cursor:pointer;flex-shrink:0;">&#10005;</button>'
+    +   '</span>'
+    + '</span>'
+    + '</div>';
+}
+
+// Inline-editable list of a customer's saved vehicles (edit year/make/model/VIN/
+// plate in place via AJAX; delete via a small form; add via /vehicle/add).
+function inlineVehicleList(custId, vehicles, back) {
+  var inS = 'padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.88rem;width:100%;box-sizing:border-box;';
+  var rows = vehicles.length
+    ? vehicles.map(function(v) {
+        var title = [v.year, v.make, v.model].filter(Boolean).join(' ') || 'Vehicle';
+        return '<div class="bk-veh" data-cust="' + custId + '" data-vid="' + v.id + '" style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;">'
+          + '<div class="bk-veh-view" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
+          +   '<div><div class="bk-veh-title" style="font-weight:600;color:#0a1f3d;font-size:0.9rem;">' + esc(title) + '</div>'
+          +     (v.vin ? '<div style="font-size:0.78rem;color:#888;margin-top:2px;">VIN ' + esc(v.vin) + '</div>' : '')
+          +     (v.license_plate ? '<div style="font-size:0.78rem;color:#888;margin-top:1px;">Plate ' + esc(v.license_plate) + '</div>' : '') + '</div>'
+          +   '<div style="display:flex;gap:8px;flex-shrink:0;">'
+          +     '<button type="button" class="bk-veh-edit-btn" style="background:none;border:1px solid #4169e1;border-radius:6px;color:#4169e1;font-size:0.75rem;font-weight:600;cursor:pointer;padding:3px 9px;">Edit</button>'
+          +     '<form method="POST" action="/admin/customer/' + custId + '/vehicle/' + v.id + '/delete" style="margin:0;"><input type="hidden" name="back" value="' + esc(back) + '"><button type="submit" onclick="return confirm(\'Remove this vehicle?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button></form>'
+          +   '</div>'
+          + '</div>'
+          + '<div class="bk-veh-form" style="display:none;margin-top:10px;">'
+          +   '<div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:6px;">'
+          +     '<input name="veh_year" placeholder="Year" value="' + esc(v.year || '') + '" style="' + inS + '">'
+          +     '<input name="veh_make" placeholder="Make" value="' + esc(v.make || '') + '" style="' + inS + '">'
+          +     '<input name="veh_model" placeholder="Model" value="' + esc(v.model || '') + '" style="' + inS + '">'
+          +   '</div>'
+          +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">'
+          +     '<input name="veh_vin" placeholder="VIN" value="' + esc(v.vin || '') + '" style="' + inS + '">'
+          +     '<input name="veh_plate" placeholder="Plate" value="' + esc(v.license_plate || '') + '" style="' + inS + '">'
+          +   '</div>'
+          +   '<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" class="bk-veh-save btn btn-navy btn-sm" style="width:auto;">Save</button><button type="button" class="bk-veh-cancel btn btn-outline btn-sm" style="width:auto;">Cancel</button></div>'
+          + '</div>'
+          + '</div>';
+      }).join('')
+    : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:8px;">No vehicles saved yet.</div>';
+  // Add-a-vehicle (plain POST, redirects back) — no NHTSA cascade here to keep it light.
+  var add = '<form method="POST" action="/admin/customer/' + custId + '/vehicle/add" style="border-top:1px solid #eef0f4;padding-top:10px;margin-top:2px;">'
+    + '<input type="hidden" name="back" value="' + esc(back) + '">'
+    + '<div style="font-size:0.78rem;font-weight:600;color:#475569;margin-bottom:6px;">Add a vehicle</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:6px;">'
+    + '<input name="veh_year" placeholder="Year" style="' + inS + '">'
+    + '<input name="veh_make" placeholder="Make" style="' + inS + '">'
+    + '<input name="veh_model" placeholder="Model" style="' + inS + '">'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">'
+    + '<input name="veh_vin" placeholder="VIN (optional)" style="' + inS + '">'
+    + '<input name="veh_plate" placeholder="Plate (optional)" style="' + inS + '">'
+    + '</div>'
+    + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;margin-top:8px;">+ Add Vehicle</button>'
+    + '</form>';
+  return rows + add;
+}
+
 // ─── Canonical lead card ──────────────────────────────────────────────────────
 // One card for a lead, shown identically in the Leads list and the customer
 // profile's job history (and anywhere else a lead appears). The shell is always
@@ -1181,6 +1259,40 @@ function page(title, body, req) {
     +   'try{if(window.bkInitAddrAC)window.bkInitAddrAC();}catch(_){}'
     + '};'
     + 'bkInitPage();'
+    // ── Inline field editing (click a customer field to edit + save in place) ──────
+    // Event-delegated so it works on content swapped in by bkBoost. Contact fields
+    // (.bk-ief) save via /admin/customer/:id/field; vehicles (.bk-veh) via
+    // /admin/customer/:id/vehicle/:vid/update. Both update the DOM in place, no reload.
+    + '(function(){'
+    +   'function r(el){return el&&el.closest?el.closest(".bk-ief"):null;}'
+    +   'function rv(el){return el&&el.closest?el.closest(".bk-veh"):null;}'
+    +   'function enter(row){if(!row)return;row.querySelector(".bk-ief-view").style.display="none";var ed=row.querySelector(".bk-ief-edit");ed.style.display="inline-flex";var i=ed.querySelector(".bk-ief-input");if(i){i.value=row.getAttribute("data-raw")||"";i.focus();if(i.select)i.select();}}'
+    +   'function exit(row){if(!row)return;var ed=row.querySelector(".bk-ief-edit");if(ed)ed.style.display="none";var vw=row.querySelector(".bk-ief-view");if(vw)vw.style.display="";}'
+    +   'function save(row){if(!row)return;var cust=row.getAttribute("data-cust"),field=row.getAttribute("data-field");var i=row.querySelector(".bk-ief-input");if(!i)return;var val=(i.value||"").trim();var sv=row.querySelector(".bk-ief-save");if(sv){sv.disabled=true;sv.innerHTML="\\u2026";}'
+    +     'fetch("/admin/customer/"+cust+"/field",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","X-Requested-With":"fetch"},credentials:"same-origin",body:"field="+encodeURIComponent(field)+"&value="+encodeURIComponent(val)})'
+    +     '.then(function(x){return x.json();}).then(function(d){if(!d||!d.ok)throw 0;row.setAttribute("data-raw",d.raw||"");'
+    +       'var vw=row.querySelector(".bk-ief-view");vw.innerHTML=d.displayHtml||("<span style=\\"color:#bbb;\\">Add "+(row.getAttribute("data-label")||"")+"</span>");'
+    +       'if(d.fullName){var nm=document.getElementById("bkCustName");if(nm)nm.textContent=d.fullName;}'
+    +       'if(sv){sv.disabled=false;sv.innerHTML="\\u2713";}exit(row);'
+    +       'vw.style.transition="background .3s";vw.style.background="#d8f5e0";setTimeout(function(){vw.style.background="";},700);'
+    +     '}).catch(function(){if(sv){sv.disabled=false;sv.innerHTML="\\u2713";}alert("Could not save. Please try again.");});}'
+    +   'function vehSave(row){if(!row)return;var cust=row.getAttribute("data-cust"),vid=row.getAttribute("data-vid");'
+    +     'function g(n){var el=row.querySelector("[name="+n+"]");return el?(el.value||"").trim():"";}'
+    +     'var body="veh_year="+encodeURIComponent(g("veh_year"))+"&veh_make="+encodeURIComponent(g("veh_make"))+"&veh_model="+encodeURIComponent(g("veh_model"))+"&veh_vin="+encodeURIComponent(g("veh_vin"))+"&veh_plate="+encodeURIComponent(g("veh_plate"));'
+    +     'var sv=row.querySelector(".bk-veh-save");if(sv)sv.disabled=true;'
+    +     'fetch("/admin/customer/"+cust+"/vehicle/"+vid+"/update",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","X-Requested-With":"fetch"},credentials:"same-origin",body:body})'
+    +     '.then(function(x){return x.json();}).then(function(d){if(!d||!d.ok)throw 0;var t=row.querySelector(".bk-veh-title");if(t)t.textContent=d.title;row.querySelector(".bk-veh-form").style.display="none";row.querySelector(".bk-veh-view").style.display="";if(sv)sv.disabled=false;})'
+    +     '.catch(function(){if(sv)sv.disabled=false;alert("Could not save vehicle.");});}'
+    +   'document.addEventListener("click",function(e){'
+    +     'var v=e.target.closest&&e.target.closest(".bk-ief-view");if(v){e.preventDefault();enter(r(v));return;}'
+    +     'var s=e.target.closest&&e.target.closest(".bk-ief-save");if(s){e.preventDefault();save(r(s));return;}'
+    +     'var c=e.target.closest&&e.target.closest(".bk-ief-cancel");if(c){e.preventDefault();exit(r(c));return;}'
+    +     'var ve=e.target.closest&&e.target.closest(".bk-veh-edit-btn");if(ve){e.preventDefault();var row=rv(ve);if(row){row.querySelector(".bk-veh-view").style.display="none";row.querySelector(".bk-veh-form").style.display="block";}return;}'
+    +     'var vc=e.target.closest&&e.target.closest(".bk-veh-cancel");if(vc){e.preventDefault();var row=rv(vc);if(row){row.querySelector(".bk-veh-form").style.display="none";row.querySelector(".bk-veh-view").style.display="";}return;}'
+    +     'var vs=e.target.closest&&e.target.closest(".bk-veh-save");if(vs){e.preventDefault();vehSave(rv(vs));return;}'
+    +   '});'
+    +   'document.addEventListener("keydown",function(e){var i=e.target;if(!i.classList||!i.classList.contains("bk-ief-input"))return;var row=r(i);if(!row)return;if(e.key==="Enter"){e.preventDefault();save(row);}else if(e.key==="Escape"){e.preventDefault();exit(row);}});'
+    + '})();'
     // Idle guard: auto-log-out after 30 min of no interaction, and verify the session
     // the instant the tab regains focus after being away. This is the safety net for
     // "I came back hours later" — instead of letting a stale form attempt an action
@@ -2280,10 +2392,13 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var custSec = custProfile
     ? customerProfileSections(custProfile, { back: '/admin/quote/' + lead.id })
     : null;
+  // Contact lives in the Customer Information card above (inline-editable). The rest
+  // of the customer record (vehicles, addresses, tags, notes, history, stats) follows
+  // here. Everything edits in place / via its own small form — no bundled save.
   var custProfileBlock = custSec
-    ? '<div class="section-title" style="margin:26px 0 10px;">Customer Profile</div>'
-      + '<div style="font-size:0.8rem;color:#aaa;margin:-4px 0 12px;">The full customer record, shared across all their jobs. Edits here update the customer profile everywhere.</div>'
-      + custSec.tags + custSec.form + custSec.saveBar + custSec.jobs + custSec.fups + custSec.stats + custSec.script
+    ? '<div class="section-title" style="margin:22px 0 10px;">Customer Profile</div>'
+      + '<div style="font-size:0.8rem;color:#aaa;margin:-4px 0 12px;">Shared across all this customer&rsquo;s jobs. Edits here update the customer everywhere.</div>'
+      + custSec.vehicles + custSec.addresses + custSec.tags + custSec.notes + custSec.jobs + custSec.fups + custSec.stats
     : '';
 
   // Back (left) and Customer Profile (right) sit in a spaced row so they are large,
@@ -2296,21 +2411,29 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Scheduling request / Approve-Deny (pending) or confirmed banner
     + schedulingPanel(lead, q, false)
 
-    // Customer info card (collapsible, open by default)
+    // Customer info card (collapsible, open by default). Contact details are the
+    // customer record (single source of truth) and are inline-editable — tap a value
+    // to change it and it saves in place and shows everywhere.
     + collapseOpen('cust', 'Customer Information', true)
     + '<div class="row-sb" style="margin-bottom:10px;">'
-    + '<div><div class="lead-name">' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
+    + '<div><div class="lead-name" id="bkCustName">' + esc((custProfile ? (custProfile.first_name + ' ' + custProfile.last_name).trim() : (lead.first_name + ' ' + lead.last_name).trim()) || 'Unnamed customer') + '</div>'
     + '<div style="color:#aaa;font-size:0.8rem;">' + timeAgo(lead.created_at) + '</div></div>'
     + statusBadge(lead.status)
     + '</div>'
-    + '<div class="info-grid">'
-    + contactInfoRows(lead,
-        (lead.vehicle ? '<span class="info-key">Vehicle</span><span class="info-val">' + esc(lead.vehicle) + '</span>' : '')
-        + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
-        + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
-        + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : ''))
-    + '</div>'
-    + contactActions(lead, 12)
+    + (function() {
+        var ctx = (lead.vehicle ? '<span class="info-key">Vehicle</span><span class="info-val">' + esc(lead.vehicle) + '</span>' : '')
+          + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
+          + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
+          + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : '');
+        if (custProfile) {
+          return inlineField(custProfile.id, 'phone', 'Phone', custProfile.phone)
+            + inlineField(custProfile.id, 'email', 'Email', custProfile.email)
+            + inlineField(custProfile.id, 'home_address', 'Address', custProfile.home_address)
+            + '<div class="info-grid" style="margin-top:12px;">' + ctx + '</div>';
+        }
+        return '<div class="info-grid">' + contactInfoRows(lead, ctx) + '</div>';
+      })()
+    + contactActions(custProfile || lead, 12)
     // Primary job actions live right inside the Customer Information box, next to
     // Call/Text/Email: Book Appointment (when still pre-booking) and Send Receipt.
     + (!lead.archived
@@ -4738,16 +4861,17 @@ function customerProfileSections(c, opts) {
   ).all(c.id);
   var recentLeadId = jobs.length ? jobs[0].id : null;
 
-  // Contact info edit fields (inside unified save form)
+  // Inline-editable contact fields. Tap any value to edit and save it in place
+  // (AJAX). This is the single source of truth for the customer's contact details,
+  // shown identically on the lead page and the customer profile.
   var contactCard = '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:12px;">Contact Info</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group"><label>First name</label><input type="text" name="first_name" value="' + esc(c.first_name || '') + '" required></div>'
-    + '<div class="form-group"><label>Last name</label><input type="text" name="last_name" value="' + esc(c.last_name || '') + '"></div>'
-    + '</div>'
-    + '<div class="form-group"><label>Email</label><input type="email" name="email" value="' + esc(c.email || '') + '" placeholder="customer@email.com"></div>'
-    + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" data-addr-ac value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
+    + '<div class="section-title" style="margin-bottom:6px;">Contact Info <span style="font-size:0.74rem;color:#bbb;font-weight:400;text-transform:none;letter-spacing:0;">tap a value to edit</span></div>'
+    + inlineField(c.id, 'first_name', 'First', c.first_name)
+    + inlineField(c.id, 'last_name', 'Last', c.last_name)
+    + inlineField(c.id, 'phone', 'Phone', c.phone)
+    + inlineField(c.id, 'email', 'Email', c.email)
+    + inlineField(c.id, 'home_address', 'Address', c.home_address)
+    + contactActions(c, 12)
     + '</div>';
 
   // Tags card (collapsible) — removable pills + free-text add + preset quick picks
@@ -4784,72 +4908,43 @@ function customerProfileSections(c, opts) {
       })()
     + COLLAPSE_CLOSE;
 
-  // Internal notes — inside the unified save form so saving notes doesn't wipe unsaved
-  // contact/vehicle/address fields the owner was filling in at the same time.
-  var notesCard = collapseOpen('cust_notes', 'Internal Notes', true)
-    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Visible to the tech before arrival, never sent. Saved with the button below.</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times, anything the tech should know...">' + esc(c.notes || '') + '</textarea></div>'
+  // Internal notes — standalone save (own form), so it no longer needs the big
+  // bundled save button.
+  var notesCard = collapseOpen('cust_notes', 'Internal Notes', false)
+    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Visible to the tech before arrival, never sent.</div>'
+    + '<form method="POST" action="/admin/customer/' + c.id + '/notes">' + backInput
+    + '<div class="form-group" style="margin-bottom:10px;"><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times, anything the tech should know...">' + esc(c.notes || '') + '</textarea></div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save notes</button>'
+    + '</form>'
     + COLLAPSE_CLOSE;
 
-  // Vehicles (no inner form — inside unified save form; delete uses formaction)
-  var vehList = vehicles.length
-    ? vehicles.map(function(v) {
-        var title = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || 'Vehicle';
-        return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
-          + '<div><div style="font-weight:600;color:#0a1f3d;font-size:0.9rem;">' + esc(title) + '</div>'
-          + (v.vin ? '<div style="font-size:0.78rem;color:#888;margin-top:2px;">VIN ' + esc(v.vin) + '</div>' : '')
-          + (v.license_plate ? '<div style="font-size:0.78rem;color:#888;margin-top:1px;">Plate ' + esc(v.license_plate) + '</div>' : '') + '</div>'
-          + '<button type="submit" formaction="/admin/customer/' + c.id + '/vehicle/' + v.id + '/delete" formmethod="post" onclick="return confirm(\'Remove this vehicle?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button>'
-          + '</div>';
-      }).join('')
-    : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No vehicles saved yet.</div>';
-  var vehCard = collapseOpen('cust_vehicles', 'Vehicles', true)
-    + vehList
-    + '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
-    + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add a vehicle</div>'
-    + vehicleCascadeHtml('custprof-veh')
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Trim</label><input type="text" name="veh_trim" placeholder="EX-L (optional)"></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>VIN</label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
-    + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>License plate <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_plate" maxlength="10" placeholder="optional"></div>'
-    + '</div>'
+  // Vehicles — inline editable (tap Edit on a vehicle to change it in place; Add via
+  // the form at the bottom). Saves/deletes go to the dedicated vehicle endpoints.
+  var vehCard = collapseOpen('cust_vehicles', 'Vehicles', false)
+    + inlineVehicleList(c.id, vehicles, back)
     + COLLAPSE_CLOSE;
 
-  // Saved addresses (no inner form — inside unified save form; delete uses formaction)
+  // Saved addresses — standalone (each remove is its own form; add is its own form).
   var addrList = addresses.length
     ? addresses.map(function(a) {
         return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
           + '<div style="flex:1;min-width:0;">' + (a.label ? '<div style="font-weight:600;color:#0a1f3d;font-size:0.88rem;">' + esc(a.label) + '</div>' : '')
-          + '<div style="font-size:0.85rem;color:#444;">' + esc(a.address) + '</div></div>'
-          + '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">'
-          + '<button type="button" onclick="profileUseAddr(' + JSON.stringify(a.address) + ')" style="background:none;border:1px solid #4169e1;border-radius:6px;color:#4169e1;font-size:0.75rem;font-weight:600;cursor:pointer;padding:3px 9px;">Use</button>'
-          + '<button type="submit" formaction="/admin/customer/' + c.id + '/address/' + a.id + '/delete" formmethod="post" onclick="return confirm(\'Remove this address?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button>'
-          + '</div>'
+          + '<div style="font-size:0.85rem;color:#444;">' + mapsLink(a.address) + '</div></div>'
+          + '<form method="POST" action="/admin/customer/' + c.id + '/address/' + a.id + '/delete" style="margin:0;flex-shrink:0;"><input type="hidden" name="back" value="' + esc(back) + '">'
+          + '<button type="submit" onclick="return confirm(\'Remove this address?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button></form>'
           + '</div>';
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No saved addresses yet.</div>';
-  var addrCard = collapseOpen('cust_addresses', 'Saved Service Addresses', true)
+  var addrCard = collapseOpen('cust_addresses', 'Saved Service Addresses', false)
     + addrList
-    + '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
+    + '<form method="POST" action="/admin/customer/' + c.id + '/address/add" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">' + backInput
     + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add an address</div>'
-    + '<div class="form-group" style="margin-bottom:8px;">'
-    + '<label>Label</label>'
-    + '<select name="addr_label_preset" onchange="profileAddrChange(this)">'
-    + '<option value="Home">Home</option>'
-    + '<option value="Office">Office</option>'
-    + '<option value="Other">Other</option>'
-    + '</select>'
+    + '<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;align-items:end;">'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Label</label><input type="text" name="label" placeholder="Home, Office..."></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Address</label><input type="text" name="address" data-addr-ac autocomplete="off" placeholder="123 Main St, Sterling, VA"></div>'
     + '</div>'
-    + '<div class="form-group" id="addrOtherWrap" style="margin-bottom:8px;display:none;">'
-    + '<label>Custom label</label>'
-    + '<input type="text" name="addr_label_other" placeholder="Apartment, gym, etc...">'
-    + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;">'
-    + '<label>Address</label>'
-    + '<input type="text" name="addr_address" data-addr-ac autocomplete="off" placeholder="123 Main St, Sterling, VA">'
-    + '</div>'
-    + '</div>'
+    + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">+ Add Address</button>'
+    + '</form>'
     + COLLAPSE_CLOSE;
 
   // Job history
@@ -4913,68 +5008,13 @@ function customerProfileSections(c, opts) {
     + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. A &ldquo;job&rdquo; is a completed service (receipt sent). Conversion rate is jobs completed out of quotes sent.</div>'
     + COLLAPSE_CLOSE;
 
-  var script = '<style>'
-    + '@keyframes bkSavePop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}'
-    + '</style>'
-    + '<script>'
-    + 'function profileAddrChange(sel){'
-    +   'var w=document.getElementById("addrOtherWrap");'
-    +   'if(w)w.style.display=sel.value==="Other"?"":"none";'
-    + '}'
-    + 'function profileUseAddr(addr){'
-    +   'var el=document.querySelector("[name=\'home_address\']");'
-    +   'if(!el)return;'
-    +   'el.value=addr;'
-    +   'el.scrollIntoView({behavior:"smooth",block:"center"});'
-    +   'el.focus();'
-    +   'el.style.outline="2px solid #4169e1";'
-    +   'setTimeout(function(){el.style.outline="";},1800);'
-    + '}'
-    + '(function(){'
-    +   'var form=document.getElementById("profileSaveForm");'
-    +   'var bar=document.getElementById("profileSaveBar");'
-    +   'if(!form||!bar)return;'
-    +   'function showSave(){'
-    +     'if(bar.style.display==="none"||bar.style.display===""){'
-    +       'bar.style.display="block";'
-    +       'bar.style.animation="none";'
-    +       'bar.offsetHeight;'
-    +       'bar.style.animation="bkSavePop .18s ease";'
-    +     '}'
-    +   '}'
-    +   'form.addEventListener("input",showSave);'
-    +   'form.addEventListener("change",showSave);'
-    // Crisp, first-tap save. The button fires on pointerdown so the very first touch
-    // submits, even when an input still has focus or the Google Places address
-    // dropdown is open (which otherwise eats the first tap). Instant feedback +
-    // a guard stop double submits and the "tap it a few times" feeling.
-    +   'var btn=document.getElementById("profileSaveBtn");'
-    +   'if(btn){var saving=false;'
-    +     'function doSave(){if(saving)return;'
-    +       'if(form.checkValidity&&!form.checkValidity()){if(form.reportValidity)form.reportValidity();return;}'
-    +       'saving=true;btn.disabled=true;btn.style.opacity="0.7";btn.innerHTML="Saving\\u2026";'
-    +       'try{if(form.requestSubmit){form.requestSubmit();}else{form.submit();}}catch(_){try{form.submit();}catch(e){}}}'
-    +     'btn.addEventListener("pointerdown",function(e){e.preventDefault();doSave();});'
-    +     'btn.addEventListener("click",function(e){e.preventDefault();doSave();});'
-    +   '}'
-    + '})();'
-    + '</script>';
-
-  var saveBar = '<div id="profileSaveBar" style="display:none;position:fixed;top:66px;right:16px;z-index:150;">'
-    + '<button type="submit" id="profileSaveBtn" form="profileSaveForm"'
-    + ' style="background:#0d1b2a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;box-shadow:0 3px 14px rgba(13,27,42,.3);display:flex;align-items:center;gap:6px;white-space:nowrap;">'
-    + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
-    + 'Save</button>'
-    + '</div>';
-
-  var form = '<form method="POST" action="/admin/customer/' + c.id + '/save" id="profileSaveForm">'
-    + backInput + contactCard + notesCard + vehCard + addrCard
-    + '</form>';
-
+  // Contact + vehicles save inline (AJAX); notes/addresses/tags each have their own
+  // small form. No bundled save form or floating save bar needed anymore.
   return {
     s: s, recentLeadId: recentLeadId,
-    tags: tagsCard, form: form, saveBar: saveBar,
-    jobs: jobsCard, fups: fupCard, stats: statsCard, script: script
+    contact: contactCard, tags: tagsCard, notes: notesCard,
+    vehicles: vehCard, addresses: addrCard,
+    jobs: jobsCard, fups: fupCard, stats: statsCard, script: ''
   };
 }
 
@@ -4999,17 +5039,12 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
   if (req.query.msg === 'contact_saved') alert = '<div class="alert alert-success">Contact info updated.</div>';
 
-  // Header — always visible: name, contact display, action buttons
+  // Header — name (updates live when you edit it), customer-since dates, actions.
   var header = '<div class="card">'
-    + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
-    + '<div class="info-grid">'
-    + contactInfoRows(c,
-        '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
-        + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
-        + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : ''))
-    + '</div>'
+    + '<div class="lead-name" id="bkCustName" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
     + customerTagBadges(c.tags)
-    + contactActions(c)
+    + '<div style="font-size:0.8rem;color:#94a3b8;margin:2px 0 4px;">Customer since ' + shortDate(s.firstLeadDate)
+    + (s.firstPaidDate ? ' &middot; first paid job ' + shortDate(s.firstPaidDate) : '') + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
     + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
     + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
@@ -5020,14 +5055,14 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   var body = '<a href="/admin/customers" data-noswap class="back-link" onclick="return bkBack(\'/admin/customers\');"><span class="bk-arrow">&#8592;</span>Back</a>'
     + alert
     + header
+    + sec.contact
     + sec.tags
-    + sec.form
-    + sec.saveBar
+    + sec.vehicles
+    + sec.addresses
+    + sec.notes
     + sec.jobs
     + sec.fups
-    + sec.stats
-    + sec.script
-    + VEHICLE_CASCADE_JS;
+    + sec.stats;
 
   res.send(page(name, body, req));
 });
@@ -5055,6 +5090,77 @@ router.post('/customer/:id/edit', requireAuth, express.urlencoded({ extended: fa
   db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ?, home_address = ? WHERE id = ?')
     .run(firstName, lastName, email, phone, homeAddress, c.id);
   res.redirect('/admin/customer/' + c.id + '?msg=contact_saved');
+});
+
+// Inline single-field edit (AJAX) — click a field on the customer card, change it,
+// save in place. The field name MUST come from this fixed allowlist (never the
+// request) so SQL column names can't be injected (Rule #1). Returns JSON with the
+// stored raw value and the formatted display HTML so the card updates without a reload.
+var CUSTOMER_FIELD_ALLOWLIST = ['first_name', 'last_name', 'phone', 'email', 'home_address'];
+router.post('/customer/:id/field', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ ok: false, error: 'not found' });
+  var field = (req.body.field || '').trim();
+  if (CUSTOMER_FIELD_ALLOWLIST.indexOf(field) === -1) return res.status(400).json({ ok: false, error: 'bad field' });
+  var value = (req.body.value || '').trim();
+  var stored = value || null;
+  db.prepare('UPDATE customers SET ' + field + ' = ? WHERE id = ?').run(stored, c.id); // field is allowlisted above
+
+  // Keep the saved-address list in sync when the primary address changes, so it
+  // shows everywhere (mirrors the full profile save).
+  if (field === 'home_address' && value) {
+    var existingHome = db.prepare("SELECT id FROM customer_addresses WHERE customer_id = ? AND LOWER(COALESCE(label,'')) = 'home'").get(c.id);
+    if (existingHome) db.prepare('UPDATE customer_addresses SET address = ? WHERE id = ?').run(value, existingHome.id);
+    else db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(c.id, 'Home', value);
+  }
+
+  var displayHtml = '';
+  if (value) {
+    if (field === 'phone')      displayHtml = '<a href="tel:' + esc(value) + '" style="color:#1a6fc4;text-decoration:none;">' + esc(fmtPhone(value)) + '</a>';
+    else if (field === 'email') displayHtml = esc(value);
+    else if (field === 'home_address') displayHtml = mapsLink(value);
+    else                        displayHtml = esc(value);
+  }
+  var out = { ok: true, raw: value, displayHtml: displayHtml };
+  if (field === 'first_name' || field === 'last_name') {
+    var fn = field === 'first_name' ? value : (c.first_name || '');
+    var ln = field === 'last_name' ? value : (c.last_name || '');
+    out.fullName = (fn + ' ' + ln).trim() || 'Unnamed customer';
+  }
+  res.json(out);
+});
+
+// Inline vehicle edit (AJAX) — update one saved vehicle's year/make/model/VIN/plate.
+router.post('/customer/:id/vehicle/:vid/update', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ ok: false });
+  var v = db.prepare('SELECT id FROM customer_vehicles WHERE id = ? AND customer_id = ?').get(req.params.vid, c.id);
+  if (!v) return res.status(404).json({ ok: false });
+  var year  = (req.body.veh_year  || '').trim() || null;
+  var make  = (req.body.veh_make  || '').trim() || null;
+  var model = (req.body.veh_model || '').trim() || null;
+  var vin   = (req.body.veh_vin   || '').trim() || null;
+  var plate = (req.body.veh_plate || '').trim() || null;
+  db.prepare('UPDATE customer_vehicles SET year = ?, make = ?, model = ?, vin = ?, license_plate = ? WHERE id = ?')
+    .run(year, make, model, vin, plate, v.id);
+  var title = [year, make, model].filter(Boolean).join(' ') || 'Vehicle';
+  res.json({ ok: true, title: title, year: year || '', make: make || '', model: model || '', vin: vin || '', plate: plate || '' });
+});
+
+// Add a vehicle to a customer (plain POST from the inline vehicle list, redirects back).
+router.post('/customer/:id/vehicle/add', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var year  = (req.body.veh_year  || '').trim() || null;
+  var make  = (req.body.veh_make  || '').trim() || null;
+  var model = (req.body.veh_model || '').trim() || null;
+  var vin   = (req.body.veh_vin   || '').trim() || null;
+  var plate = (req.body.veh_plate || '').trim() || null;
+  if (make || model || year || vin || plate) {
+    db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)')
+      .run(c.id, year, make, model, vin, plate);
+  }
+  custEditRedirect(req, res, c.id, 'saved');
 });
 
 // Unified profile save — contact info + optional new vehicle + optional new address
@@ -5204,9 +5310,10 @@ router.post('/customer/:id/address/add', requireAuth, express.urlencoded({ exten
   var address = (req.body.address || '').trim();
   var label   = (req.body.label || '').trim() || null;
   if (address) {
-    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(c.id, label, address);
+    var dup = db.prepare('SELECT id FROM customer_addresses WHERE customer_id = ? AND LOWER(TRIM(address)) = LOWER(?)').get(c.id, address);
+    if (!dup) db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(c.id, label, address);
   }
-  res.redirect('/admin/customer/' + c.id + '?msg=addr_added');
+  custEditRedirect(req, res, c.id, 'addr_added');
 });
 
 router.post('/customer/:id/address/:aid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
