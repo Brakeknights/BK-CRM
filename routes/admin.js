@@ -1949,6 +1949,24 @@ function parseLineItems(json) {
   } catch (_) { return []; }
 }
 
+// quotes.line_items is stored in one of two shapes: the current combined object
+// { svc:[{service,parts,labor,mode}], custom:[{label,amount,taxed}] } (quotes and
+// appointments) or a legacy flat array of custom items only. Normalize either into
+// { svc, custom } so the receipt prefill and the quote-view renderer can rely on it.
+function quoteLineItemsParts(json) {
+  try {
+    var v = JSON.parse(json || 'null');
+    if (v && !Array.isArray(v) && (Array.isArray(v.svc) || Array.isArray(v.custom))) {
+      return {
+        svc: Array.isArray(v.svc) ? v.svc : [],
+        custom: parseLineItems(JSON.stringify(v.custom || []))
+      };
+    }
+    if (Array.isArray(v)) return { svc: [], custom: parseLineItems(json) };
+  } catch (_) {}
+  return { svc: [], custom: [] };
+}
+
 // Server-rendered row used to prefill saved line items. The Taxed/Not-taxed
 // button carries its state in data-taxed; cliInit() applies its label and style
 // on page load so server and client rows look identical.
@@ -2340,7 +2358,7 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var currentService = newQuote ? '' : (q.service || lead.service || '');
   var currentTier    = q.tier || 'standard';
   var currentTaxRate = q.tax_rate != null ? +(q.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
-  var currentLineItems    = newQuote ? [] : parseLineItems(q.line_items);
+  var currentLineItems    = newQuote ? [] : quoteLineItemsParts(q.line_items).custom;
   var currentCustomerNotes = newQuote ? '' : (q.customer_notes || '');
   var currentDiscount     = newQuote ? 0 : Math.round(Number(q.discount) || 0);
   var currentDiscountLabel = newQuote ? '' : (q.discount_label || '');
@@ -2585,7 +2603,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
           + '<th style="text-align:left;padding:4px 8px 8px 0;color:#888;font-weight:600;">Date</th>'
           + '<th style="text-align:left;padding:4px 8px 8px;color:#888;font-weight:600;">Service</th>'
           + '<th style="text-align:left;padding:4px 8px 8px;color:#888;font-weight:600;">Tier</th>'
-          + '<th style="text-align:right;padding:4px 0 8px 8px;color:#888;font-weight:600;">Total</th>'
+          + '<th style="text-align:right;padding:4px 8px 8px;color:#888;font-weight:600;">Total</th>'
+          + '<th style="padding:4px 0 8px 8px;"></th>'
           + '</tr></thead><tbody>'
           + allQuotes.map(function(pq, i) {
               var isLatest = i === 0;
@@ -2598,7 +2617,8 @@ router.get('/quote/:id', requireAuth, function(req, res) {
                   + '</td>'
                 + '<td style="padding:7px 8px;">' + esc(pq.service || '—') + '</td>'
                 + '<td style="padding:7px 8px;">' + tierLabel + '</td>'
-                + '<td style="padding:7px 0 7px 8px;text-align:right;">$' + money(pq.total) + '</td>'
+                + '<td style="padding:7px 8px 7px 8px;text-align:right;white-space:nowrap;">$' + money(pq.total) + '</td>'
+                + '<td style="padding:7px 0 7px 8px;text-align:right;white-space:nowrap;"><a href="/admin/quote/view/' + pq.id + '" class="fwd-link" style="font-weight:600;">View &rarr;</a></td>'
                 + '</tr>';
             }).join('')
           + '</tbody></table></div>' + COLLAPSE_CLOSE
@@ -2789,13 +2809,19 @@ router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false
   var vin           = req.body.vin            || null;
   var internalNotes = req.body.internalNotes  || null;
   var lineItems     = parseLineItems(req.body.customLineItems);
-  var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
   var customerNotes = (req.body.customerNotes || '').trim() || null;
   var discount      = parseFloat(req.body.discount)      || 0;
   var discountLabel = (req.body.discount_label || '').trim() || null;
   // Per-service breakdown [{service,parts,labor,mode}] from the shared pricing block,
   // shown line-by-line in the customer quote email.
   var svcLineItems  = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } })();
+  // Persist BOTH the per-service breakdown and the custom line items in the combined
+  // {svc, custom} shape (same as appointments) so the exact quote can be re-rendered
+  // and the receipt can prefill the booked breakdown. Older quotes that stored only a
+  // flat custom-items array still parse via quoteLineItemsParts().
+  var lineItemsJson = (svcLineItems.length || lineItems.length)
+    ? JSON.stringify({ svc: svcLineItems, custom: lineItems })
+    : null;
 
   // 'new'      = first quote on this lead
   // 'update'   = revise the existing quote in place (stays this lead)
@@ -3081,10 +3107,20 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   var rcSvcSeed = JSON.stringify(rcSvcRows);
 
   // Service picker mirrors the quote tool: a multi-select of every service so the
-  // owner can change/add what was actually done if the job grew on arrival.
-  var selectedServices = service ? service.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  // owner can change/add what was actually done if the job grew on arrival. Split the
+  // quoted service string into recognized (checkbox) services and anything else, which
+  // prefills the free-text Custom service field so a custom-named quote (e.g. "OEM
+  // Front Pads and Rotors") carries onto the receipt instead of vanishing.
   var rEffectivePricing = getEffectivePricing();
   var rPricingJson = JSON.stringify(rEffectivePricing);
+  var rPricingKeys = Object.keys(rEffectivePricing);
+  var allSvcParts = service ? service.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  var selectedServices = [];
+  var rcCustomSvc = [];
+  allSvcParts.forEach(function(s) {
+    if (rPricingKeys.indexOf(s) !== -1) selectedServices.push(s);
+    else rcCustomSvc.push(s);
+  });
 
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
     return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
@@ -3134,6 +3170,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + quotePricingBlock('rc', {
         serviceNames: Object.keys(rEffectivePricing),
         selected: selectedServices,
+        customSvc: rcCustomSvc.join(', '),
         tier: receiptTier,
         taxPct: taxPct,
         shopSupplies: Math.round(Number(shopSupplies) || 0),
@@ -3495,6 +3532,58 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
     + '</div>';
 
   res.send(page('Receipt — ' + lead.first_name + ' ' + lead.last_name, body, req));
+});
+
+// View the exact customer copy of a quote that was sent (or saved). Mirrors
+// /receipt/view/:id: re-renders the branded quote email from the stored quote row so
+// the owner can see every detail (services, per-service breakdown, custom line items,
+// supplies, tax, discount, notes, total) when building the matching receipt.
+router.get('/quote/view/:id', requireAuth, function(req, res) {
+  var quote = db.prepare('SELECT * FROM quotes WHERE id = ?').get(req.params.id);
+  if (!quote) return res.status(404).send('Quote not found');
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(quote.lead_id);
+  if (!lead) return res.redirect('/admin');
+
+  var li = quoteLineItemsParts(quote.line_items);
+  var parts        = quote.price_parts   || 0;
+  var labor        = quote.price_labor   || 0;
+  var shopSupplies = quote.shop_supplies || 0;
+  var tax          = quote.tax           || 0;
+  var total        = quote.total         || 0;
+  var tier         = quote.tier === 'premium' ? 'premium' : 'standard';
+
+  // "Updated quote" banner if an earlier quote went out on this lead before this one.
+  var isRevised = db.prepare(
+    'SELECT COUNT(*) AS n FROM quotes WHERE lead_id = ? AND id < ? AND sent_at IS NOT NULL'
+  ).get(lead.id, quote.id).n > 0;
+
+  // Live accept link (the same one the customer received), so the owner can re-copy it.
+  var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+  var acceptUrl = quote.accept_token ? baseUrl + '/quote/' + quote.id + '/' + quote.accept_token : '';
+
+  var when = quote.sent_at
+    ? 'Emailed ' + new Date(quote.sent_at + 'Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
+    : 'Saved, not emailed';
+  var acceptedNote = quote.accepted_at
+    ? ' &middot; accepted ' + new Date(quote.accepted_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
+    : '';
+
+  var body = '<a href="/admin/quote/' + lead.id + '" class="back-link"><span class="bk-arrow">&#8592;</span>Back to Lead</a>'
+    + '<div class="card">'
+    + '<div class="row-sb" style="margin-bottom:4px;">'
+    + '<div class="lead-name">Quote &middot; ' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
+    + '<div style="font-weight:700;color:#0a1f3d;">$' + money(total) + '</div>'
+    + '</div>'
+    + '<div style="color:#999;font-size:0.82rem;">' + esc(when) + acceptedNote + ' &middot; ' + (tier === 'premium' ? 'Premium' : 'Standard') + '</div>'
+    + '<div style="margin-top:11px;"><a href="/admin/receipt/' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('receipt') + 'Build receipt from this</a></div>'
+    + '</div>'
+
+    + '<div class="section-title" style="margin:18px 0 10px;">Customer copy</div>'
+    + '<div style="border:1px solid #e0e7ef;border-radius:8px;overflow:hidden;background:#fff;">'
+    + buildQuoteEmail(lead, quote.service || '', tier, parts, labor, shopSupplies, tax, total, acceptUrl, li.svc, isRevised, quote.customer_notes, li.custom, quote.discount, quote.discount_label)
+    + '</div>';
+
+  res.send(page('Quote — ' + lead.first_name + ' ' + lead.last_name, body, req));
 });
 
 // Branded service receipt. notes is an array of customer-facing advisory strings.
@@ -4351,6 +4440,13 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var quoteCustomerNotes = (req.body.customerNotes || '').trim() || null;
   var customLineItems = parseLineItems(req.body.customLineItems);
   var customLineItemsJson = customLineItems.length ? JSON.stringify(customLineItems) : null;
+  // Combined { svc, custom } breakdown stored on the quote so the exact quote can be
+  // re-rendered and a receipt can prefill the booked breakdown (same shape as the
+  // per-lead Build Quote and appointments).
+  var svcRowsQQ = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } })();
+  var quoteLineItemsJson = (svcRowsQQ.length || customLineItems.length)
+    ? JSON.stringify({ svc: svcRowsQQ, custom: customLineItems })
+    : null;
 
   var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
 
@@ -4398,7 +4494,7 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     var qInfo = db.prepare(
       'INSERT INTO quotes (lead_id, service, tier, price_parts, price_labor, shop_supplies, tax_rate, tax, total, line_items, customer_notes, discount, discount_label, accept_token, sent_at, status) '
       + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, customLineItemsJson, quoteCustomerNotes, discount, discountLabel, acceptToken,
+    ).run(leadId, service, tier, parts, labor, shopSupplies, taxRate / 100, taxAmt, totalAmt, quoteLineItemsJson, quoteCustomerNotes, discount, discountLabel, acceptToken,
           null, qStatus);
     var quoteId = qInfo.lastInsertRowid;
     var acceptUrl = baseUrl + '/quote/' + quoteId + '/' + acceptToken;
@@ -5000,11 +5096,16 @@ function customerProfileSections(c, opts) {
         var qt = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
         var totalVal = rc ? rc.total : (qt ? qt.total : null);
         var receiptSent = rc && rc.sent_at;
-        var extra = (totalVal != null || receiptSent)
+        // Surface the actual quote sent on this job so it can be reopened from the
+        // customer profile (data-noswap so the tap is a full navigation, not a swap).
+        var viewLinks = (qt ? '<a href="/admin/quote/view/' + qt.id + '" data-noswap class="fwd-link" style="font-size:0.74rem;font-weight:600;">View quote &rarr;</a>' : '')
+          + (rc ? '<a href="/admin/receipt/view/' + rc.id + '" data-noswap class="fwd-link" style="font-size:0.74rem;font-weight:600;">View receipt &rarr;</a>' : '');
+        var extra = (totalVal != null || receiptSent || viewLinks)
           ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;">'
             + '<span style="font-size:0.74rem;color:#1a7a3a;font-weight:700;">' + (receiptSent ? '&#10003; Receipt sent ' + shortDate(rc.sent_at) : '') + '</span>'
             + '<span style="font-size:0.9rem;color:#0a1f3d;font-weight:700;">' + (totalVal != null ? '$' + money(totalVal) : '') + '</span>'
             + '</div>'
+            + (viewLinks ? '<div style="display:flex;gap:14px;justify-content:flex-end;margin-top:4px;">' + viewLinks + '</div>' : '')
           : '';
         return leadCard(l, { management: false, extra: extra });
       }).join('')
