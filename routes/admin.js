@@ -257,6 +257,13 @@ function leadCard(l, opts) {
     : null;
   var cust = l.customer_id ? db.prepare('SELECT tags, home_address FROM customers WHERE id = ?').get(l.customer_id) : null;
   var addrDisplay = (sched && sched.pref_location) ? sched.pref_location : (cust && cust.home_address ? cust.home_address : null);
+  // Once a job is done, show the service actually performed (from the receipt) rather
+  // than what was originally requested/scheduled, so the board reflects the real work.
+  var displayService = l.service;
+  if (l.status === 'completed' || l.status === 'receipt') {
+    var lcRcpt = db.prepare('SELECT service FROM receipts WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
+    if (lcRcpt && lcRcpt.service && lcRcpt.service.trim()) displayService = lcRcpt.service;
+  }
   var statusOptions = ['new','quoted','follow_up','quote_accepted','booked','completed','receipt'];
   var statusLabels = { new:'New', quoted:'Quoted', follow_up:'Follow Up', quote_accepted:'Quote Accepted', booked:'Booked', completed:'Completed', receipt:'Receipt Sent' };
 
@@ -266,7 +273,7 @@ function leadCard(l, opts) {
     + statusBadge(l.status)
     + '</div>'
     + (cust && cust.tags ? customerTagBadges(cust.tags) : '')
-    + '<div class="lead-service">' + esc(l.service || 'Service not specified') + '</div>'
+    + '<div class="lead-service">' + esc(displayService || 'Service not specified') + '</div>'
     + (l.vehicle ? '<div class="lead-vehicle">' + esc(l.vehicle) + '</div>' : '')
     + (addrDisplay ? '<div class="lead-meta" style="margin-top:2px;">' + mapsLink(addrDisplay, { style: 'color:#1a6fc4;font-size:0.83rem;text-decoration:none;' }) + '</div>' : '')
     + '<div class="lead-meta">' + timeAgo(l.created_at) + (l.preferred_contact ? ' &middot; Prefers ' + esc(l.preferred_contact) : '') + '</div>'
@@ -5537,6 +5544,11 @@ router.get('/appointments', requireAuth, function(req, res) {
   // the most recent saved service address; cust_home_address backstops that.
   var apptCols = 'SELECT l.*, q.id AS q_id, q.service AS q_service, q.total, q.pref_date, q.pref_time, q.pref_location, '
     + 'cu.home_address AS cust_home_address, '
+    // Once the job is done the receipt holds the work actually performed and the amount
+    // actually collected, which can differ from what was originally scheduled. Pull the
+    // latest receipt so a completed appointment card reflects the real service + total.
+    + "(SELECT r.service FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_service, "
+    + "(SELECT r.total FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_total, "
     + "(SELECT ca.address FROM customer_addresses ca WHERE ca.customer_id = l.customer_id ORDER BY ca.id DESC LIMIT 1) AS cust_addr, "
     + "(SELECT TRIM(COALESCE(cv.year,'') || ' ' || COALESCE(cv.make,'') || ' ' || COALESCE(cv.model,'')) FROM customer_vehicles cv WHERE cv.customer_id = l.customer_id ORDER BY cv.id DESC LIMIT 1) AS cust_vehicle "
     + 'FROM leads l '
@@ -5597,17 +5609,21 @@ router.get('/appointments', requireAuth, function(req, res) {
       ? '<span style="font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;background:' + hexA(accent, 0.14) + ';color:' + accent + ';">'
         + (a.status === 'receipt' ? 'Receipt sent' : 'Completed') + '</span>'
       : '';
+    // For a finished job, show what was actually done + collected (from the receipt),
+    // not what was originally scheduled. Falls back to the quote when no receipt exists.
+    var svcLine = (done && a.receipt_service && a.receipt_service.trim()) ? a.receipt_service : (a.q_service || 'Service TBD');
+    var amtVal  = (done && a.receipt_total != null) ? a.receipt_total : a.total;
     return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + accent + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
       + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(a.pref_date)) + '</span>'
       + '</div>'
       + (doneBadge ? '<div style="margin-top:4px;">' + doneBadge + '</div>' : '')
-      + '<div style="font-size:0.9rem;color:#444;margin-top:5px;">' + esc(a.q_service || 'Service TBD') + '</div>'
+      + '<div style="font-size:0.9rem;color:#444;margin-top:5px;">' + esc(svcLine || 'Service TBD') + '</div>'
       + (veh ? '<div style="font-size:0.82rem;color:#666;margin-top:2px;">' + esc(veh) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
       + (loc ? '<div style="font-size:0.82rem;margin-top:2px;">' + mapsLink(loc, { style: 'color:#1a6fc4;font-size:0.82rem;text-decoration:none;' }) + '</div>' : '')
-      + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(a.total) + '</div>'
+      + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(amtVal) + '</div>'
       + (done
           ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
             + '<a href="/admin/quote/' + a.id + '" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;text-decoration:none;" onclick="event.stopPropagation();">Open lead &rarr;</a>'
