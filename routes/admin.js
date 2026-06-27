@@ -5563,9 +5563,14 @@ router.get('/appointments', requireAuth, function(req, res) {
     + 'ORDER BY q.pref_date DESC, q.pref_time DESC'
   ).all(today);
 
-  // Owner personal time blocks (visual only — not customer facing).
+  // Owner personal time blocks (visual only — not customer facing). Like appointments,
+  // past blocks must stay on the calendar, so split into upcoming and past instead of
+  // dropping anything older than today.
   var events = db.prepare(
     'SELECT * FROM personal_events WHERE event_date >= ? ORDER BY event_date ASC, start_time ASC'
+  ).all(today);
+  var pastEvents = db.prepare(
+    'SELECT * FROM personal_events WHERE event_date < ? ORDER BY event_date DESC, start_time DESC'
   ).all(today);
 
   // Build date → count map for the calendar dots (blue = jobs, amber = personal).
@@ -5574,7 +5579,7 @@ router.get('/appointments', requireAuth, function(req, res) {
     if (a.pref_date) dateMap[a.pref_date] = (dateMap[a.pref_date] || 0) + 1;
   });
   var peMap = {};
-  events.forEach(function(ev) { peMap[ev.event_date] = (peMap[ev.event_date] || 0) + 1; });
+  events.concat(pastEvents).forEach(function(ev) { peMap[ev.event_date] = (peMap[ev.event_date] || 0) + 1; });
 
   function apptCard(a) {
     var name = (a.first_name + ' ' + a.last_name).trim() || 'Unknown customer';
@@ -5670,8 +5675,19 @@ router.get('/appointments', requireAuth, function(req, res) {
     return x.date < y.date ? -1 : x.date > y.date ? 1 : x.mins - y.mins;
   });
 
-  var allCards = upcomingItems.map(function(i) { return i.html; }).join('') + (past.length
-    ? '<div id="pastHeader" class="section-title" style="margin:20px 0 10px;">Past Appointments</div>' + past.map(apptCard).join('')
+  // Past appointments and past time blocks interleaved, newest first, so older entries
+  // stay on the calendar and read top-to-bottom like the upcoming list.
+  var pastItems = past.map(function(a) {
+    return { date: a.pref_date, mins: sortMins(a.pref_time), html: apptCard(a) };
+  }).concat(pastEvents.map(function(ev) {
+    return { date: ev.event_date, mins: sortMins(ev.start_time), html: eventCard(ev) };
+  }));
+  pastItems.sort(function(x, y) {
+    return x.date > y.date ? -1 : x.date < y.date ? 1 : y.mins - x.mins;
+  });
+
+  var allCards = upcomingItems.map(function(i) { return i.html; }).join('') + (pastItems.length
+    ? '<div id="pastHeader" class="section-title" style="margin:20px 0 10px;">Past Appointments</div>' + pastItems.map(function(i) { return i.html; }).join('')
     : '');
 
   var emptyAll = '<div id="apptEmpty" style="display:none;text-align:center;padding:32px;color:#888;">No appointments on this date.</div>';
