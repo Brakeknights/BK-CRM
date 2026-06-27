@@ -5543,16 +5543,24 @@ router.get('/appointments', requireAuth, function(req, res) {
     + 'JOIN quotes q ON q.lead_id = l.id AND q.status = \'approved\' AND q.pref_date IS NOT NULL '
     + 'LEFT JOIN customers cu ON cu.id = l.customer_id ';
 
+  // An "appointment" is any owner-approved, dated quote on a non-archived lead. We do
+  // NOT restrict to status='booked': once the job is done the lead moves to completed/
+  // receipt, but its appointment must stay on the calendar (past appointments must not
+  // fall off). Cancelling an appointment clears the quote's pref_date, so the JOIN's
+  // "q.pref_date IS NOT NULL" already excludes cancelled ones.
+  var apptWhere = "l.archived = 0 AND l.status IN ('booked','completed','receipt') ";
+
   var upcoming = db.prepare(
     apptCols
-    + 'WHERE l.status = \'booked\' AND l.archived = 0 AND q.pref_date >= ? '
+    + 'WHERE ' + apptWhere + 'AND q.pref_date >= ? '
     + 'ORDER BY q.pref_date ASC, q.pref_time ASC'
   ).all(today);
 
+  // All past appointments, newest first (no cap — they should never fall off).
   var past = db.prepare(
     apptCols
-    + 'WHERE l.status = \'booked\' AND l.archived = 0 AND q.pref_date < ? '
-    + 'ORDER BY q.pref_date DESC, q.pref_time DESC LIMIT 30'
+    + 'WHERE ' + apptWhere + 'AND q.pref_date < ? '
+    + 'ORDER BY q.pref_date DESC, q.pref_time DESC'
   ).all(today);
 
   // Owner personal time blocks (visual only — not customer facing).
@@ -5575,23 +5583,37 @@ router.get('/appointments', requireAuth, function(req, res) {
     // Address + vehicle fall back to the customer profile so profile edits show here.
     var loc = (a.pref_location || '').trim() || (a.cust_addr || '').trim() || (a.cust_home_address || '').trim();
     var veh = (a.vehicle || '').trim() || (a.cust_vehicle || '').trim();
-    return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + STATUS_COLOR.booked + ';margin-bottom:10px;">'
+    // A finished job (lead moved to completed/receipt) keeps its appointment on the
+    // calendar but is shown read-only: no Reschedule/Cancel (those would revert a done
+    // job to the pipeline). The card still opens the lead on tap.
+    var done = a.status === 'completed' || a.status === 'receipt';
+    var accent = STATUS_COLOR[a.status] || STATUS_COLOR.booked;
+    var doneBadge = done
+      ? '<span style="font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;background:' + hexA(accent, 0.14) + ';color:' + accent + ';">'
+        + (a.status === 'receipt' ? 'Receipt sent' : 'Completed') + '</span>'
+      : '';
+    return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + accent + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
       + '<span style="font-size:0.82rem;color:#888;">' + esc(fmtPrefDate(a.pref_date)) + '</span>'
       + '</div>'
+      + (doneBadge ? '<div style="margin-top:4px;">' + doneBadge + '</div>' : '')
       + '<div style="font-size:0.9rem;color:#444;margin-top:5px;">' + esc(a.q_service || 'Service TBD') + '</div>'
       + (veh ? '<div style="font-size:0.82rem;color:#666;margin-top:2px;">' + esc(veh) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
       + (loc ? '<div style="font-size:0.82rem;margin-top:2px;">' + mapsLink(loc, { style: 'color:#1a6fc4;font-size:0.82rem;text-decoration:none;' }) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(a.total) + '</div>'
-      + '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
-      + '<a href="/admin/appointments/' + a.id + '/edit" class="btn btn-sm" style="width:auto;background:#eef6ee;color:#1a7a3a;border:1px solid #b6dcc0;text-decoration:none;" onclick="event.stopPropagation();">' + ic('edit') + 'Edit</a>'
-      + '<button type="button" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">' + ic('calendar') + 'Reschedule</button>'
-      + '<form method="POST" action="/admin/appointments/' + a.id + '/cancel" style="display:inline;margin:0;" onsubmit="return confirm(\'Cancel this appointment? The lead will return to the pipeline.\');">'
-      + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;" onclick="event.stopPropagation();">Cancel Appt</button>'
-      + '</form>'
-      + '</div>'
+      + (done
+          ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
+            + '<a href="/admin/quote/' + a.id + '" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;text-decoration:none;" onclick="event.stopPropagation();">Open lead &rarr;</a>'
+            + '</div>'
+          : '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
+            + '<a href="/admin/appointments/' + a.id + '/edit" class="btn btn-sm" style="width:auto;background:#eef6ee;color:#1a7a3a;border:1px solid #b6dcc0;text-decoration:none;" onclick="event.stopPropagation();">' + ic('edit') + 'Edit</a>'
+            + '<button type="button" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">' + ic('calendar') + 'Reschedule</button>'
+            + '<form method="POST" action="/admin/appointments/' + a.id + '/cancel" style="display:inline;margin:0;" onsubmit="return confirm(\'Cancel this appointment? The lead will return to the pipeline.\');">'
+            + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;" onclick="event.stopPropagation();">Cancel Appt</button>'
+            + '</form>'
+            + '</div>')
       + '<div id="rescheduleForm_' + a.id + '" style="display:none;margin-top:12px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">'
       + '<form method="POST" action="/admin/appointments/' + a.id + '/reschedule">'
       + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">'
@@ -5649,7 +5671,7 @@ router.get('/appointments', requireAuth, function(req, res) {
   });
 
   var allCards = upcomingItems.map(function(i) { return i.html; }).join('') + (past.length
-    ? '<div id="pastHeader" class="section-title" style="margin:20px 0 10px;">Recent Past</div>' + past.map(apptCard).join('')
+    ? '<div id="pastHeader" class="section-title" style="margin:20px 0 10px;">Past Appointments</div>' + past.map(apptCard).join('')
     : '');
 
   var emptyAll = '<div id="apptEmpty" style="display:none;text-align:center;padding:32px;color:#888;">No appointments on this date.</div>';
