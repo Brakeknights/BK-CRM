@@ -376,6 +376,27 @@ function logHistory(leadId, event, detail) {
   db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(leadId, event, detail || null);
 }
 
+// Leads booked by phone/appointment can land without an email even though the
+// customer record has one (the single source of truth). Backfill the lead's email
+// (and phone) from its linked customer so quote/receipt/confirmation flows can email
+// the customer instead of falsely reporting "No email on file". Mutates and returns
+// the in-memory lead. No-op when the lead already has the field or has no customer.
+function backfillLeadContact(lead) {
+  if (!lead || !lead.customer_id) return lead;
+  if (lead.email && lead.phone) return lead;
+  var cust = db.prepare('SELECT email, phone FROM customers WHERE id = ?').get(lead.customer_id);
+  if (!cust) return lead;
+  var sets = [], vals = [];
+  if (!lead.email && cust.email) { lead.email = cust.email; sets.push('email = ?'); vals.push(cust.email); }
+  if (!lead.phone && cust.phone) { lead.phone = cust.phone; sets.push('phone = ?'); vals.push(cust.phone); }
+  if (sets.length) {
+    vals.push(lead.id);
+    var stmt = db.prepare('UPDATE leads SET ' + sets.join(', ') + ' WHERE id = ?');
+    stmt.run.apply(stmt, vals);
+  }
+  return lead;
+}
+
 function fmtHistoryTime(dateStr) {
   var d = new Date(dateStr + 'Z');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
@@ -2343,6 +2364,9 @@ function quoteParseBody(body) {
 router.get('/quote/:id', requireAuth, function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.redirect('/admin');
+  // Sync email/phone from the linked customer when the lead is missing them, so the
+  // "No email on file" banner and contact display reflect the customer record.
+  backfillLeadContact(lead);
 
   var allQuotes = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC').all(lead.id);
   var existing = allQuotes[0] || {};
@@ -2795,6 +2819,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 router.post('/quote/:id/send', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.redirect('/admin');
+  // Fall back to the customer's email/phone so the quote can be emailed even when the
+  // lead itself was created without contact details (e.g. a phone-booked appointment).
+  backfillLeadContact(lead);
 
   var service       = (req.body.service || '').trim();
   var customSvc     = (req.body.customService || '').trim();
@@ -3037,6 +3064,9 @@ function advisoryRow(i, hidden) {
 router.get('/receipt/:id', requireAuth, function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.redirect('/admin');
+  // Pull email/phone from the linked customer if the lead is missing them, so the
+  // receipt can actually email the customer (phone-booked leads often lack an email).
+  backfillLeadContact(lead);
 
   // Prefill from the accepted quote if there is one, otherwise the most recent quote.
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id)
@@ -3326,6 +3356,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
 router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.redirect('/admin');
+  // Fall back to the customer's email/phone so the receipt actually gets emailed.
+  backfillLeadContact(lead);
 
   var service      = (req.body.service || '').trim();
   var customSvc    = (req.body.customService || '').trim();
