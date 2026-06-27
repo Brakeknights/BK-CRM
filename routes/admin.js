@@ -163,6 +163,84 @@ function contactActions(p, marginTop) {
     + '</div>';
 }
 
+// One inline-editable contact field row. Click the value to edit it and save in
+// place (AJAX to /admin/customer/:id/field). `field` must be one of the allowlisted
+// customer columns. Used to build the single unified customer card.
+function inlineField(custId, field, label, rawValue) {
+  var raw = rawValue == null ? '' : String(rawValue);
+  var has = raw.trim() !== '';
+  var lc = label.toLowerCase();
+  var disp;
+  if (!has) disp = '<span style="color:#bbb;">Add ' + esc(lc) + '</span>';
+  else if (field === 'phone') disp = '<a href="tel:' + esc(raw) + '" style="color:#1a6fc4;text-decoration:none;">' + esc(fmtPhone(raw)) + '</a>';
+  else if (field === 'home_address') disp = mapsLink(raw);
+  else disp = esc(raw);
+  var inputType = field === 'email' ? 'email' : (field === 'phone' ? 'tel' : 'text');
+  var extra = (field === 'phone' ? ' oninput="fmtPhoneInput(this)" maxlength="12"' : '')
+            + (field === 'home_address' ? ' data-addr-ac autocomplete="off"' : '');
+  return '<div class="bk-ief" data-cust="' + custId + '" data-field="' + esc(field) + '" data-label="' + esc(lc) + '" data-raw="' + esc(raw) + '" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f2f6;">'
+    + '<span style="width:70px;flex-shrink:0;font-size:0.72rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.03em;">' + esc(label) + '</span>'
+    + '<span style="flex:1;min-width:0;">'
+    +   '<span class="bk-ief-view" tabindex="0" role="button" title="Tap to edit" style="cursor:pointer;font-size:0.92rem;color:#0f172a;border-bottom:1px dashed #cbd5e1;display:inline-block;max-width:100%;">' + disp + '</span>'
+    +   '<span class="bk-ief-edit" style="display:none;align-items:center;gap:6px;">'
+    +     '<input type="' + inputType + '" class="bk-ief-input"' + extra + ' value="' + esc(raw) + '" style="flex:1;min-width:0;padding:7px 9px;border:1.5px solid #4169e1;border-radius:7px;font-size:0.92rem;">'
+    +     '<button type="button" class="bk-ief-save" title="Save" style="background:#0d1b2a;color:#fff;border:none;border-radius:7px;width:32px;height:32px;font-size:0.95rem;cursor:pointer;flex-shrink:0;">&#10003;</button>'
+    +     '<button type="button" class="bk-ief-cancel" title="Cancel" style="background:#eef1f5;color:#64748b;border:none;border-radius:7px;width:32px;height:32px;font-size:0.85rem;cursor:pointer;flex-shrink:0;">&#10005;</button>'
+    +   '</span>'
+    + '</span>'
+    + '</div>';
+}
+
+// Inline-editable list of a customer's saved vehicles (edit year/make/model/VIN/
+// plate in place via AJAX; delete via a small form; add via /vehicle/add).
+function inlineVehicleList(custId, vehicles, back) {
+  var inS = 'padding:7px 9px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.88rem;width:100%;box-sizing:border-box;';
+  var rows = vehicles.length
+    ? vehicles.map(function(v) {
+        var title = [v.year, v.make, v.model].filter(Boolean).join(' ') || 'Vehicle';
+        return '<div class="bk-veh" data-cust="' + custId + '" data-vid="' + v.id + '" style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;">'
+          + '<div class="bk-veh-view" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
+          +   '<div><div class="bk-veh-title" style="font-weight:600;color:#0a1f3d;font-size:0.9rem;">' + esc(title) + '</div>'
+          +     (v.vin ? '<div style="font-size:0.78rem;color:#888;margin-top:2px;">VIN ' + esc(v.vin) + '</div>' : '')
+          +     (v.license_plate ? '<div style="font-size:0.78rem;color:#888;margin-top:1px;">Plate ' + esc(v.license_plate) + '</div>' : '') + '</div>'
+          +   '<div style="display:flex;gap:8px;flex-shrink:0;">'
+          +     '<button type="button" class="bk-veh-edit-btn" style="background:none;border:1px solid #4169e1;border-radius:6px;color:#4169e1;font-size:0.75rem;font-weight:600;cursor:pointer;padding:3px 9px;">Edit</button>'
+          +     '<form method="POST" action="/admin/customer/' + custId + '/vehicle/' + v.id + '/delete" style="margin:0;"><input type="hidden" name="back" value="' + esc(back) + '"><button type="submit" onclick="return confirm(\'Remove this vehicle?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button></form>'
+          +   '</div>'
+          + '</div>'
+          + '<div class="bk-veh-form" style="display:none;margin-top:10px;">'
+          +   '<div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:6px;">'
+          +     '<input name="veh_year" placeholder="Year" value="' + esc(v.year || '') + '" style="' + inS + '">'
+          +     '<input name="veh_make" placeholder="Make" value="' + esc(v.make || '') + '" style="' + inS + '">'
+          +     '<input name="veh_model" placeholder="Model" value="' + esc(v.model || '') + '" style="' + inS + '">'
+          +   '</div>'
+          +   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">'
+          +     '<input name="veh_vin" placeholder="VIN" value="' + esc(v.vin || '') + '" style="' + inS + '">'
+          +     '<input name="veh_plate" placeholder="Plate" value="' + esc(v.license_plate || '') + '" style="' + inS + '">'
+          +   '</div>'
+          +   '<div style="display:flex;gap:8px;margin-top:8px;"><button type="button" class="bk-veh-save btn btn-navy btn-sm" style="width:auto;">Save</button><button type="button" class="bk-veh-cancel btn btn-outline btn-sm" style="width:auto;">Cancel</button></div>'
+          + '</div>'
+          + '</div>';
+      }).join('')
+    : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:8px;">No vehicles saved yet.</div>';
+  // Add-a-vehicle (plain POST, redirects back) — no NHTSA cascade here to keep it light.
+  var add = '<form method="POST" action="/admin/customer/' + custId + '/vehicle/add" style="border-top:1px solid #eef0f4;padding-top:10px;margin-top:2px;">'
+    + '<input type="hidden" name="back" value="' + esc(back) + '">'
+    + '<div style="font-size:0.78rem;font-weight:600;color:#475569;margin-bottom:6px;">Add a vehicle</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1.4fr;gap:6px;">'
+    + '<input name="veh_year" placeholder="Year" style="' + inS + '">'
+    + '<input name="veh_make" placeholder="Make" style="' + inS + '">'
+    + '<input name="veh_model" placeholder="Model" style="' + inS + '">'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">'
+    + '<input name="veh_vin" placeholder="VIN (optional)" style="' + inS + '">'
+    + '<input name="veh_plate" placeholder="Plate (optional)" style="' + inS + '">'
+    + '</div>'
+    + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;margin-top:8px;">+ Add Vehicle</button>'
+    + '</form>';
+  return rows + add;
+}
+
 // ─── Canonical lead card ──────────────────────────────────────────────────────
 // One card for a lead, shown identically in the Leads list and the customer
 // profile's job history (and anywhere else a lead appears). The shell is always
@@ -905,6 +983,38 @@ var VEHICLE_CASCADE_JS = '<script>'
   + '})();'
   + '</script>';
 
+// Shared floating Save button — the navy chip pinned top-right (same look, place,
+// and crisp first-tap behavior as the customer/lead profile Save bar). Used on
+// every main form so saving is consistent and always reachable.
+//   opts.form    — id of the form it submits (required)
+//   opts.label   — button text (default "Save")
+//   opts.btnId   — unique button id (default opts.form + "Float")
+//   opts.name/value — optional submitter name/value (e.g. send_email=0)
+//   opts.onclick — optional JS expression to run instead of submitting the form
+//                  (for multi-action forms like Quick Quote); when set, the form
+//                  is not auto-submitted — the expression drives the action.
+// Fires on pointerdown so the first tap always registers (even with an input
+// focused or the Google Places dropdown open), gives instant "Saving…" feedback,
+// validates first so it never sticks disabled, and guards against double submits.
+function floatingSaveBar(opts) {
+  opts = opts || {};
+  var btnId = opts.btnId || (opts.form + 'Float');
+  var nameAttr = opts.name ? ' name="' + esc(opts.name) + '" value="' + esc(opts.value || '') + '"' : '';
+  return '<div style="position:fixed;top:66px;right:16px;z-index:150;">'
+    + '<button type="' + (opts.onclick ? 'button' : 'submit') + '" id="' + esc(btnId) + '"' + (opts.onclick ? '' : ' form="' + esc(opts.form) + '"' + nameAttr)
+    + ' style="background:#0d1b2a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;box-shadow:0 3px 14px rgba(13,27,42,.3);display:flex;align-items:center;gap:6px;white-space:nowrap;">'
+    + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
+    + esc(opts.label || 'Save') + '</button></div>'
+    + '<script>(function(){var btn=document.getElementById(' + JSON.stringify(btnId) + ');if(!btn)return;var saving=false;'
+    + (opts.onclick
+        ? 'function go(){if(saving)return;saving=true;btn.disabled=true;btn.style.opacity="0.7";btn.innerHTML="Working\\u2026";setTimeout(function(){saving=false;btn.disabled=false;btn.style.opacity="1";btn.innerHTML=' + JSON.stringify('✓ ' + (opts.label || 'Save')) + ';},4000);try{' + opts.onclick + ';}catch(e){saving=false;btn.disabled=false;btn.style.opacity="1";}}'
+        : 'var f=document.getElementById(' + JSON.stringify(opts.form) + ');if(!f)return;'
+          + 'function go(){if(saving)return;if(f.checkValidity&&!f.checkValidity()){if(f.reportValidity)f.reportValidity();return;}saving=true;btn.disabled=true;btn.style.opacity="0.7";btn.innerHTML="Saving\\u2026";try{if(f.requestSubmit){f.requestSubmit(btn);}else{f.submit();}}catch(_){try{f.submit();}catch(e){}}}')
+    + 'btn.addEventListener("pointerdown",function(e){e.preventDefault();go();});'
+    + 'btn.addEventListener("click",function(e){e.preventDefault();go();});'
+    + '})();<\/script>';
+}
+
 function page(title, body, req) {
   var authed = req.session && req.session.adminAuthed;
   var head = '<!DOCTYPE html><html lang="en"><head>'
@@ -926,6 +1036,15 @@ function page(title, body, req) {
     + '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">'
     + '<title>BK Admin' + (title && title !== 'Leads' ? ' — ' + esc(title) : '') + '</title>'
     + '<style>' + CSS + '</style>'
+    // Google Maps Places loaded ONCE for the whole admin shell (not per page). The
+    // API can only load once per page; loading it per-page broke address autocomplete
+    // after the first client-side (bkBoost) navigation. bkInitAddrAC() (defined in the
+    // shell script) attaches autocomplete to any address input on screen, and re-runs
+    // after every content swap via bkInitPage().
+    + (authed && process.env.GOOGLE_MAPS_API_KEY
+        ? '<script>window.bkMapsReady=false;function bkMapsInit(){window.bkMapsReady=true;if(window.bkInitAddrAC)window.bkInitAddrAC();}</script>'
+          + '<script async src="https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(process.env.GOOGLE_MAPS_API_KEY) + '&libraries=places&loading=async&callback=bkMapsInit"></script>'
+        : '')
     + '</head>';
 
   // Login (and any unauthed) page: no sidebar/header chrome, just centered content.
@@ -1117,6 +1236,16 @@ function page(title, body, req) {
     +   'restore();'
     + '};'
     + 'window.bkClearDraft=function(key){try{localStorage.removeItem("bkdraft_"+key);}catch(_){}};'
+    // Attach Google Places autocomplete to any address input marked data-addr-ac.
+    // Idempotent (skips inputs already wired) and safe to call before Maps loads —
+    // it no-ops until google.maps.places exists, then bkMapsInit/bkInitPage re-run it.
+    + 'window.bkInitAddrAC=function(){'
+    +   'if(!(window.google&&window.google.maps&&google.maps.places&&google.maps.places.Autocomplete))return;'
+    +   'var ins=document.querySelectorAll("input[data-addr-ac]");'
+    +   'for(var i=0;i<ins.length;i++){var el=ins[i];if(el.getAttribute("data-ac-done"))continue;el.setAttribute("data-ac-done","1");'
+    +     'try{new google.maps.places.Autocomplete(el,{fields:["formatted_address"],componentRestrictions:{country:"us"},types:["address"]});}catch(_){}'
+    +   '}'
+    + '};'
     // Per-page init that must re-run after each client-side content swap (see bkBoost):
     // phone formatting, collapsed-section restore, the lead Customer Info card opening
     // by default, the ?bq=1 Build Quote opener, and autosave wiring for any
@@ -1127,8 +1256,43 @@ function page(title, body, req) {
     +   'try{var ce=document.querySelector(".collapse[data-ckey=\\"cust\\"]");if(ce&&localStorage.getItem("bkc_cust")!=="0")ce.classList.remove("collapsed");}catch(_){}'
     +   'try{if(/[?&]bq=1(&|$)/.test(location.search)){var be=document.querySelector(".collapse[data-ckey=\\"buildquote\\"]");if(be)be.classList.remove("collapsed");}}catch(_){}'
     +   'try{document.querySelectorAll("form[data-autosave]").forEach(function(f){if(f.getAttribute("data-autosaved"))return;f.setAttribute("data-autosaved","1");var fn=f.getAttribute("data-autosave-after");var after=(fn&&window[fn])?window[fn]:null;bkAutosave(f,f.getAttribute("data-autosave"),after);});}catch(_){}'
+    +   'try{if(window.bkInitAddrAC)window.bkInitAddrAC();}catch(_){}'
     + '};'
     + 'bkInitPage();'
+    // ── Inline field editing (click a customer field to edit + save in place) ──────
+    // Event-delegated so it works on content swapped in by bkBoost. Contact fields
+    // (.bk-ief) save via /admin/customer/:id/field; vehicles (.bk-veh) via
+    // /admin/customer/:id/vehicle/:vid/update. Both update the DOM in place, no reload.
+    + '(function(){'
+    +   'function r(el){return el&&el.closest?el.closest(".bk-ief"):null;}'
+    +   'function rv(el){return el&&el.closest?el.closest(".bk-veh"):null;}'
+    +   'function enter(row){if(!row)return;row.querySelector(".bk-ief-view").style.display="none";var ed=row.querySelector(".bk-ief-edit");ed.style.display="inline-flex";var i=ed.querySelector(".bk-ief-input");if(i){i.value=row.getAttribute("data-raw")||"";i.focus();if(i.select)i.select();}}'
+    +   'function exit(row){if(!row)return;var ed=row.querySelector(".bk-ief-edit");if(ed)ed.style.display="none";var vw=row.querySelector(".bk-ief-view");if(vw)vw.style.display="";}'
+    +   'function save(row){if(!row)return;var cust=row.getAttribute("data-cust"),field=row.getAttribute("data-field");var i=row.querySelector(".bk-ief-input");if(!i)return;var val=(i.value||"").trim();var sv=row.querySelector(".bk-ief-save");if(sv){sv.disabled=true;sv.innerHTML="\\u2026";}'
+    +     'fetch("/admin/customer/"+cust+"/field",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","X-Requested-With":"fetch"},credentials:"same-origin",body:"field="+encodeURIComponent(field)+"&value="+encodeURIComponent(val)})'
+    +     '.then(function(x){return x.json();}).then(function(d){if(!d||!d.ok)throw 0;row.setAttribute("data-raw",d.raw||"");'
+    +       'var vw=row.querySelector(".bk-ief-view");vw.innerHTML=d.displayHtml||("<span style=\\"color:#bbb;\\">Add "+(row.getAttribute("data-label")||"")+"</span>");'
+    +       'if(d.fullName){var nm=document.getElementById("bkCustName");if(nm)nm.textContent=d.fullName;}'
+    +       'if(sv){sv.disabled=false;sv.innerHTML="\\u2713";}exit(row);'
+    +       'vw.style.transition="background .3s";vw.style.background="#d8f5e0";setTimeout(function(){vw.style.background="";},700);'
+    +     '}).catch(function(){if(sv){sv.disabled=false;sv.innerHTML="\\u2713";}alert("Could not save. Please try again.");});}'
+    +   'function vehSave(row){if(!row)return;var cust=row.getAttribute("data-cust"),vid=row.getAttribute("data-vid");'
+    +     'function g(n){var el=row.querySelector("[name="+n+"]");return el?(el.value||"").trim():"";}'
+    +     'var body="veh_year="+encodeURIComponent(g("veh_year"))+"&veh_make="+encodeURIComponent(g("veh_make"))+"&veh_model="+encodeURIComponent(g("veh_model"))+"&veh_vin="+encodeURIComponent(g("veh_vin"))+"&veh_plate="+encodeURIComponent(g("veh_plate"));'
+    +     'var sv=row.querySelector(".bk-veh-save");if(sv)sv.disabled=true;'
+    +     'fetch("/admin/customer/"+cust+"/vehicle/"+vid+"/update",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded","X-Requested-With":"fetch"},credentials:"same-origin",body:body})'
+    +     '.then(function(x){return x.json();}).then(function(d){if(!d||!d.ok)throw 0;var t=row.querySelector(".bk-veh-title");if(t)t.textContent=d.title;row.querySelector(".bk-veh-form").style.display="none";row.querySelector(".bk-veh-view").style.display="";if(sv)sv.disabled=false;})'
+    +     '.catch(function(){if(sv)sv.disabled=false;alert("Could not save vehicle.");});}'
+    +   'document.addEventListener("click",function(e){'
+    +     'var v=e.target.closest&&e.target.closest(".bk-ief-view");if(v){e.preventDefault();enter(r(v));return;}'
+    +     'var s=e.target.closest&&e.target.closest(".bk-ief-save");if(s){e.preventDefault();save(r(s));return;}'
+    +     'var c=e.target.closest&&e.target.closest(".bk-ief-cancel");if(c){e.preventDefault();exit(r(c));return;}'
+    +     'var ve=e.target.closest&&e.target.closest(".bk-veh-edit-btn");if(ve){e.preventDefault();var row=rv(ve);if(row){row.querySelector(".bk-veh-view").style.display="none";row.querySelector(".bk-veh-form").style.display="block";}return;}'
+    +     'var vc=e.target.closest&&e.target.closest(".bk-veh-cancel");if(vc){e.preventDefault();var row=rv(vc);if(row){row.querySelector(".bk-veh-form").style.display="none";row.querySelector(".bk-veh-view").style.display="";}return;}'
+    +     'var vs=e.target.closest&&e.target.closest(".bk-veh-save");if(vs){e.preventDefault();vehSave(rv(vs));return;}'
+    +   '});'
+    +   'document.addEventListener("keydown",function(e){var i=e.target;if(!i.classList||!i.classList.contains("bk-ief-input"))return;var row=r(i);if(!row)return;if(e.key==="Enter"){e.preventDefault();save(row);}else if(e.key==="Escape"){e.preventDefault();exit(row);}});'
+    + '})();'
     // Idle guard: auto-log-out after 30 min of no interaction, and verify the session
     // the instant the tab regains focus after being away. This is the safety net for
     // "I came back hours later" — instead of letting a stale form attempt an action
@@ -1986,7 +2150,7 @@ function quotePricingJs(pfx) {
     +   'document.getElementById("' + P + 'svcHidden").value=all.join(", ");'
     + '}'
     + 'var ' + P + 'PFX_MAP={"Caliper":"Caliper Replacement","Brake Hose":"Brake Hose Replacement"};'
-    + 'function ' + P + 'AddPriceRow(svcName){'
+    + 'function ' + P + 'AddPriceRow(svcName,addSupplies){'
     +   'if(document.querySelector("#' + P + 'SvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']"))return;'
     +   'var pfx=svcName.split(" - ");var lookupKey=pfx.length===2&&' + P + 'PFX_MAP[pfx[0]]?' + P + 'PFX_MAP[pfx[0]]:svcName;'
     +   'var p=' + P + 'PRICING[lookupKey];var td=p&&(p[' + P + 'tier]||p.standard);'
@@ -2003,7 +2167,11 @@ function quotePricingJs(pfx) {
     +     '+"<div class=\'price-row\'><span class=\'price-label\'>Parts</span><input class=\'price-input ' + P + '-parts-in\' type=\'number\' min=\'0\' step=\'0.01\' value=\'"+(dParts.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
     +     '+"<div class=\'price-row\'><span class=\'price-label\'>Labor <span class=\'price-note\'>(not taxed)</span></span><input class=\'price-input ' + P + '-labor-in\' type=\'number\' min=\'0\' step=\'0.01\' value=\'"+(dLabor.toFixed(2))+"\' oninput=\'' + P + 'calc()\' onfocus=\'this.select()\'></div>"'
     +     '+"<hr style=\'border:none;border-top:1px solid #eef1f5;margin:6px 0 4px;\'>";'
-    +   'if(dSS>0){var curSS=parseFloat(document.getElementById("' + P + 'ss").value)||0;document.getElementById("' + P + 'ss").value=(curSS+dSS).toFixed(2);}'
+    // Add this service\'s shop-supplies amount ($10) ONLY when the owner actually
+    // selects the service (addSupplies=true from the checkbox handlers). Rebuilding
+    // the rows from a saved/auto-saved draft passes no flag, so it never re-adds —
+    // that double-counting was the bug where supplies crept up $10 on every reopen.
+    +   'if(addSupplies&&dSS>0){var curSS=parseFloat(document.getElementById("' + P + 'ss").value)||0;document.getElementById("' + P + 'ss").value=(curSS+dSS).toFixed(2);}'
     +   'document.getElementById("' + P + 'SvcPriceRows").appendChild(row);'
     + '}'
     + 'function ' + P + 'RowMode(btn,mode){'
@@ -2014,14 +2182,20 @@ function quotePricingJs(pfx) {
     + 'function ' + P + 'RemovePriceRow(svcName){'
     +   'var row=document.querySelector("#' + P + 'SvcPriceRows .svc-price-row[data-base=\'"+svcName+"\']");'
     +   'if(row)row.parentNode.removeChild(row);'
+    // Subtract this service\'s shop supplies (symmetric with AddPriceRow), so
+    // unchecking a service takes its $10 back out. Floors at 0. Only ever called
+    // from user actions (uncheck / remove tag), never from a rebuild.
+    +   'var pfx=svcName.split(" - ");var lookupKey=pfx.length===2&&' + P + 'PFX_MAP[pfx[0]]?' + P + 'PFX_MAP[pfx[0]]:svcName;'
+    +   'var p=' + P + 'PRICING[lookupKey];var td=p&&(p[' + P + 'tier]||p.standard);var dSS=td?td.shopSupplies:0;'
+    +   'if(dSS>0){var ssEl=document.getElementById("' + P + 'ss");var curSS=parseFloat(ssEl.value)||0;ssEl.value=Math.max(0,curSS-dSS).toFixed(2);}'
     + '}'
     + 'function ' + P + 'SvcCbChange(cb){'
-    +   'if(cb.checked)' + P + 'AddPriceRow(cb.value);else ' + P + 'RemovePriceRow(cb.value);'
+    +   'if(cb.checked)' + P + 'AddPriceRow(cb.value,true);else ' + P + 'RemovePriceRow(cb.value);'
     +   P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
     + '}'
     + 'function ' + P + 'PosCbChange(cb){'
     +   'var rowName=cb.getAttribute("data-prefix")+" - "+cb.getAttribute("data-pos");'
-    +   'if(cb.checked)' + P + 'AddPriceRow(rowName);else ' + P + 'RemovePriceRow(rowName);'
+    +   'if(cb.checked)' + P + 'AddPriceRow(rowName,true);else ' + P + 'RemovePriceRow(rowName);'
     +   P + 'UpdateServiceHidden();' + P + 'RenderTags();' + P + 'Hints();' + P + 'calc();if(typeof ' + P + 'AfterChange==="function")' + P + 'AfterChange();'
     + '}'
     + 'function ' + P + 'UpdateRowPrices(){'
@@ -2228,10 +2402,13 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   var custSec = custProfile
     ? customerProfileSections(custProfile, { back: '/admin/quote/' + lead.id })
     : null;
+  // Contact lives in the Customer Information card above (inline-editable). The rest
+  // of the customer record (vehicles, addresses, tags, notes, history, stats) follows
+  // here. Everything edits in place / via its own small form — no bundled save.
   var custProfileBlock = custSec
-    ? '<div class="section-title" style="margin:26px 0 10px;">Customer Profile</div>'
-      + '<div style="font-size:0.8rem;color:#aaa;margin:-4px 0 12px;">The full customer record, shared across all their jobs. Edits here update the customer profile everywhere.</div>'
-      + custSec.tags + custSec.form + custSec.saveBar + custSec.jobs + custSec.fups + custSec.stats + custSec.script
+    ? '<div class="section-title" style="margin:22px 0 10px;">Customer Profile</div>'
+      + '<div style="font-size:0.8rem;color:#aaa;margin:-4px 0 12px;">Shared across all this customer&rsquo;s jobs. Edits here update the customer everywhere.</div>'
+      + custSec.vehicles + custSec.addresses + custSec.tags + custSec.notes + custSec.jobs + custSec.fups + custSec.stats
     : '';
 
   // Back (left) and Customer Profile (right) sit in a spaced row so they are large,
@@ -2244,21 +2421,29 @@ router.get('/quote/:id', requireAuth, function(req, res) {
     // Scheduling request / Approve-Deny (pending) or confirmed banner
     + schedulingPanel(lead, q, false)
 
-    // Customer info card (collapsible, open by default)
+    // Customer info card (collapsible, open by default). Contact details are the
+    // customer record (single source of truth) and are inline-editable — tap a value
+    // to change it and it saves in place and shows everywhere.
     + collapseOpen('cust', 'Customer Information', true)
     + '<div class="row-sb" style="margin-bottom:10px;">'
-    + '<div><div class="lead-name">' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
+    + '<div><div class="lead-name" id="bkCustName">' + esc((custProfile ? (custProfile.first_name + ' ' + custProfile.last_name).trim() : (lead.first_name + ' ' + lead.last_name).trim()) || 'Unnamed customer') + '</div>'
     + '<div style="color:#aaa;font-size:0.8rem;">' + timeAgo(lead.created_at) + '</div></div>'
     + statusBadge(lead.status)
     + '</div>'
-    + '<div class="info-grid">'
-    + contactInfoRows(lead,
-        (lead.vehicle ? '<span class="info-key">Vehicle</span><span class="info-val">' + esc(lead.vehicle) + '</span>' : '')
-        + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
-        + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
-        + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : ''))
-    + '</div>'
-    + contactActions(lead, 12)
+    + (function() {
+        var ctx = (lead.vehicle ? '<span class="info-key">Vehicle</span><span class="info-val">' + esc(lead.vehicle) + '</span>' : '')
+          + '<span class="info-key">Service</span><span class="info-val">' + esc(lead.service || 'Not specified') + '</span>'
+          + (lead.preferred_contact ? '<span class="info-key">Contact via</span><span class="info-val">' + esc(lead.preferred_contact) + '</span>' : '')
+          + (lead.message ? '<span class="info-key">Notes</span><span class="info-val" style="font-style:italic;">' + esc(lead.message) + '</span>' : '');
+        if (custProfile) {
+          return inlineField(custProfile.id, 'phone', 'Phone', custProfile.phone)
+            + inlineField(custProfile.id, 'email', 'Email', custProfile.email)
+            + inlineField(custProfile.id, 'home_address', 'Address', custProfile.home_address)
+            + '<div class="info-grid" style="margin-top:12px;">' + ctx + '</div>';
+        }
+        return '<div class="info-grid">' + contactInfoRows(lead, ctx) + '</div>';
+      })()
+    + contactActions(custProfile || lead, 12)
     // Primary job actions live right inside the Customer Information box, next to
     // Call/Text/Email: Book Appointment (when still pre-booking) and Send Receipt.
     + (!lead.archived
@@ -2801,7 +2986,7 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
 
 // ─── Phase 5: Job summary + custom receipt ────────────────────────────────────
 
-var PAYMENT_METHODS = ['Credit/Debit Card', 'Cash', 'Other'];
+var PAYMENT_METHODS = ['Cash', 'Zelle', 'Credit/Debit Card', 'Other'];
 
 // Renders one advisory row: a customer-facing note plus an optional date-picker
 // follow-up reminder. Pass hidden=true for rows 2-4 (shown via "+ Add Advisory").
@@ -2864,6 +3049,10 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   // different quote than the one we prefilled from).
   var address   = quote.pref_location
     || (db.prepare("SELECT pref_location FROM quotes WHERE lead_id = ? AND pref_location IS NOT NULL AND TRIM(pref_location) != '' ORDER BY id DESC LIMIT 1").get(lead.id) || {}).pref_location
+    // Fall back to the customer's saved service address / home address so a phone-
+    // booked job that only has the address on the customer profile still pre-fills.
+    || (lead.customer_id ? ((db.prepare("SELECT address FROM customer_addresses WHERE customer_id = ? ORDER BY id DESC LIMIT 1").get(lead.customer_id) || {}).address) : '')
+    || (lead.customer_id ? ((db.prepare("SELECT home_address FROM customers WHERE id = ?").get(lead.customer_id) || {}).home_address) : '')
     || '';
   var partsLabor = (quote.price_parts || 0) + (quote.price_labor || 0);
   var shopSupplies = quote.shop_supplies || 0;
@@ -2935,7 +3124,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<div class="form-group" id="rpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
     + '<input type="text" name="paymentOther" id="rpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
-    + '<input type="text" id="receiptAddr" name="serviceAddress" autocomplete="off" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
+    + '<input type="text" id="receiptAddr" name="serviceAddress" data-addr-ac autocomplete="off" value="' + esc(address) + '" placeholder="Where the work was performed"></div>'
     + COLLAPSE_CLOSE
 
     // Shared quote pricing block (per-service breakdown, custom line items,
@@ -2952,6 +3141,15 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
         showCustomerNotes: false
       })
     + '<input type="hidden" id="rcSvcSeed" value="' + esc(rcSvcSeed) + '">'
+    // Amount actually received — only when the owner accepted a different amount than
+    // the billed total (e.g. cash/Zelle a few dollars short). Blank = paid in full.
+    + '<div class="form-group" style="margin:16px 0 0;border-top:1px solid #eef1f5;padding-top:14px;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total above)</span></label>'
+    + '<input class="price-input" type="number" name="amountReceived" id="rcReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="rcReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    + '<div id="rcReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
+    // Tip — gratuity tracked separately from the sale (not taxed, not in revenue).
+    + '<div class="form-group" style="margin:14px 0 0;"><label>Tip <span style="color:#bbb;font-weight:400;">(optional — not taxed, reported separately from sales)</span></label>'
+    + '<input class="price-input" type="number" name="tip" id="rcTip" min="0" step="0.01" placeholder="0.00" oninput="rcReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    + '<div id="rcTipNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     + COLLAPSE_CLOSE
 
     + collapseOpen('rc_advisories', 'Notes to Customer <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(each appears on the receipt)</span>', true)
@@ -2966,8 +3164,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + (lead.email ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The receipt will be saved but not emailed.</div>')
     + '<button type="button" class="btn btn-outline" onclick="toggleReceiptPreview()" id="rPrevBtn" style="margin-bottom:10px;">Preview Receipt Email</button>'
     + '<div id="rPreviewBox" style="display:none;margin-bottom:10px;"></div>'
-    + '<button type="submit" class="btn btn-blue">&#10003; Complete Job &amp; Send Receipt</button>'
     + '</form>'
+    + floatingSaveBar({ form: 'rf', label: 'Send Receipt' })
 
     + '<script>'
     + 'var rcPRICING=' + rPricingJson + ';'
@@ -2976,7 +3174,23 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + CLI_JS
     // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
     + quotePricingJs('rc')
-    + 'function bkRecalc(){rccalc();}'
+    + 'function rcReceivedHint(){'
+    +   'var recEl=document.getElementById("rcReceived"),note=document.getElementById("rcReceivedNote");'
+    +   'if(!recEl||!note)return;'
+    +   'var billed=parseFloat((document.getElementById("rctotalH")||{}).value||"0")||0;'
+    +   'var raw=recEl.value.trim();'
+    +   'var saleRecorded=billed;'
+    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
+    +   'else{var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";saleRecorded=billed;}else{saleRecorded=rec;var diff=Math.round((billed-rec)*100)/100;'
+    +     'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
+    +     'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
+    +     'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}}}'
+    +   'var tipEl=document.getElementById("rcTip"),tnote=document.getElementById("rcTipNote");'
+    +   'if(tipEl&&tnote){var tip=parseFloat(tipEl.value)||0;'
+    +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
+    +     'else{tnote.textContent="";}}'
+    + '}'
+    + 'function bkRecalc(){rccalc();rcReceivedHint();}'
     // Receipt labels: the customer summary reads "Customer Receipt" / "Total Paid".
     + '(function(){var sl=document.getElementById("rcSummaryLabel");if(sl)sl.textContent="Customer Receipt";var tl=document.getElementById("rcTotalLabel");if(tl)tl.textContent="Total Paid";})();'
     + 'function rPayToggle(){'
@@ -2998,7 +3212,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'if(Array.isArray(seed)&&seed.length){seed.forEach(function(it){rcAddPriceRow(it.service);var row=document.querySelector("#rcSvcPriceRows .svc-price-row[data-base=\'"+it.service+"\']");if(row){row.querySelector(".rc-parts-in").value=it.parts;row.querySelector(".rc-labor-in").value=it.labor;var mode=it.mode||"combined";row.querySelector(".svc-row-mode").value=mode;row.querySelectorAll(".svc-disp-btn").forEach(function(b,i){b.classList.toggle("active",(mode==="split")?i===1:i===0);});}});}'
     +   'else{rcInitRows();}'
     + '})();'
-    + 'rcUpdateServiceHidden();rcRenderTags();rcHints();rccalc();'
+    + 'rcUpdateServiceHidden();rcRenderTags();rcHints();rccalc();rcReceivedHint();'
     + 'function bkAddAdvisory(pfx){'
     +   'for(var i=2;i<=4;i++){'
     +     'var r=document.getElementById((pfx||"")+"advRow"+i)||document.getElementById("advRow"+i);'
@@ -3016,7 +3230,14 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'var veh=[(document.querySelector("[name=veh_year]")||{}).value||"",(document.querySelector("[name=veh_make]")||{}).value||"",(document.querySelector("[name=veh_model]")||{}).value||""].filter(Boolean).join(" ");'
     +   'var svcDate=(document.querySelector("[name=serviceDate]")||{}).value||"";'
     +   'var pm=(document.getElementById("rpm")||{}).value||"";'
-    +   'var tot=document.getElementById("rctotalAmt").textContent||"$0.00";'
+    // Reflect what the customer actually paid: billed total, minus/plus any
+    // amount-received adjustment, plus any tip — mirrors the sent receipt email.
+    +   'var billed=parseFloat((document.getElementById("rctotalAmt").textContent||"").replace(/[^0-9.]/g,""))||0;'
+    +   'var rcvRaw=(document.getElementById("rcReceived")||{}).value||"";var rcv=parseFloat(rcvRaw);'
+    +   'var tip=parseFloat((document.getElementById("rcTip")||{}).value||"")||0;'
+    +   'var sale=(rcvRaw.trim()!==""&&!isNaN(rcv))?rcv:billed;'
+    +   'var adj=Math.round((sale-billed)*100)/100;var grand=Math.round((sale+tip)*100)/100;'
+    +   'var totHtml;if(adj===0&&tip===0){totHtml="<div style=\'margin-top:4px;\'><strong>Total Paid:</strong> $"+rmoney(billed)+"</div>";}else{totHtml="<div style=\'margin-top:4px;\'>Subtotal: $"+rmoney(billed)+"</div>";if(adj!==0)totHtml+="<div style=\'margin-top:2px;\'>Adjustment: "+(adj<0?"\\u2212$"+rmoney(-adj):"+$"+rmoney(adj))+"</div>";if(tip>0)totHtml+="<div style=\'margin-top:2px;\'>Tip: $"+rmoney(tip)+"</div>";totHtml+="<div style=\'margin-top:4px;\'><strong>Total Paid:</strong> $"+rmoney(grand)+"</div>";}'
     +   'var advNotes=[];for(var i=1;i<=4;i++){var n=(document.querySelector("[name=custNote"+i+"]")||{}).value||"";if(n)advNotes.push(n);}'
     +   'var toLine="' + esc(lead.email || '') + '"||"<em style=\'color:#e07000\'>(no email on file)</em>";'
     +   'box.innerHTML="<div class=\'preview-box\'>"'
@@ -3030,7 +3251,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     '+(veh?"<div style=\'margin-top:4px;\'><strong>Vehicle:</strong> "+veh+"</div>":"")'
     +     '+(svcDate?"<div style=\'margin-top:4px;\'><strong>Date:</strong> "+svcDate+"</div>":"")'
     +     '+cliCollect().map(function(it){return "<div style=\'margin-top:4px;\'><strong>"+it.label.replace(/</g,"&lt;")+":</strong> $"+rmoney(it.amount)+"</div>";}).join("")'
-    +     '+"<div style=\'margin-top:4px;\'><strong>Total:</strong> "+tot+"</div>"'
+    +     '+totHtml'
     +     '+(pm?"<div style=\'margin-top:4px;\'><strong>Payment:</strong> "+pm+"</div>":"")'
     +     '+"</div>"'
     +     '+(advNotes.length?"<div style=\'margin-top:10px;\'><strong>Notes to customer:</strong><ul style=\'margin:6px 0 0 18px;padding:0;font-size:0.86rem;\'>"+advNotes.map(function(n){return"<li>"+n+"</li>";}).join("")+"</ul></div>":"")'
@@ -3059,11 +3280,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'rccalc();'
     + '};'
     + '</script>'
-    + VEHICLE_CASCADE_JS
-    + (process.env.GOOGLE_MAPS_API_KEY
-        ? '<script>function initBkRecAddr(){var el=document.getElementById("receiptAddr");if(!el||!window.google||!google.maps||!google.maps.places)return;var ac=new google.maps.places.Autocomplete(el,{fields:["formatted_address"],componentRestrictions:{country:"us"},types:["address"]});ac.addListener("place_changed",function(){if(ac.getPlace())el.value=ac.getPlace().formatted_address||el.value;});}<\/script>'
-          + '<script src="https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(process.env.GOOGLE_MAPS_API_KEY) + '&libraries=places&loading=async&callback=initBkRecAddr" async><\/script>'
-        : '');
+    + VEHICLE_CASCADE_JS;
+  // Address autocomplete is wired centrally via the shell (data-addr-ac on the input).
 
   res.send(page('Receipt — ' + lead.first_name + ' ' + lead.last_name, body, req));
 });
@@ -3089,6 +3307,22 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
   var cliSum       = lineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
   var total        = partsLabor + shopSupplies + cliSum + tax - discount;
+  // Short-payment handling: the owner may accept less than the billed total (cash
+  // or Zelle a few dollars short). When an Amount Received is entered and differs
+  // from the billed total, store what was actually collected as `total` (so revenue
+  // reporting is accurate) and keep the billed amount in `billed_total` so the
+  // shortfall stays visible internally. Paid-in-full leaves billed_total null.
+  var billedTotal    = Math.round(total * 100) / 100;
+  var rawReceived    = req.body.amountReceived;
+  var amountReceived = parseFloat(rawReceived);
+  var hasAdjustment  = rawReceived != null && String(rawReceived).trim() !== ''
+    && !isNaN(amountReceived) && Math.abs(amountReceived - billedTotal) >= 0.005;
+  var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
+  var storedBilled   = hasAdjustment ? billedTotal : null;
+  total = storedTotal;
+  // Tip is tracked separately from the sale (not taxed, not in revenue).
+  var tip          = Math.round((parseFloat(req.body.tip) || 0) * 100) / 100;
+  if (tip < 0) tip = 0;
   var payment      = (req.body.paymentMethod || '').trim();
   if (payment === 'Other') payment = (req.body.paymentOther || '').trim() || 'Other';
   var officeNotes  = (req.body.officeNotes || '').trim() || null;
@@ -3109,10 +3343,23 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id);
 
   var info = db.prepare(
-    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, total, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
+    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
   var receiptId = info.lastInsertRowid;
+
+  // Unify the service address + vehicle entered on the receipt back onto the
+  // customer record so the profile and every other form stay in sync.
+  if (lead.customer_id) {
+    customers.syncCustomerData(lead.customer_id, {
+      phone: lead.phone, email: lead.email, address: address,
+      vehicle: {
+        year:  (req.body.veh_year  || '').trim(),
+        make:  (req.body.veh_make  || '').trim(),
+        model: (req.body.veh_model || '').trim()
+      }
+    });
+  }
 
   followups.forEach(function(f) {
     db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
@@ -3142,7 +3389,11 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   db.prepare("UPDATE leads SET status = 'completed', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
 
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
-  var receiptDetail = '$' + total.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+  var receiptDetail = '$' + total.toFixed(2)
+    + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+    + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
+    + (payment ? ' · ' + payment : '')
+    + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
   if (process.env.SMTP_PASS && lead.email) {
     try {
@@ -3204,7 +3455,27 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
     + '<div style="font-weight:700;color:#0a1f3d;">$' + money(receipt.total) + '</div>'
     + '</div>'
     + '<div style="color:#999;font-size:0.82rem;">' + esc(when) + (receipt.payment_method ? ' &middot; ' + esc(receipt.payment_method) : '') + '</div>'
+    + ((receipt.tip && receipt.tip > 0)
+        ? '<div style="color:#1a4a7a;font-size:0.82rem;margin-top:6px;">Includes a $' + money(receipt.tip) + ' tip (tracked separately, not taxed). Sale: $' + money(receipt.total) + ' &middot; Customer total: $' + money((receipt.total || 0) + receipt.tip) + '.</div>'
+        : '')
     + '</div>'
+
+    // Short-payment panel — shown only when the owner accepted less (or more) than
+    // the billed total. Internal only; the customer's receipt shows what they paid.
+    + ((receipt.billed_total != null && Math.abs(receipt.billed_total - receipt.total) >= 0.005)
+        ? '<div class="card" style="background:#fff7ed;border:1px solid #f0c890;">'
+          + '<div class="section-title" style="color:#9a3412;">'
+          + (receipt.billed_total > receipt.total ? 'Short payment recorded' : 'Overpayment recorded')
+          + '</div>'
+          + '<div style="font-size:0.9rem;color:#7a3a10;line-height:1.7;">'
+          + 'Billed: $' + money(receipt.billed_total) + '<br>'
+          + 'Received: $' + money(receipt.total) + '<br>'
+          + '<strong>Difference: $' + money(Math.abs(receipt.billed_total - receipt.total))
+          + (receipt.billed_total > receipt.total ? ' (not collected)' : ' (extra)') + '</strong>'
+          + '</div>'
+          + '<div style="font-size:0.8rem;color:#a06a3a;margin-top:6px;">Sales reports count the received amount ($' + money(receipt.total) + ').</div>'
+          + '</div>'
+        : '')
 
     // Internal panel (office notes + follow-ups) — never sent to the customer.
     + ((receipt.office_notes || fus.length)
@@ -3264,8 +3535,26 @@ function buildReceiptEmail(lead, r, notes) {
       }).join('')
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(r.shop_supplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(r.tax) + '</td></tr>'
-    + '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
-    + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(r.total) + '</td></tr>'
+    + (function() {
+        // The line items above sum to the billed amount. When the owner accepted a
+        // different amount (short/over pay), show a Subtotal + Adjustment so the math
+        // reconciles and Total Paid reflects what the customer actually paid. Tip is
+        // added on top (never taxed). Paid-in-full with no tip = a single Total Paid.
+        var tip = r.tip || 0;
+        var billed = (r.billed_total != null) ? r.billed_total : (r.total || 0);
+        var adj = Math.round(((r.total || 0) - billed) * 100) / 100;
+        var grand = Math.round(((r.total || 0) + tip) * 100) / 100;
+        if (adj === 0 && tip === 0) {
+          return '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+            + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(r.total) + '</td></tr>';
+        }
+        var rows = '<tr style="border-top:1px solid #e6ebf1;"><td style="padding:8px 0 0;color:#444;">Subtotal</td><td style="text-align:right;padding:8px 0 0;">$' + money(billed) + '</td></tr>';
+        if (adj !== 0) rows += '<tr><td style="padding:6px 0 0;color:#444;">Adjustment</td><td style="text-align:right;padding:6px 0 0;">' + (adj < 0 ? '−$' + money(-adj) : '+$' + money(adj)) + '</td></tr>';
+        if (tip > 0) rows += '<tr><td style="padding:6px 0 0;color:#444;">Tip</td><td style="text-align:right;padding:6px 0 0;">$' + money(tip) + '</td></tr>';
+        rows += '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+          + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(grand) + '</td></tr>';
+        return rows;
+      })()
     + (r.payment_method ? '<tr><td style="padding:8px 0 0;color:#888;">Payment</td><td style="text-align:right;padding:8px 0 0;">' + esc(r.payment_method) + '</td></tr>' : '')
     + '</table></div>'
 
@@ -3584,8 +3873,14 @@ router.get('/quick', requireAuth, function(req, res) {
     + '</div>'
     + '<div class="form-group" id="qpmOtherWrap" style="display:none;"><label>Specify payment method</label>'
     + '<input type="text" name="paymentOther" id="qpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
-    + '<input type="text" name="serviceAddress" placeholder="Where the work was performed"></div>'
+    + '<div class="form-group"><label>Service address</label>'
+    + '<input type="text" name="serviceAddress" data-addr-ac autocomplete="off" placeholder="Where the work was performed"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
+    + '<input class="price-input" type="number" name="amountReceived" id="qReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    + '<div id="qReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Tip <span style="color:#bbb;font-weight:400;">(optional — not taxed, reported separately from sales)</span></label>'
+    + '<input class="price-input" type="number" name="tip" id="qTip" min="0" step="0.01" placeholder="0.00" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    + '<div id="qTipNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     + COLLAPSE_CLOSE
 
     // Shared quote pricing block (services + per-service breakdown, custom line
@@ -3606,19 +3901,20 @@ router.get('/quick', requireAuth, function(req, res) {
     // Action buttons
     + '<div class="card">'
     + '<div class="qQuoteActions">'
-    + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'quote_send\')">Send Quote to Customer</button>'
-    + '<button type="button" class="btn btn-navy" style="margin-top:8px;" onclick="qSubmit(\'quote_link\')">Get Copyable Quote Link</button>'
+    + '<button type="button" class="btn btn-navy" onclick="qSubmit(\'quote_link\')">Get Copyable Quote Link</button>'
     + '<button type="button" class="btn" style="margin-top:8px;background:#e0e0e0;border:1.5px solid #b4b4b4;color:#444;" onclick="qSubmit(\'quote_save\')">Save as New Lead (no email)</button>'
     + '</div>'
-    + '<div class="qReceiptActions" style="display:none;">'
-    + '<button type="button" class="btn btn-blue" onclick="qSubmit(\'receipt_send\')">&#10003; Send Receipt to Customer</button>'
-    + '</div>'
+    + '<div class="qReceiptActions" style="display:none;"></div>'
     + '<button type="button" id="qPreviewBtn" class="btn btn-outline" style="margin-top:8px;" onclick="qPreview()">Preview Email</button>'
     + '<div id="qPreviewBox" style="display:none;margin-top:8px;"></div>'
     + '<button type="button" class="btn btn-outline" style="margin-top:8px;border-color:#aaa;color:#555;" onclick="qSaveDraft()">' + ic('document') + 'Save Draft</button>'
     + '<button type="button" class="svc-clear-btn" style="margin-top:12px;width:100%;padding:10px;" onclick="if(confirm(\'Clear the form and start over? Nothing will be saved.\'))qClearAll()">&#10005; Clear &amp; Start Over</button>'
     + '</div>'
     + '</form>'
+    // Floating primary action mirrors the mode: Send Quote (quote mode) / Send
+    // Receipt (receipt mode). The other outcomes (copy link, save as lead, draft)
+    // stay inline since they are distinct outcomes, not duplicate saves.
+    + floatingSaveBar({ form: 'qqf', label: 'Send', btnId: 'qqFloat', onclick: "qSubmit(document.getElementById('qmode').value==='receipt'?'receipt_send':'quote_send')" })
 
     + '<script>'
     + 'var qPRICING=' + pricingJson + ';'
@@ -3700,7 +3996,22 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'qSaveState();'
     + '}'
 
-    + 'function bkRecalc(){qcalc();}'
+    + 'function qReceivedHint(){'
+    +   'var recEl=document.getElementById("qReceived"),note=document.getElementById("qReceivedNote");'
+    +   'if(!recEl||!note)return;'
+    +   'var billed=parseFloat((document.getElementById("qtotalH")||{}).value||"0")||0;'
+    +   'var raw=recEl.value.trim();var saleRecorded=billed;'
+    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
+    +   'else{var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";saleRecorded=billed;}else{saleRecorded=rec;var diff=Math.round((billed-rec)*100)/100;'
+    +     'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
+    +     'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
+    +     'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}}}'
+    +   'var tipEl=document.getElementById("qTip"),tnote=document.getElementById("qTipNote");'
+    +   'if(tipEl&&tnote){var tip=parseFloat(tipEl.value)||0;'
+    +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
+    +     'else{tnote.textContent="";}}'
+    + '}'
+    + 'function bkRecalc(){qcalc();qReceivedHint();}'
     + 'function qUpdateServices(){qUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
 
     + 'function qPayToggle(){'
@@ -3769,7 +4080,17 @@ router.get('/quick', requireAuth, function(req, res) {
     +   '}'
     +   'if(rec){'
     +     'cliCollect().forEach(function(it){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>"+it.label.replace(/</g,"&lt;")+"</td><td style=\'padding:5px 0;\'>$"+money(it.amount)+"</td></tr>";});'
-    +     'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>"+total+"</td></tr>";'
+    +     'var qBilled=parseFloat((document.getElementById("qtotalAmt").textContent||"").replace(/[^0-9.]/g,""))||0;'
+    +     'var qRcvRaw=(document.getElementById("qReceived")||{}).value||"";var qRcv=parseFloat(qRcvRaw);'
+    +     'var qTipV=parseFloat((document.getElementById("qTip")||{}).value||"")||0;'
+    +     'var qSale=(qRcvRaw.trim()!==""&&!isNaN(qRcv))?qRcv:qBilled;'
+    +     'var qAdj=Math.round((qSale-qBilled)*100)/100;var qGrand=Math.round((qSale+qTipV)*100)/100;'
+    +     'if(qAdj===0&&qTipV===0){rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>$"+money(qBilled)+"</td></tr>";}else{'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Subtotal</td><td style=\'padding:5px 0;\'>$"+money(qBilled)+"</td></tr>";'
+    +       'if(qAdj!==0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Adjustment</td><td style=\'padding:5px 0;\'>"+(qAdj<0?"\\u2212$"+money(-qAdj):"+$"+money(qAdj))+"</td></tr>";'
+    +       'if(qTipV>0)rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;\'>Tip</td><td style=\'padding:5px 0;\'>$"+money(qTipV)+"</td></tr>";'
+    +       'rows+="<tr><td style=\'padding:5px 10px 5px 0;color:#888;font-weight:700;\'>Total Paid</td><td style=\'padding:5px 0;font-weight:700;\'>$"+money(qGrand)+"</td></tr>";'
+    +     '}'
     +     'var pm=(document.getElementById("qpm")||{}).value||"";'
     +     'var pmo=(document.getElementById("qpmOther")||{}).value||"";'
     +     'var svcDate=(document.querySelector("[name=serviceDate]")||{}).value||"";'
@@ -3807,12 +4128,19 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'document.getElementById("qqCustId").value="";'
     +   'var qqcChip=document.getElementById("qqCustChip");if(qqcChip){qqcChip.innerHTML="";qqcChip.style.display="none";}'
     +   'var qqcSrch=document.getElementById("qqCustSearch");if(qqcSrch)qqcSrch.value="";'
-    +   'qSetMode("quote");qSetTier("standard");qcalc();'
+    +   'var qrcv=document.getElementById("qReceived");if(qrcv)qrcv.value="";'
+    +   'var qtp=document.getElementById("qTip");if(qtp)qtp.value="";'
+    +   'qSetMode("quote");qSetTier("standard");qcalc();qReceivedHint();'
     +   'try{localStorage.removeItem("bk_qq_state");}catch(_){}'
     + '}'
 
     // Auto-save form state to localStorage so navigating away and back preserves work.
+    // qRestoring guards against saving an empty/half-built state while qRestoreState
+    // is still applying a draft (qSetMode/qSetTier would otherwise fire qSaveState
+    // before services are restored, wiping the saved draft).
+    + 'var qRestoring=false;'
     + 'function qSaveState(){'
+    +   'if(qRestoring)return;'
     +   'try{'
     +     'var adv=[1,2,3,4].map(function(i){'
     +       'return {'
@@ -3849,6 +4177,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +   '}catch(_){}'
     + '}'
     + 'function qRestoreState(){'
+    +   'qRestoring=true;'
     +   'try{'
     +     'var s=QDRAFT;'
     +     'if(!s){var raw=localStorage.getItem("bk_qq_state");if(!raw)return;s=JSON.parse(raw);if(s&&s.savedAt&&Date.now()-s.savedAt>24*60*60*1000){try{localStorage.removeItem("bk_qq_state");}catch(_){}return;}}'
@@ -3898,7 +4227,7 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'var allVis=[2,3,4].every(function(i){var r=document.getElementById("advRow"+i);return !r||r.style.display!=="none";});'
     +     'if(allVis){var ab=document.getElementById("qqAddAdvBtn");if(ab)ab.style.display="none";}'
     +     'qqUpdateServiceHidden();qRenderTags();qHints();qPayToggle();qcalc();'
-    +   '}catch(_){}'
+    +   '}catch(_){}finally{qRestoring=false;}'
     + '}'
 
     + 'function qSaveDraft(){'
@@ -4119,6 +4448,20 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var officeNotes = (req.body.officeNotes || '').trim() || null;
   var partsLabor  = parts + labor;
 
+  // Short-payment handling (see /receipt/:id/send): when an Amount Received is
+  // entered and differs from the billed total, store what was collected as `total`
+  // and keep the billed amount in `billed_total`.
+  var billedTotal    = Math.round(totalAmt * 100) / 100;
+  var rawReceived    = req.body.amountReceived;
+  var amountReceived = parseFloat(rawReceived);
+  var hasAdjustment  = rawReceived != null && String(rawReceived).trim() !== ''
+    && !isNaN(amountReceived) && Math.abs(amountReceived - billedTotal) >= 0.005;
+  var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
+  var storedBilled   = hasAdjustment ? billedTotal : null;
+  // Tip tracked separately from the sale (not taxed, not in revenue).
+  var tip            = Math.round((parseFloat(req.body.tip) || 0) * 100) / 100;
+  if (tip < 0) tip = 0;
+
   // Customer advisories + any timed follow-ups attached to them.
   var notes = [];
   var followups = [];
@@ -4132,18 +4475,51 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, totalAmt, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
   var receiptId = rInfo.lastInsertRowid;
+
+  // Unify the service address + vehicle back onto the customer record.
+  var qqLead = db.prepare('SELECT customer_id, phone, email FROM leads WHERE id = ?').get(leadId);
+  if (qqLead && qqLead.customer_id) {
+    customers.syncCustomerData(qqLead.customer_id, {
+      phone: qqLead.phone, email: qqLead.email, address: address,
+      vehicle: {
+        year:  (req.body.veh_year  || '').trim(),
+        make:  (req.body.veh_make  || '').trim(),
+        model: (req.body.veh_model || '').trim()
+      }
+    });
+  }
 
   followups.forEach(function(f) {
     db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
       .run(leadId, receiptId, f.description, f.due_date, f.recipient);
   });
 
+  // Automatic one-week post-service check-in (same as the per-lead receipt flow):
+  // a friendly "how are your brakes?" + Google review email 7 days out, to the
+  // customer, only when we have an email and one isn't already queued for this lead.
+  if (email) {
+    var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(leadId);
+    if (!hasCheckin) {
+      var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+      var _p = baseDay.split('-');
+      var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
+      _dt.setUTCDate(_dt.getUTCDate() + 7);
+      var checkinDue = _dt.toISOString().slice(0, 10);
+      db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
+        .run(leadId, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+    }
+  }
+
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
-  var receiptDetail = '$' + totalAmt.toFixed(2) + (payment ? ' · ' + payment : '') + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+  var receiptDetail = '$' + storedTotal.toFixed(2)
+    + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+    + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
+    + (payment ? ' · ' + payment : '')
+    + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
   if (action === 'receipt_send' && process.env.SMTP_PASS && email) {
     try {
@@ -4350,7 +4726,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
 
   var body = '<a href="/admin/customers" class="back-link"><span class="bk-arrow">&#8592;</span>All Customers</a>'
     + alert
-    + '<form method="POST" action="/admin/customer/new" data-autosave="custnew">'
+    + '<form method="POST" action="/admin/customer/new" id="newCustForm" data-autosave="custnew">'
     + '<div class="card">'
     + '<div class="section-title">Contact</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
@@ -4361,7 +4737,7 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
     + '<div class="form-group"><label>Email</label><input type="email" name="email" placeholder="customer@email.com"></div>'
     + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" data-addr-ac placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
     + '</div>'
     + '<div class="card">'
     + '<div class="section-title">Vehicle <span style="font-size:0.8rem;color:#aaa;font-weight:400;">(optional)</span></div>'
@@ -4377,10 +4753,10 @@ router.get('/customer/new', requireAuth, function(req, res) {
     + '<div class="form-group" style="margin-bottom:0;"><label>Internal Notes</label><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times..."></textarea></div>'
     + '</div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-top:4px;">'
-    + '<button type="submit" class="btn btn-navy" style="flex:1;">Create Customer</button>'
     + '<a href="/admin/customer/new" class="btn btn-outline" style="width:auto;" onclick="bkClearDraft(\'custnew\')">Start Over</a>'
     + '</div>'
     + '</form>'
+    + floatingSaveBar({ form: 'newCustForm', label: 'Create Customer' })
     + VEHICLE_CASCADE_JS;
 
   res.send(page('New Customer', body, req));
@@ -4531,16 +4907,17 @@ function customerProfileSections(c, opts) {
   ).all(c.id);
   var recentLeadId = jobs.length ? jobs[0].id : null;
 
-  // Contact info edit fields (inside unified save form)
+  // Inline-editable contact fields. Tap any value to edit and save it in place
+  // (AJAX). This is the single source of truth for the customer's contact details,
+  // shown identically on the lead page and the customer profile.
   var contactCard = '<div class="card">'
-    + '<div class="section-title" style="margin-bottom:12px;">Contact Info</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'
-    + '<div class="form-group"><label>First name</label><input type="text" name="first_name" value="' + esc(c.first_name || '') + '" required></div>'
-    + '<div class="form-group"><label>Last name</label><input type="text" name="last_name" value="' + esc(c.last_name || '') + '"></div>'
-    + '</div>'
-    + '<div class="form-group"><label>Email</label><input type="email" name="email" value="' + esc(c.email || '') + '" placeholder="customer@email.com"></div>'
-    + '<div class="form-group"><label>Phone</label><input type="tel" name="phone" value="' + esc(c.phone || '') + '" placeholder="703-555-0123" oninput="fmtPhoneInput(this)" maxlength="12"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Address <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="home_address" value="' + esc(c.home_address || '') + '" placeholder="123 Main St, Burke, VA 22015" autocomplete="off"></div>'
+    + '<div class="section-title" style="margin-bottom:6px;">Contact Info <span style="font-size:0.74rem;color:#bbb;font-weight:400;text-transform:none;letter-spacing:0;">tap a value to edit</span></div>'
+    + inlineField(c.id, 'first_name', 'First', c.first_name)
+    + inlineField(c.id, 'last_name', 'Last', c.last_name)
+    + inlineField(c.id, 'phone', 'Phone', c.phone)
+    + inlineField(c.id, 'email', 'Email', c.email)
+    + inlineField(c.id, 'home_address', 'Address', c.home_address)
+    + contactActions(c, 12)
     + '</div>';
 
   // Tags card (collapsible) — removable pills + free-text add + preset quick picks
@@ -4577,72 +4954,43 @@ function customerProfileSections(c, opts) {
       })()
     + COLLAPSE_CLOSE;
 
-  // Internal notes — inside the unified save form so saving notes doesn't wipe unsaved
-  // contact/vehicle/address fields the owner was filling in at the same time.
-  var notesCard = collapseOpen('cust_notes', 'Internal Notes', true)
-    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Visible to the tech before arrival, never sent. Saved with the button below.</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times, anything the tech should know...">' + esc(c.notes || '') + '</textarea></div>'
+  // Internal notes — standalone save (own form), so it no longer needs the big
+  // bundled save button.
+  var notesCard = collapseOpen('cust_notes', 'Internal Notes', false)
+    + '<div style="font-size:0.78rem;color:#aaa;margin-bottom:10px;">Visible to the tech before arrival, never sent.</div>'
+    + '<form method="POST" action="/admin/customer/' + c.id + '/notes">' + backInput
+    + '<div class="form-group" style="margin-bottom:10px;"><textarea name="notes" placeholder="Gate code, dog in yard, preferred contact times, anything the tech should know...">' + esc(c.notes || '') + '</textarea></div>'
+    + '<button type="submit" class="btn btn-outline" style="width:auto;">Save notes</button>'
+    + '</form>'
     + COLLAPSE_CLOSE;
 
-  // Vehicles (no inner form — inside unified save form; delete uses formaction)
-  var vehList = vehicles.length
-    ? vehicles.map(function(v) {
-        var title = [v.year, v.make, v.model, v.trim].filter(Boolean).join(' ') || 'Vehicle';
-        return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
-          + '<div><div style="font-weight:600;color:#0a1f3d;font-size:0.9rem;">' + esc(title) + '</div>'
-          + (v.vin ? '<div style="font-size:0.78rem;color:#888;margin-top:2px;">VIN ' + esc(v.vin) + '</div>' : '')
-          + (v.license_plate ? '<div style="font-size:0.78rem;color:#888;margin-top:1px;">Plate ' + esc(v.license_plate) + '</div>' : '') + '</div>'
-          + '<button type="submit" formaction="/admin/customer/' + c.id + '/vehicle/' + v.id + '/delete" formmethod="post" onclick="return confirm(\'Remove this vehicle?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button>'
-          + '</div>';
-      }).join('')
-    : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No vehicles saved yet.</div>';
-  var vehCard = collapseOpen('cust_vehicles', 'Vehicles', true)
-    + vehList
-    + '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
-    + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add a vehicle</div>'
-    + vehicleCascadeHtml('custprof-veh')
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>Trim</label><input type="text" name="veh_trim" placeholder="EX-L (optional)"></div>'
-    + '<div class="form-group" style="margin-bottom:8px;"><label>VIN</label><input type="text" name="veh_vin" maxlength="17" placeholder="optional"></div>'
-    + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>License plate <span style="color:#bbb;font-weight:400;">(optional)</span></label><input type="text" name="veh_plate" maxlength="10" placeholder="optional"></div>'
-    + '</div>'
+  // Vehicles — inline editable (tap Edit on a vehicle to change it in place; Add via
+  // the form at the bottom). Saves/deletes go to the dedicated vehicle endpoints.
+  var vehCard = collapseOpen('cust_vehicles', 'Vehicles', false)
+    + inlineVehicleList(c.id, vehicles, back)
     + COLLAPSE_CLOSE;
 
-  // Saved addresses (no inner form — inside unified save form; delete uses formaction)
+  // Saved addresses — standalone (each remove is its own form; add is its own form).
   var addrList = addresses.length
     ? addresses.map(function(a) {
         return '<div style="border:1px solid #e3e9f1;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
           + '<div style="flex:1;min-width:0;">' + (a.label ? '<div style="font-weight:600;color:#0a1f3d;font-size:0.88rem;">' + esc(a.label) + '</div>' : '')
-          + '<div style="font-size:0.85rem;color:#444;">' + esc(a.address) + '</div></div>'
-          + '<div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">'
-          + '<button type="button" onclick="profileUseAddr(' + JSON.stringify(a.address) + ')" style="background:none;border:1px solid #4169e1;border-radius:6px;color:#4169e1;font-size:0.75rem;font-weight:600;cursor:pointer;padding:3px 9px;">Use</button>'
-          + '<button type="submit" formaction="/admin/customer/' + c.id + '/address/' + a.id + '/delete" formmethod="post" onclick="return confirm(\'Remove this address?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button>'
-          + '</div>'
+          + '<div style="font-size:0.85rem;color:#444;">' + mapsLink(a.address) + '</div></div>'
+          + '<form method="POST" action="/admin/customer/' + c.id + '/address/' + a.id + '/delete" style="margin:0;flex-shrink:0;"><input type="hidden" name="back" value="' + esc(back) + '">'
+          + '<button type="submit" onclick="return confirm(\'Remove this address?\')" style="background:none;border:none;color:#c0392b;font-size:0.78rem;font-weight:600;cursor:pointer;padding:0;">Remove</button></form>'
           + '</div>';
       }).join('')
     : '<div style="color:#aaa;font-size:0.85rem;margin-bottom:10px;">No saved addresses yet.</div>';
-  var addrCard = collapseOpen('cust_addresses', 'Saved Service Addresses', true)
+  var addrCard = collapseOpen('cust_addresses', 'Saved Service Addresses', false)
     + addrList
-    + '<div style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">'
+    + '<form method="POST" action="/admin/customer/' + c.id + '/address/add" style="border-top:1px solid #eef0f4;padding-top:12px;margin-top:4px;">' + backInput
     + '<div style="font-size:0.82rem;font-weight:600;color:#475569;margin-bottom:8px;">Add an address</div>'
-    + '<div class="form-group" style="margin-bottom:8px;">'
-    + '<label>Label</label>'
-    + '<select name="addr_label_preset" onchange="profileAddrChange(this)">'
-    + '<option value="Home">Home</option>'
-    + '<option value="Office">Office</option>'
-    + '<option value="Other">Other</option>'
-    + '</select>'
+    + '<div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;align-items:end;">'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Label</label><input type="text" name="label" placeholder="Home, Office..."></div>'
+    + '<div class="form-group" style="margin-bottom:8px;"><label>Address</label><input type="text" name="address" data-addr-ac autocomplete="off" placeholder="123 Main St, Sterling, VA"></div>'
     + '</div>'
-    + '<div class="form-group" id="addrOtherWrap" style="margin-bottom:8px;display:none;">'
-    + '<label>Custom label</label>'
-    + '<input type="text" name="addr_label_other" placeholder="Apartment, gym, etc...">'
-    + '</div>'
-    + '<div class="form-group" style="margin-bottom:0;">'
-    + '<label>Address</label>'
-    + '<input type="text" name="addr_address" placeholder="123 Main St, Sterling, VA">'
-    + '</div>'
-    + '</div>'
+    + '<button type="submit" class="btn btn-outline btn-sm" style="width:auto;">+ Add Address</button>'
+    + '</form>'
     + COLLAPSE_CLOSE;
 
   // Job history
@@ -4706,55 +5054,13 @@ function customerProfileSections(c, opts) {
     + ' &middot; First paid job ' + shortDate(s.firstPaidDate) + '. A &ldquo;job&rdquo; is a completed service (receipt sent). Conversion rate is jobs completed out of quotes sent.</div>'
     + COLLAPSE_CLOSE;
 
-  var script = '<style>'
-    + '@keyframes bkSavePop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}'
-    + '</style>'
-    + '<script>'
-    + 'function profileAddrChange(sel){'
-    +   'var w=document.getElementById("addrOtherWrap");'
-    +   'if(w)w.style.display=sel.value==="Other"?"":"none";'
-    + '}'
-    + 'function profileUseAddr(addr){'
-    +   'var el=document.querySelector("[name=\'home_address\']");'
-    +   'if(!el)return;'
-    +   'el.value=addr;'
-    +   'el.scrollIntoView({behavior:"smooth",block:"center"});'
-    +   'el.focus();'
-    +   'el.style.outline="2px solid #4169e1";'
-    +   'setTimeout(function(){el.style.outline="";},1800);'
-    + '}'
-    + '(function(){'
-    +   'var form=document.getElementById("profileSaveForm");'
-    +   'var bar=document.getElementById("profileSaveBar");'
-    +   'if(!form||!bar)return;'
-    +   'function showSave(){'
-    +     'if(bar.style.display==="none"||bar.style.display===""){'
-    +       'bar.style.display="block";'
-    +       'bar.style.animation="none";'
-    +       'bar.offsetHeight;'
-    +       'bar.style.animation="bkSavePop .18s ease";'
-    +     '}'
-    +   '}'
-    +   'form.addEventListener("input",showSave);'
-    +   'form.addEventListener("change",showSave);'
-    + '})();'
-    + '</script>';
-
-  var saveBar = '<div id="profileSaveBar" style="display:none;position:fixed;top:66px;right:16px;z-index:150;">'
-    + '<button type="submit" form="profileSaveForm"'
-    + ' style="background:#0d1b2a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;box-shadow:0 3px 14px rgba(13,27,42,.3);display:flex;align-items:center;gap:6px;white-space:nowrap;">'
-    + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
-    + 'Save</button>'
-    + '</div>';
-
-  var form = '<form method="POST" action="/admin/customer/' + c.id + '/save" id="profileSaveForm">'
-    + backInput + contactCard + notesCard + vehCard + addrCard
-    + '</form>';
-
+  // Contact + vehicles save inline (AJAX); notes/addresses/tags each have their own
+  // small form. No bundled save form or floating save bar needed anymore.
   return {
     s: s, recentLeadId: recentLeadId,
-    tags: tagsCard, form: form, saveBar: saveBar,
-    jobs: jobsCard, fups: fupCard, stats: statsCard, script: script
+    contact: contactCard, tags: tagsCard, notes: notesCard,
+    vehicles: vehCard, addresses: addrCard,
+    jobs: jobsCard, fups: fupCard, stats: statsCard, script: ''
   };
 }
 
@@ -4779,17 +5085,12 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'added')        alert = '<div class="alert alert-success">Follow-up added.</div>';
   if (req.query.msg === 'contact_saved') alert = '<div class="alert alert-success">Contact info updated.</div>';
 
-  // Header — always visible: name, contact display, action buttons
+  // Header — name (updates live when you edit it), customer-since dates, actions.
   var header = '<div class="card">'
-    + '<div class="lead-name" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
-    + '<div class="info-grid">'
-    + contactInfoRows(c,
-        '<span class="info-key">Customer since</span><span class="info-val">' + shortDate(s.firstLeadDate) + '</span>'
-        + '<span class="info-key">First paid job</span><span class="info-val">' + shortDate(s.firstPaidDate) + '</span>'
-        + (c.square_customer_id ? '<span class="info-key">Square</span><span class="info-val" style="font-size:0.8rem;color:#888;">' + esc(c.square_customer_id) + '</span>' : ''))
-    + '</div>'
+    + '<div class="lead-name" id="bkCustName" style="font-size:1.15rem;margin-bottom:8px;">' + esc(name) + '</div>'
     + customerTagBadges(c.tags)
-    + contactActions(c)
+    + '<div style="font-size:0.8rem;color:#94a3b8;margin:2px 0 4px;">Customer since ' + shortDate(s.firstLeadDate)
+    + (s.firstPaidDate ? ' &middot; first paid job ' + shortDate(s.firstPaidDate) : '') + '</div>'
     + '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">'
     + '<a href="/admin/quick" class="btn btn-navy btn-sm" style="width:auto;">+ New Quote</a>'
     + '<a href="/admin/appointments/new?customer_id=' + c.id + '" class="btn btn-navy btn-sm" style="width:auto;">' + ic('calendar') + 'Schedule Appointment</a>'
@@ -4800,14 +5101,14 @@ router.get('/customer/:id', requireAuth, function(req, res) {
   var body = '<a href="/admin/customers" data-noswap class="back-link" onclick="return bkBack(\'/admin/customers\');"><span class="bk-arrow">&#8592;</span>Back</a>'
     + alert
     + header
+    + sec.contact
     + sec.tags
-    + sec.form
-    + sec.saveBar
+    + sec.vehicles
+    + sec.addresses
+    + sec.notes
     + sec.jobs
     + sec.fups
-    + sec.stats
-    + sec.script
-    + VEHICLE_CASCADE_JS;
+    + sec.stats;
 
   res.send(page(name, body, req));
 });
@@ -4835,6 +5136,77 @@ router.post('/customer/:id/edit', requireAuth, express.urlencoded({ extended: fa
   db.prepare('UPDATE customers SET first_name = ?, last_name = ?, email = ?, phone = ?, home_address = ? WHERE id = ?')
     .run(firstName, lastName, email, phone, homeAddress, c.id);
   res.redirect('/admin/customer/' + c.id + '?msg=contact_saved');
+});
+
+// Inline single-field edit (AJAX) — click a field on the customer card, change it,
+// save in place. The field name MUST come from this fixed allowlist (never the
+// request) so SQL column names can't be injected (Rule #1). Returns JSON with the
+// stored raw value and the formatted display HTML so the card updates without a reload.
+var CUSTOMER_FIELD_ALLOWLIST = ['first_name', 'last_name', 'phone', 'email', 'home_address'];
+router.post('/customer/:id/field', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ ok: false, error: 'not found' });
+  var field = (req.body.field || '').trim();
+  if (CUSTOMER_FIELD_ALLOWLIST.indexOf(field) === -1) return res.status(400).json({ ok: false, error: 'bad field' });
+  var value = (req.body.value || '').trim();
+  var stored = value || null;
+  db.prepare('UPDATE customers SET ' + field + ' = ? WHERE id = ?').run(stored, c.id); // field is allowlisted above
+
+  // Keep the saved-address list in sync when the primary address changes, so it
+  // shows everywhere (mirrors the full profile save).
+  if (field === 'home_address' && value) {
+    var existingHome = db.prepare("SELECT id FROM customer_addresses WHERE customer_id = ? AND LOWER(COALESCE(label,'')) = 'home'").get(c.id);
+    if (existingHome) db.prepare('UPDATE customer_addresses SET address = ? WHERE id = ?').run(value, existingHome.id);
+    else db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(c.id, 'Home', value);
+  }
+
+  var displayHtml = '';
+  if (value) {
+    if (field === 'phone')      displayHtml = '<a href="tel:' + esc(value) + '" style="color:#1a6fc4;text-decoration:none;">' + esc(fmtPhone(value)) + '</a>';
+    else if (field === 'email') displayHtml = esc(value);
+    else if (field === 'home_address') displayHtml = mapsLink(value);
+    else                        displayHtml = esc(value);
+  }
+  var out = { ok: true, raw: value, displayHtml: displayHtml };
+  if (field === 'first_name' || field === 'last_name') {
+    var fn = field === 'first_name' ? value : (c.first_name || '');
+    var ln = field === 'last_name' ? value : (c.last_name || '');
+    out.fullName = (fn + ' ' + ln).trim() || 'Unnamed customer';
+  }
+  res.json(out);
+});
+
+// Inline vehicle edit (AJAX) — update one saved vehicle's year/make/model/VIN/plate.
+router.post('/customer/:id/vehicle/:vid/update', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ ok: false });
+  var v = db.prepare('SELECT id FROM customer_vehicles WHERE id = ? AND customer_id = ?').get(req.params.vid, c.id);
+  if (!v) return res.status(404).json({ ok: false });
+  var year  = (req.body.veh_year  || '').trim() || null;
+  var make  = (req.body.veh_make  || '').trim() || null;
+  var model = (req.body.veh_model || '').trim() || null;
+  var vin   = (req.body.veh_vin   || '').trim() || null;
+  var plate = (req.body.veh_plate || '').trim() || null;
+  db.prepare('UPDATE customer_vehicles SET year = ?, make = ?, model = ?, vin = ?, license_plate = ? WHERE id = ?')
+    .run(year, make, model, vin, plate, v.id);
+  var title = [year, make, model].filter(Boolean).join(' ') || 'Vehicle';
+  res.json({ ok: true, title: title, year: year || '', make: make || '', model: model || '', vin: vin || '', plate: plate || '' });
+});
+
+// Add a vehicle to a customer (plain POST from the inline vehicle list, redirects back).
+router.post('/customer/:id/vehicle/add', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
+  var c = db.prepare('SELECT id FROM customers WHERE id = ?').get(req.params.id);
+  if (!c) return res.redirect('/admin/customers');
+  var year  = (req.body.veh_year  || '').trim() || null;
+  var make  = (req.body.veh_make  || '').trim() || null;
+  var model = (req.body.veh_model || '').trim() || null;
+  var vin   = (req.body.veh_vin   || '').trim() || null;
+  var plate = (req.body.veh_plate || '').trim() || null;
+  if (make || model || year || vin || plate) {
+    db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)')
+      .run(c.id, year, make, model, vin, plate);
+  }
+  custEditRedirect(req, res, c.id, 'saved');
 });
 
 // Unified profile save — contact info + optional new vehicle + optional new address
@@ -4984,9 +5356,10 @@ router.post('/customer/:id/address/add', requireAuth, express.urlencoded({ exten
   var address = (req.body.address || '').trim();
   var label   = (req.body.label || '').trim() || null;
   if (address) {
-    db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(c.id, label, address);
+    var dup = db.prepare('SELECT id FROM customer_addresses WHERE customer_id = ? AND LOWER(TRIM(address)) = LOWER(?)').get(c.id, address);
+    if (!dup) db.prepare('INSERT INTO customer_addresses (customer_id, label, address) VALUES (?,?,?)').run(c.id, label, address);
   }
-  res.redirect('/admin/customer/' + c.id + '?msg=addr_added');
+  custEditRedirect(req, res, c.id, 'addr_added');
 });
 
 router.post('/customer/:id/address/:aid/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
@@ -5349,10 +5722,8 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     : [];
   var timeOpts = ownerTimeOptions('');
 
-  var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
-  var mapsScript = mapsKey
-    ? '<script async defer src="https://maps.googleapis.com/maps/api/js?key=' + esc(mapsKey) + '&libraries=places&callback=apptInitMaps"></script>'
-    : '';
+  // Maps is loaded once by the shell; the address input uses data-addr-ac.
+  var mapsScript = '';
 
   var alert = '';
   if (req.query.err === 'name') alert = '<div class="alert alert-error">Customer first and last name are required for new customers.</div>';
@@ -5369,7 +5740,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:14px;">New Appointment</h1>'
     + fromLeadBanner
-    + '<form method="POST" action="/admin/appointments/new" data-autosave="apptnew-' + esc(fromLeadId || 'new') + '" data-autosave-after="bkApptAfter">'
+    + '<form method="POST" action="/admin/appointments/new" id="apptNewForm" data-autosave="apptnew-' + esc(fromLeadId || 'new') + '" data-autosave-after="bkApptAfter">'
     + (fromLeadId ? '<input type="hidden" name="from_lead" value="' + esc(fromLeadId) + '">' : '')
 
     + '<div class="card">'
@@ -5401,7 +5772,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '</div>'
     + '</div>'
     + '<div class="form-group" style="margin-top:14px;margin-bottom:0;">'
-    + '<input type="text" name="pref_location" id="apptAddr" placeholder="Service address" autocomplete="off" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
+    + '<input type="text" name="pref_location" id="apptAddr" data-addr-ac placeholder="Service address" autocomplete="off" style="width:100%;padding:10px 12px;border:1.5px solid #dde3ea;border-radius:8px;font-size:0.95rem;background:#fff;box-sizing:border-box;">'
     + '</div>'
     + '</div>'
 
@@ -5451,10 +5822,10 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<button type="button" id="apptPreviewBtn" class="btn btn-outline" style="margin-bottom:8px;" onclick="apptPreview()">Preview Email</button>'
     + '<div id="apptPreviewBox" style="display:none;margin-bottom:12px;"></div>'
     + '<div style="display:flex;gap:10px;align-items:center;margin-bottom:24px;">'
-    + '<button type="submit" id="apptSubmitBtn" class="btn btn-navy" style="flex:1;">Create Appointment</button>'
     + '<a href="/admin/appointments/new" class="btn btn-outline" style="width:auto;" onclick="bkClearDraft(\'apptnew-' + esc(fromLeadId || 'new') + '\')">Start Over</a>'
     + '</div>'
     + '</form>'
+    + floatingSaveBar({ form: 'apptNewForm', label: 'Create Appointment' })
     + '<script>(function(){'
     + 'var form=document.querySelector("form[action=\'/admin/appointments/new\']");'
     + 'if(form)form.addEventListener("submit",function(){'
@@ -5548,7 +5919,6 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
     + quotePricingJs('appt')
     + 'apptInitRows();apptUpdateServiceHidden();apptRenderTags();apptHints();apptcalc();'
-    + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
     + 'function apptPreview(){'
     +   'var box=document.getElementById("apptPreviewBox"),btn=document.getElementById("apptPreviewBtn");'
     +   'if(box.style.display!=="none"&&box.innerHTML){box.style.display="none";box.innerHTML="";btn.textContent="Preview Email";return;}'
@@ -5780,26 +6150,19 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
     if (!cust) return res.redirect('/admin/appointments/new?err=name');
   }
 
-  // Save the structured vehicle to the customer's profile if it's new, so it's
-  // reusable on future appointments and feeds Phase 8 tier lookup.
-  var vYear  = (req.body.veh_year  || '').trim() || null;
-  var vMake  = (req.body.veh_make  || '').trim() || null;
-  var vModel = (req.body.veh_model || '').trim() || null;
-  var vVin   = (req.body.veh_vin   || '').trim() || null;
-  var vPlate = (req.body.veh_plate || '').trim() || null;
-  if (vMake || vModel || vVin || vPlate) {
-    var dupe = db.prepare(
-      'SELECT id FROM customer_vehicles WHERE customer_id = ? AND IFNULL(year,\'\')=? AND IFNULL(make,\'\')=? AND IFNULL(model,\'\')=?'
-    ).get(cust.id, vYear || '', vMake || '', vModel || '');
-    if (!dupe) {
-      db.prepare('INSERT INTO customer_vehicles (customer_id, year, make, model, vin, license_plate) VALUES (?,?,?,?,?,?)')
-        .run(cust.id, vYear, vMake, vModel, vVin, vPlate);
-    } else if (vVin || vPlate) {
-      // Update VIN/plate on existing vehicle row if those fields are new
-      db.prepare('UPDATE customer_vehicles SET vin = COALESCE(NULLIF(?,\'\'),vin), license_plate = COALESCE(NULLIF(?,\'\'),license_plate) WHERE id = ?')
-        .run(vVin, vPlate, dupe.id);
+  // Unify everything entered here back onto the customer record (vehicle, service
+  // address, and any contact details), so it shows on the profile and pre-fills
+  // every other form. Enter it once, it lives everywhere.
+  customers.syncCustomerData(cust.id, {
+    phone: cust.phone, email: cust.email, address: pref_location,
+    vehicle: {
+      year:  (req.body.veh_year  || '').trim(),
+      make:  (req.body.veh_make  || '').trim(),
+      model: (req.body.veh_model || '').trim(),
+      vin:   (req.body.veh_vin   || '').trim(),
+      license_plate: (req.body.veh_plate || '').trim()
     }
-  }
+  });
 
   // If booking from an existing quoted/quote_accepted lead, advance that lead
   // instead of creating a duplicate. This is the fix for the Daniel Kim case.
@@ -5814,6 +6177,26 @@ router.post('/appointments/new', requireAuth, express.urlencoded({ extended: fal
         [service, pref_date, pref_time].filter(Boolean).join(' - ')
       );
       leadId = existingLead.id;
+    }
+  }
+
+  // No explicit "from lead", but this customer may already have an open lead in the
+  // pipeline (e.g. a contact-form lead we're now booking by phone). Advance that
+  // existing lead instead of creating a duplicate that leaves the original stuck in
+  // its old stage. This is the Ken Dobson fix.
+  if (!leadId) {
+    var openLead = db.prepare(
+      "SELECT * FROM leads WHERE customer_id = ? AND IFNULL(archived,0) = 0 "
+      + "AND status IN ('new','quoted','follow_up','quote_accepted') ORDER BY id DESC LIMIT 1"
+    ).get(cust.id);
+    if (openLead) {
+      db.prepare("UPDATE leads SET status = 'booked', vehicle = COALESCE(?,vehicle), service = COALESCE(?,service), status_updated_at = datetime('now') WHERE id = ?")
+        .run(vehicle, service, openLead.id);
+      db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, 'Appointment booked from existing lead', ?)").run(
+        openLead.id,
+        [service, pref_date, pref_time].filter(Boolean).join(' - ')
+      );
+      leadId = openLead.id;
     }
   }
 
@@ -5917,9 +6300,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
   var apptSvcSeed = JSON.stringify(apptSvcRows);
 
   var mapsKey = process.env.GOOGLE_MAPS_API_KEY || '';
-  var mapsScript = mapsKey
-    ? '<script async defer src="https://maps.googleapis.com/maps/api/js?key=' + esc(mapsKey) + '&libraries=places&callback=apptInitMaps"></script>'
-    : '';
+  var mapsScript = ''; // Maps loaded once by the shell; input uses data-addr-ac.
 
   var alert = '';
   if (req.query.err === 'name') alert = '<div class="alert alert-error">Customer first and last name are required.</div>';
@@ -5930,7 +6311,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + alert
     + '<h1 style="font-size:1.2rem;font-weight:700;color:#0a1f3d;margin-bottom:4px;">Edit Appointment</h1>'
     + '<div style="color:#888;font-size:0.85rem;margin-bottom:14px;">Update any details and save. Choose whether to email the customer an updated confirmation.</div>'
-    + '<form method="POST" action="/admin/appointments/' + lead.id + '/edit">'
+    + '<form method="POST" action="/admin/appointments/' + lead.id + '/edit" id="apptEditForm">'
 
     + '<div class="card">'
     + '<div class="section-title" style="margin-bottom:10px;">Customer</div>'
@@ -5943,7 +6324,7 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + '<div class="form-group"><label>Email</label><input type="email" name="cust_email" value="' + esc(preEmail) + '" placeholder="customer@email.com" style="' + inputStyle + '"></div>'
     + '</div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Service address</label>'
-    + '<input type="text" name="pref_location" id="apptAddr" value="' + esc(q.pref_location || '') + '" placeholder="Service address" autocomplete="off" style="' + inputStyle + '"></div>'
+    + '<input type="text" name="pref_location" id="apptAddr" data-addr-ac value="' + esc(q.pref_location || '') + '" placeholder="Service address" autocomplete="off" style="' + inputStyle + '"></div>'
     + '</div>'
 
     + '<div class="card">'
@@ -5989,10 +6370,10 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + (preEmail ? '' : '<div class="alert alert-error" style="margin-bottom:8px;">No email on file. The updated confirmation can\'t be emailed.</div>')
     + '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">'
     + (preEmail ? '<button type="submit" name="send_email" value="1" class="btn btn-blue">Save &amp; Email Updated Confirmation</button>' : '')
-    + '<button type="submit" name="send_email" value="0" class="btn btn-navy">Save Changes (no email)</button>'
     + '<a href="/admin/appointments" class="btn btn-outline" style="text-align:center;">Cancel</a>'
     + '</div>'
     + '</form>'
+    + floatingSaveBar({ form: 'apptEditForm', label: 'Save Changes', name: 'send_email', value: '0' })
 
     + '<script>'
     + 'var apptPRICING=' + pricingJson + ';'
@@ -6001,7 +6382,6 @@ router.get('/appointments/:lead_id/edit', requireAuth, function(req, res) {
     + 'function bkRecalc(){apptcalc();}'
     // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
     + quotePricingJs('appt')
-    + (mapsKey ? 'function apptInitMaps(){var input=document.getElementById("apptAddr");if(input&&window.google&&google.maps&&google.maps.places){new google.maps.places.Autocomplete(input,{types:["address"],componentRestrictions:{country:"us"}});}}' : '')
     // On load: rebuild the saved per-service rows (preserving booked-appointment
     // price overrides), or pull fresh defaults if none were stored, then total up.
     + '(function(){'
@@ -6068,6 +6448,16 @@ router.post('/appointments/:lead_id/edit', requireAuth, express.urlencoded({ ext
   if (lead.customer_id) {
     db.prepare('UPDATE customers SET first_name = ?, last_name = ?, phone = COALESCE(NULLIF(?,\'\'), phone), email = COALESCE(?, email) WHERE id = ?')
       .run(firstName, lastName, phone, email, lead.customer_id);
+    // Unify the service address + vehicle onto the customer so they show on the
+    // profile and pre-fill every other form.
+    customers.syncCustomerData(lead.customer_id, {
+      phone: phone, email: email, address: pref_location,
+      vehicle: {
+        year:  (req.body.veh_year  || '').trim(),
+        make:  (req.body.veh_make  || '').trim(),
+        model: (req.body.veh_model || '').trim()
+      }
+    });
   }
 
   logHistory(lead.id, 'Appointment updated', [service, pref_date, pref_time].filter(Boolean).join(' - ') + (sendEmail ? ' (customer emailed)' : ''));
@@ -6187,6 +6577,8 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
   var totalRevenue = db.prepare("SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
   var totalJobs    = db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
   var avgJobValue  = totalJobs > 0 ? totalRevenue / totalJobs : 0;
+  // Tips are tracked separately from sales (not taxed) and reported on their own line.
+  var totalTips    = db.prepare("SELECT COALESCE(SUM(tip),0) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
 
   // Period-filtered stats — all receipts with sent_at, used client-side for the dropdown filter
   var allReceiptsForFilter = db.prepare("SELECT total, sent_at FROM receipts WHERE sent_at IS NOT NULL").all();
@@ -6289,6 +6681,7 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
     + '</div>'
     + statBox(totalJobs, 'Jobs Completed')
     + statBox('$' + money(avgJobValue), 'Avg Job Value')
+    + statBox('$' + money(totalTips), 'Tips Collected (not taxed)')
     + '</div>'
     + '<div class="card" style="margin-bottom:12px;">'
     + '<div style="font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:14px;">Monthly Revenue — Last 12 Months</div>'
