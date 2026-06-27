@@ -542,11 +542,20 @@ function buildReminderEmail(q, soonText) {
 setInterval(function() {
   if (!process.env.SMTP_PASS) return;
 
+  // Only the actual confirmed appointment may trigger a reminder: the latest
+  // owner-APPROVED quote on the lead. A customer can accept a quote requesting a time
+  // (sets accepted_at + pref_time) that the owner never approves; the owner then books
+  // a different time, which writes a separate status='approved' quote. Keying off
+  // accepted_at alone would email the stale, never-approved request time, so we require
+  // q.status = 'approved' and pick only the newest approved quote per lead (the calendar
+  // and reschedule/edit flows all define an appointment the same way).
   var rows = db.prepare(
     "SELECT q.*, l.first_name, l.email AS lead_email "
     + "FROM quotes q JOIN leads l ON l.id = q.lead_id "
-    + "WHERE l.status = 'booked' AND q.accepted_at IS NOT NULL AND q.pref_date IS NOT NULL "
-    + "AND l.email IS NOT NULL AND (q.reminder_24h_sent = 0 OR q.reminder_2h_sent = 0)"
+    + "WHERE l.status = 'booked' AND q.status = 'approved' AND q.pref_date IS NOT NULL "
+    + "AND l.email IS NOT NULL AND (q.reminder_24h_sent = 0 OR q.reminder_2h_sent = 0) "
+    + "AND q.id = (SELECT q2.id FROM quotes q2 WHERE q2.lead_id = l.id "
+    + "AND q2.status = 'approved' AND q2.pref_date IS NOT NULL ORDER BY q2.id DESC LIMIT 1)"
   ).all();
   if (rows.length === 0) return;
 
