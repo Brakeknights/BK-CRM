@@ -3326,7 +3326,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'else{var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";saleRecorded=billed;}else{saleRecorded=rec;var diff=Math.round((billed-rec)*100)/100;'
     +     'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
     +     'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
-    +     'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}}'
+    +     'else{note.style.color="#1a4a7a";note.textContent="Over by $"+money(-diff)+". Receipt and reports record $"+money(rec)+".";}}}'
     +   'var tipEl=document.getElementById("rcTip"),tnote=document.getElementById("rcTipNote");'
     +   'if(tipEl&&tnote){var tip=parseFloat(tipEl.value)||0;'
     +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
