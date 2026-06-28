@@ -171,9 +171,11 @@ function statsFor(customerId) {
   var lead = db.prepare(
     "SELECT COUNT(*) AS leads, MIN(created_at) AS firstLead, MAX(created_at) AS lastLead FROM leads WHERE customer_id = ?"
   ).get(customerId);
+  // Partial (in-progress) receipts are excluded: a split-visit job counts once, at
+  // its full value, only when finalized.
   var rev = db.prepare(
     "SELECT COALESCE(SUM(r.total),0) AS revenue, COUNT(*) AS paidJobs, MIN(r.sent_at) AS firstPaid, MAX(r.service_date) AS lastJob "
-    + "FROM receipts r JOIN leads l ON l.id = r.lead_id WHERE l.customer_id = ? AND r.sent_at IS NOT NULL"
+    + "FROM receipts r JOIN leads l ON l.id = r.lead_id WHERE l.customer_id = ? AND r.sent_at IS NOT NULL AND r.status = 'final'"
   ).get(customerId);
   // Quotes that were actually sent (sent_at set), counted once per lead.
   var quotesSent = db.prepare(

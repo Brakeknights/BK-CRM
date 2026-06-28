@@ -1032,7 +1032,7 @@ function floatingSaveBar(opts) {
     + '<button type="' + (opts.onclick ? 'button' : 'submit') + '" id="' + esc(btnId) + '"' + (opts.onclick ? '' : ' form="' + esc(opts.form) + '"' + nameAttr)
     + ' style="background:#0d1b2a;color:#fff;border:none;border-radius:10px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;box-shadow:0 3px 14px rgba(13,27,42,.3);display:flex;align-items:center;gap:6px;white-space:nowrap;">'
     + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>'
-    + esc(opts.label || 'Save') + '</button></div>'
+    + (opts.labelId ? '<span id="' + esc(opts.labelId) + '">' + esc(opts.label || 'Save') + '</span>' : esc(opts.label || 'Save')) + '</button></div>'
     + '<script>(function(){var btn=document.getElementById(' + JSON.stringify(btnId) + ');if(!btn)return;var saving=false;'
     + (opts.onclick
         ? 'function go(){if(saving)return;saving=true;btn.disabled=true;btn.style.opacity="0.7";btn.innerHTML="Working\\u2026";setTimeout(function(){saving=false;btn.disabled=false;btn.style.opacity="1";btn.innerHTML=' + JSON.stringify('✓ ' + (opts.label || 'Save')) + ';},4000);try{' + opts.onclick + ';}catch(e){saving=false;btn.disabled=false;btn.style.opacity="1";}}'
@@ -2426,6 +2426,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'receipt_sent')  quoteAlert = '<div class="alert alert-success">Receipt sent to the customer. Lead moved to Receipt.</div>';
   if (req.query.msg === 'receipt_saved') quoteAlert = '<div class="alert alert-success">Receipt saved. No email on file for this lead.</div>';
   if (req.query.msg === 'receipt_err')   quoteAlert = '<div class="alert alert-error">Receipt saved, but the email failed to send. Try again.</div>';
+  if (req.query.msg === 'partial_sent')  quoteAlert = '<div class="alert alert-success">Partial receipt sent. The job stays open &mdash; use Complete Job &amp; Send Receipt to finalize after the next visit.</div>';
+  if (req.query.msg === 'partial_saved') quoteAlert = '<div class="alert alert-success">Partial receipt saved (no email on file). The job stays open until you finalize it.</div>';
+  if (req.query.msg === 'receipt_finalized') quoteAlert = '<div class="alert alert-success">Final receipt sent. The job is complete and counts as one job in your reports.</div>';
   if (req.query.msg === 'quick_sent')    quoteAlert = '<div class="alert alert-success">Quick Quote sent to the customer. Lead created in the Quoted stage.</div>';
   if (req.query.msg === 'quick_saved')   quoteAlert = '<div class="alert alert-success">Lead created from Quick Quote and the quote was saved (not emailed).</div>';
   if (req.query.msg === 'quick_err')     quoteAlert = '<div class="alert alert-error">Lead and quote saved, but the email failed to send. Try resending from this page.</div>';
@@ -2462,8 +2465,23 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   // Back (left) and Customer Profile (right) sit in a spaced row so they are large,
   // distinct tap targets and never mistaken for one another.
+  // Partial-receipt banner — a job in progress across more than one visit. Surfaces
+  // the balance owed and a Finalize button so the job is clearly not done yet.
+  var leadPartial = db.prepare("SELECT * FROM receipts WHERE lead_id = ? AND status = 'partial' ORDER BY id DESC LIMIT 1").get(lead.id);
+  var partialBanner = leadPartial
+    ? '<div class="card" style="background:#fff7ed;border:1px solid #f0c890;border-left:4px solid #d97706;">'
+      + '<div class="row-sb" style="align-items:flex-start;gap:10px;">'
+      + '<div><div class="section-title" style="color:#9a3412;margin:0;">Partial receipt &mdash; job in progress</div>'
+      + '<div style="font-size:0.86rem;color:#7a3a10;margin-top:4px;line-height:1.5;">Paid so far <strong>$' + money(leadPartial.total) + '</strong>'
+      + (leadPartial.billed_total != null ? ' &middot; balance remaining <strong>$' + money(Math.max(0, Math.round((leadPartial.billed_total - leadPartial.total) * 100) / 100)) + '</strong>' : '')
+      + '. Not counted in reports until finalized.</div></div>'
+      + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;flex-shrink:0;">Finalize &rarr;</a>'
+      + '</div></div>'
+    : '';
+
   var body = '<div class="nav-row"><a href="/admin" data-noswap class="back-link" onclick="return bkBack(\'/admin\');"><span class="bk-arrow">&#8592;</span> Back</a>' + custLink + '</div>'
     + quoteAlert
+    + partialBanner
     + stageTracker(lead.status)
     + nextStageHint(lead)
 
@@ -3075,12 +3093,21 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   // receipt can actually email the customer (phone-booked leads often lack an email).
   backfillLeadContact(lead);
 
+  // Partial-receipt lifecycle (split-visit jobs): if a partial (in-progress) receipt
+  // already exists on this lead, this page becomes the FINALIZE form — complete the
+  // job, collect the balance, and send the final receipt by updating that same row
+  // (so it stays one job). Otherwise the owner may optionally send a partial receipt.
+  var partialReceipt = db.prepare("SELECT * FROM receipts WHERE lead_id = ? AND status = 'partial' ORDER BY id DESC LIMIT 1").get(lead.id);
+  var finalizing  = !!partialReceipt;
+  var alreadyPaid = finalizing ? (Number(partialReceipt.total) || 0) : 0;
+
   // Prefill from the accepted quote if there is one, otherwise the most recent quote.
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id)
     || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id)
     || {};
 
-  var service   = quote.service || lead.service || '';
+  // When finalizing, prefill the full job the owner entered on the partial receipt.
+  var service   = (finalizing ? (partialReceipt.service || quote.service) : quote.service) || lead.service || '';
   // The receipt must reflect THIS lead's vehicle, not whatever car was most
   // recently added to the customer profile (a customer can own several). Prefer
   // the lead's own vehicle string; when set, upgrade it to the matching structured
@@ -3118,8 +3145,10 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     || (lead.customer_id ? ((db.prepare("SELECT home_address FROM customers WHERE id = ?").get(lead.customer_id) || {}).home_address) : '')
     || '';
   var partsLabor = (quote.price_parts || 0) + (quote.price_labor || 0);
-  var shopSupplies = quote.shop_supplies || 0;
-  var tax       = quote.tax || 0;
+  // When finalizing, prefill the full-job numbers from the partial receipt (the owner
+  // already entered the full agreed job there); otherwise from the quote.
+  var shopSupplies = finalizing ? (partialReceipt.shop_supplies || 0) : (quote.shop_supplies || 0);
+  var tax       = finalizing ? (partialReceipt.tax || 0) : (quote.tax || 0);
   var total     = partsLabor + shopSupplies + tax;
   var receiptTier = quote.tier === 'premium' ? 'premium' : 'standard';
   var taxPct    = quote.tax_rate != null ? +(quote.tax_rate * 100).toFixed(2) : +(PRICING.taxRate * 100).toFixed(2);
@@ -3139,6 +3168,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
       rcLineItems = parseLineItems(quote.line_items);
     }
   } catch (_) {}
+  // Finalizing: carry the partial receipt's custom line items instead of the quote's.
+  if (finalizing) rcLineItems = parseLineItems(partialReceipt.custom_line_items);
   // Hidden seed so the page can rebuild the exact per-service price rows on load,
   // preserving any booked-appointment price overrides.
   var rcSvcSeed = JSON.stringify(rcSvcRows);
@@ -3176,13 +3207,28 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<div class="lead-name">' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
     + statusBadge(lead.status)
     + '</div>'
-    + '<div style="color:#888;font-size:0.85rem;">Complete the job and send a branded receipt. This marks the lead Completed.</div>'
+    + '<div style="color:#888;font-size:0.85rem;">'
+    + (finalizing
+        ? 'Finalizing a partial job. Confirm the full job below, collect the balance, and send the final receipt.'
+        : 'Complete the job and send a branded receipt. This marks the lead Completed.')
+    + '</div>'
+    // Finalize banner — this lead has an in-progress partial receipt being completed.
+    + (finalizing
+        ? '<div style="margin-top:12px;background:#fff7ed;border:1px solid #f0c890;border-radius:10px;padding:12px 14px;">'
+          + '<div style="font-weight:700;color:#9a3412;font-size:0.9rem;">Finalizing partial receipt</div>'
+          + '<div style="font-size:0.85rem;color:#7a3a10;margin-top:4px;line-height:1.5;">'
+          + 'Already collected on the earlier visit: <strong>$' + money(alreadyPaid) + '</strong>. '
+          + 'Enter the <strong>full job</strong> below; the customer&rsquo;s final receipt will show the earlier payment, the balance collected today, and the total.'
+          + '</div></div>'
+        : '')
     + (pastReceipts.length
-        ? '<div style="margin-top:10px;font-size:0.82rem;color:#1a7a3a;">&#10003; ' + pastReceipts.length + ' receipt' + (pastReceipts.length > 1 ? 's' : '') + ' already sent for this lead. Sending another creates a new one.</div>'
+        ? '<div style="margin-top:10px;font-size:0.82rem;color:#1a7a3a;">&#10003; ' + pastReceipts.length + ' receipt' + (pastReceipts.length > 1 ? 's' : '') + ' already on this lead.</div>'
         : '')
     + '</div>'
 
-    + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf" data-autosave="receipt-' + lead.id + '" data-autosave-after="bkReceiptAfter">'
+    + '<form method="POST" action="/admin/receipt/' + lead.id + '/send" id="rf" data-autosave="receipt-' + (finalizing ? 'final-' : '') + lead.id + '" data-autosave-after="bkReceiptAfter">'
+    + (finalizing ? '<input type="hidden" name="finalizeReceiptId" value="' + partialReceipt.id + '">' : '')
+    + '<input type="hidden" name="depositPaid" id="rcDepositPaid" value="' + (finalizing ? money(alreadyPaid) : '0') + '">'
 
     + collapseOpen('rc_service', 'Vehicle &amp; Job Details', true)
     + '<div class="form-group"><label>Vehicle</label>'
@@ -3215,10 +3261,23 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
         showCustomerNotes: false
       })
     + '<input type="hidden" id="rcSvcSeed" value="' + esc(rcSvcSeed) + '">'
-    // Amount actually received — only when the owner accepted a different amount than
-    // the billed total (e.g. cash/Zelle a few dollars short). Blank = paid in full.
-    + '<div class="form-group" style="margin:16px 0 0;border-top:1px solid #eef1f5;padding-top:14px;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total above)</span></label>'
-    + '<input class="price-input" type="number" name="amountReceived" id="rcReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="rcReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
+    // Partial-receipt toggle — only offered when starting fresh (a job that will span
+    // more than one visit). When finalizing, the page is already in finalize mode.
+    + (finalizing
+        ? '<input type="hidden" name="partial" id="rcPartial" value="0">'
+        : '<div class="form-group" style="margin:16px 0 0;border-top:1px solid #eef1f5;padding-top:14px;margin-bottom:0;">'
+          + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-weight:600;">'
+          + '<input type="checkbox" id="rcPartial" name="partial" value="1" onchange="rcPartialToggle()" style="margin-top:2px;width:18px;height:18px;flex-shrink:0;">'
+          + '<span>Partial receipt &mdash; job continues<br><span style="font-weight:400;color:#888;font-size:0.82rem;">Send interim documentation now and finalize after the next visit. Stays one job; not counted in reports until finalized.</span></span>'
+          + '</label></div>')
+    // Amount field. Normal: optional short-pay. Partial: amount collected today.
+    // Finalize: balance collected today (the earlier payment is already recorded).
+    + '<div class="form-group" style="margin:14px 0 0;"><label><span id="rcRecLabel">'
+    + (finalizing ? 'Balance collected today' : 'Amount received')
+    + '</span> <span id="rcRecHelp" style="color:#bbb;font-weight:400;">'
+    + (finalizing ? '(leave blank if you collected the full remaining balance)' : '(optional &mdash; only if you collected a different amount than the total above)')
+    + '</span></label>'
+    + '<input class="price-input" type="number" name="amountReceived" id="rcReceived" min="0" step="0.01" placeholder="' + (finalizing ? 'Balance' : 'Leave blank if paid in full') + '" oninput="rcReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
     + '<div id="rcReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     // Tip — gratuity tracked separately from the sale (not taxed, not in revenue).
     + '<div class="form-group" style="margin:14px 0 0;"><label>Tip <span style="color:#bbb;font-weight:400;">(optional — not taxed, reported separately from sales)</span></label>'
@@ -3239,22 +3298,31 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     + '<button type="button" class="btn btn-outline" onclick="toggleReceiptPreview()" id="rPrevBtn" style="margin-bottom:10px;">Preview Receipt Email</button>'
     + '<div id="rPreviewBox" style="display:none;margin-bottom:10px;"></div>'
     + '</form>'
-    + floatingSaveBar({ form: 'rf', label: 'Send Receipt' })
+    + floatingSaveBar({ form: 'rf', label: finalizing ? 'Send Final Receipt' : 'Send Receipt', labelId: 'rcSendLabel' })
 
     + '<script>'
     + 'var rcPRICING=' + rPricingJson + ';'
+    + 'var rcFinalizing=' + (finalizing ? 'true' : 'false') + ';'
+    + 'var rcDeposit=' + (finalizing ? (Number(alreadyPaid) || 0) : 0) + ';'
     + 'function money(n){return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}'
     + 'function rmoney(n){return money(n);}'
     + CLI_JS
     // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
     + quotePricingJs('rc')
+    + 'function rcIsPartial(){var c=document.getElementById("rcPartial");return !!(c&&c.type==="checkbox"&&c.checked);}'
     + 'function rcReceivedHint(){'
     +   'var recEl=document.getElementById("rcReceived"),note=document.getElementById("rcReceivedNote");'
     +   'if(!recEl||!note)return;'
     +   'var billed=parseFloat((document.getElementById("rctotalH")||{}).value||"0")||0;'
     +   'var raw=recEl.value.trim();'
     +   'var saleRecorded=billed;'
-    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
+    // Finalize mode: billed = full job, rcDeposit already collected, the field = balance.
+    +   'if(rcFinalizing){var bal=Math.round((billed-rcDeposit)*100)/100;var todayAmt=raw===""?bal:(parseFloat(raw)||0);saleRecorded=Math.round((rcDeposit+todayAmt)*100)/100;'
+    +     'note.style.color="#7a3a10";note.textContent="Job total $"+money(billed)+" \\u00b7 paid earlier $"+money(rcDeposit)+" \\u00b7 collecting today $"+money(todayAmt)+" \\u00b7 total recorded $"+money(saleRecorded)+".";}'
+    // Partial mode: the field = collected today; the rest is an outstanding balance.
+    +   'else if(rcIsPartial()){var paidNow=raw===""?0:(parseFloat(raw)||0);saleRecorded=paidNow;var balance=Math.round((billed-paidNow)*100)/100;'
+    +     'note.style.color="#9a6a16";note.textContent="Partial: job total $"+money(billed)+" \\u00b7 collected today $"+money(paidNow)+" \\u00b7 balance remaining $"+money(balance>0?balance:0)+". Finalize after the next visit.";}'
+    +   'else if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
     +   'else{var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";saleRecorded=billed;}else{saleRecorded=rec;var diff=Math.round((billed-rec)*100)/100;'
     +     'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
     +     'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
@@ -3263,6 +3331,13 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'if(tipEl&&tnote){var tip=parseFloat(tipEl.value)||0;'
     +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
     +     'else{tnote.textContent="";}}'
+    + '}'
+    + 'function rcPartialToggle(){'
+    +   'var on=rcIsPartial();'
+    +   'var lbl=document.getElementById("rcRecLabel");if(lbl)lbl.textContent=on?"Collected today":"Amount received";'
+    +   'var help=document.getElementById("rcRecHelp");if(help)help.innerHTML=on?"(what the customer paid on this visit)":"(optional \\u2014 only if you collected a different amount than the total above)";'
+    +   'var send=document.getElementById("rcSendLabel");if(send)send.textContent=on?"Send Partial Receipt":"Send Receipt";'
+    +   'rcReceivedHint();'
     + '}'
     + 'function bkRecalc(){rccalc();rcReceivedHint();}'
     // Receipt labels: the customer summary reads "Customer Receipt" / "Total Paid".
@@ -3366,6 +3441,17 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   // Fall back to the customer's email/phone so the receipt actually gets emailed.
   backfillLeadContact(lead);
 
+  // Receipt mode:
+  //   finalize — completing a previously-sent partial receipt (updates that same row)
+  //   partial  — interim receipt for a job that continues on another visit
+  //   normal   — the usual one-shot receipt
+  var finalizeId   = parseInt(req.body.finalizeReceiptId) || 0;
+  var finalizeRow  = finalizeId
+    ? db.prepare("SELECT * FROM receipts WHERE id = ? AND lead_id = ? AND status = 'partial'").get(finalizeId, lead.id)
+    : null;
+  var isFinalize   = !!finalizeRow;
+  var isPartial    = !isFinalize && req.body.partial === '1';
+
   var service      = (req.body.service || '').trim();
   var customSvc    = (req.body.customService || '').trim();
   if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
@@ -3388,13 +3474,34 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   // from the billed total, store what was actually collected as `total` (so revenue
   // reporting is accurate) and keep the billed amount in `billed_total` so the
   // shortfall stays visible internally. Paid-in-full leaves billed_total null.
-  var billedTotal    = Math.round(total * 100) / 100;
+  var billedTotal    = Math.round(total * 100) / 100;  // full job billed amount
   var rawReceived    = req.body.amountReceived;
   var amountReceived = parseFloat(rawReceived);
-  var hasAdjustment  = rawReceived != null && String(rawReceived).trim() !== ''
-    && !isNaN(amountReceived) && Math.abs(amountReceived - billedTotal) >= 0.005;
-  var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
-  var storedBilled   = hasAdjustment ? billedTotal : null;
+  var hasReceived    = rawReceived != null && String(rawReceived).trim() !== '' && !isNaN(amountReceived);
+  // deposit already collected on the earlier visit (finalize only), from the partial row.
+  var depositPaid    = isFinalize ? (Math.round((Number(finalizeRow.total) || 0) * 100) / 100) : 0;
+  var receiptStatus  = isPartial ? 'partial' : 'final';
+  var storedTotal, storedBilled, storedDeposit = null, finalizedAt = null;
+
+  if (isPartial) {
+    // Collected today is what's recorded on this interim row; the full job is billed,
+    // so the difference is the outstanding balance. Excluded from reports until final.
+    storedTotal  = hasReceived ? Math.round(amountReceived * 100) / 100 : 0;
+    storedBilled = billedTotal;
+  } else if (isFinalize) {
+    // The field is the balance collected today; default to the full remaining balance.
+    var collectedNow = hasReceived ? Math.round(amountReceived * 100) / 100 : Math.round((billedTotal - depositPaid) * 100) / 100;
+    var totalCollected = Math.round((depositPaid + collectedNow) * 100) / 100;
+    storedTotal  = totalCollected;                                                   // revenue counted once, here
+    storedBilled = Math.abs(totalCollected - billedTotal) >= 0.005 ? billedTotal : null;
+    storedDeposit = depositPaid;
+    finalizedAt  = 1;  // sentinel → set datetime('now') in SQL below
+  } else {
+    // Normal one-shot receipt — existing short-pay behavior.
+    var hasAdjustment = hasReceived && Math.abs(amountReceived - billedTotal) >= 0.005;
+    storedTotal  = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
+    storedBilled = hasAdjustment ? billedTotal : null;
+  }
   total = storedTotal;
   // Tip is tracked separately from the sale (not taxed, not in revenue).
   var tip          = Math.round((parseFloat(req.body.tip) || 0) * 100) / 100;
@@ -3418,11 +3525,22 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id)
     || db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(lead.id);
 
-  var info = db.prepare(
-    'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson);
-  var receiptId = info.lastInsertRowid;
+  var receiptId;
+  if (isFinalize) {
+    // Update the existing partial row in place so the job stays a single receipt.
+    db.prepare(
+      "UPDATE receipts SET service = ?, vehicle = ?, service_date = ?, service_address = ?, parts_labor = ?, "
+      + "shop_supplies = ?, tax = ?, total = ?, billed_total = ?, deposit_paid = ?, tip = ?, payment_method = ?, "
+      + "customer_notes = ?, office_notes = ?, custom_line_items = ?, status = 'final', finalized_at = datetime('now') WHERE id = ?"
+    ).run(service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, storedDeposit, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, finalizeRow.id);
+    receiptId = finalizeRow.id;
+  } else {
+    var info = db.prepare(
+      'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, receiptStatus);
+    receiptId = info.lastInsertRowid;
+  }
 
   // Unify the service address + vehicle entered on the receipt back onto the
   // customer record so the profile and every other form stay in sync.
@@ -3437,39 +3555,48 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     });
   }
 
-  followups.forEach(function(f) {
-    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
-      .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
-  });
+  // Advisory reminders and the one-week check-in belong to the FINISHED job, so they
+  // are created on a normal or finalized receipt — never on an interim partial one
+  // (which would fire reminders before the work is actually done).
+  if (!isPartial) {
+    followups.forEach(function(f) {
+      db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+        .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
+    });
 
-  // Automatic one-week post-service check-in: a friendly "how are your brakes?"
-  // email to the customer that also asks for a Google review. Scheduled for 7 days
-  // after the service date (or today if the date is blank), only when we have an
-  // email to reach them and one isn't already queued for this lead.
-  if (lead.email) {
-    var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(lead.id);
-    if (!hasCheckin) {
-      var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
-      var _p = baseDay.split('-');
-      var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
-      _dt.setUTCDate(_dt.getUTCDate() + 7);
-      var checkinDue = _dt.toISOString().slice(0, 10);
-      db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
-        .run(lead.id, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+    // Automatic one-week post-service check-in (how are your brakes? + review ask).
+    if (lead.email) {
+      var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(lead.id);
+      if (!hasCheckin) {
+        var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        var _p = baseDay.split('-');
+        var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
+        _dt.setUTCDate(_dt.getUTCDate() + 7);
+        var checkinDue = _dt.toISOString().slice(0, 10);
+        db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
+          .run(lead.id, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+      }
     }
+
+    // Job done but receipt not delivered yet → 'completed'. Email below advances it
+    // to 'receipt'. A partial receipt leaves the lead where it is (job still open).
+    db.prepare("UPDATE leads SET status = 'completed', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   }
 
-  // Baseline: job is done but the receipt isn't delivered yet → 'completed'
-  // (this is the "needs receipt sent" state). Once the email goes out below,
-  // the lead advances to the 'receipt' stage.
-  db.prepare("UPDATE leads SET status = 'completed', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
-
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
-  var receiptDetail = '$' + total.toFixed(2)
-    + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
-    + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
-    + (payment ? ' · ' + payment : '')
-    + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+  var balanceRemaining = Math.round((billedTotal - storedTotal) * 100) / 100;
+  var receiptDetail = isPartial
+    ? 'Collected $' + storedTotal.toFixed(2) + ' of $' + billedTotal.toFixed(2) + ' (balance $' + (balanceRemaining > 0 ? balanceRemaining : 0).toFixed(2) + ')'
+    : '$' + total.toFixed(2)
+      + (isFinalize ? ' total (earlier $' + depositPaid.toFixed(2) + ' + today $' + (total - depositPaid).toFixed(2) + ')' : '')
+      + (storedBilled != null && !isFinalize ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+      + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
+      + (payment ? ' · ' + payment : '')
+      + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+
+  var subject = isPartial
+    ? 'Your Brake Knights Receipt (Partial — work in progress)'
+    : 'Your Brake Knights Service Receipt';
 
   if (process.env.SMTP_PASS && lead.email) {
     try {
@@ -3479,24 +3606,28 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
         to:      lead.email,
         cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
-        subject: 'Your Brake Knights Service Receipt',
+        subject: subject,
         html:    buildReceiptEmail(lead, receipt, notes)
       });
       db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
+      if (isPartial) {
+        logHistory(lead.id, 'Partial receipt sent to customer', receiptDetail);
+        return res.redirect('/admin/quote/' + lead.id + '?msg=partial_sent');
+      }
       db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
-      logHistory(lead.id, 'Receipt sent to customer', receiptDetail);
+      logHistory(lead.id, isFinalize ? 'Receipt finalized and sent' : 'Receipt sent to customer', receiptDetail);
       sendStagePush(lead, 'receipt');
-      return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_sent');
+      return res.redirect('/admin/quote/' + lead.id + '?msg=' + (isFinalize ? 'receipt_finalized' : 'receipt_sent'));
     } catch (err) {
       console.error('Receipt email error:', err.message);
-      logHistory(lead.id, 'Receipt saved (email failed)', receiptDetail);
-      sendStagePush(lead, 'completed');
+      logHistory(lead.id, (isPartial ? 'Partial receipt' : 'Receipt') + ' saved (email failed)', receiptDetail);
+      if (!isPartial) sendStagePush(lead, 'completed');
       return res.redirect('/admin/quote/' + lead.id + '?msg=receipt_err');
     }
   }
-  logHistory(lead.id, 'Receipt saved (not emailed)', receiptDetail);
-  sendStagePush(lead, 'completed');
-  res.redirect('/admin/quote/' + lead.id + '?msg=receipt_saved');
+  logHistory(lead.id, (isPartial ? 'Partial receipt' : 'Receipt') + ' saved (not emailed)', receiptDetail);
+  if (!isPartial) sendStagePush(lead, 'completed');
+  res.redirect('/admin/quote/' + lead.id + '?msg=' + (isPartial ? 'partial_saved' : 'receipt_saved'));
 });
 
 // Read-only view of a sent receipt: the exact customer copy, plus an internal
@@ -3509,6 +3640,7 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
 
   var notes = [];
   try { notes = JSON.parse(receipt.customer_notes || '[]'); } catch (_) {}
+  var rcvIsPartial = receipt.status === 'partial';
   var when = receipt.sent_at
     ? 'Emailed ' + new Date(receipt.sent_at + 'Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
     : 'Saved, not emailed';
@@ -3527,18 +3659,42 @@ router.get('/receipt/view/:id', requireAuth, function(req, res) {
   var body = '<a href="/admin/quote/' + lead.id + '" class="back-link"><span class="bk-arrow">&#8592;</span>Back to Lead</a>'
     + '<div class="card">'
     + '<div class="row-sb" style="margin-bottom:4px;">'
-    + '<div class="lead-name">Receipt &middot; ' + esc(lead.first_name) + ' ' + esc(lead.last_name) + '</div>'
+    + '<div class="lead-name">Receipt &middot; ' + esc(lead.first_name) + ' ' + esc(lead.last_name)
+    + (rcvIsPartial ? ' <span style="font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;background:#fdeccb;color:#9a6a16;vertical-align:middle;">Partial &mdash; in progress</span>' : '')
+    + '</div>'
     + '<div style="font-weight:700;color:#0a1f3d;">$' + money(receipt.total) + '</div>'
     + '</div>'
     + '<div style="color:#999;font-size:0.82rem;">' + esc(when) + (receipt.payment_method ? ' &middot; ' + esc(receipt.payment_method) : '') + '</div>'
     + ((receipt.tip && receipt.tip > 0)
         ? '<div style="color:#1a4a7a;font-size:0.82rem;margin-top:6px;">Includes a $' + money(receipt.tip) + ' tip (tracked separately, not taxed). Sale: $' + money(receipt.total) + ' &middot; Customer total: $' + money((receipt.total || 0) + receipt.tip) + '.</div>'
         : '')
+    + (rcvIsPartial
+        ? '<div style="margin-top:10px;"><a href="/admin/receipt/' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;">Finalize this job &rarr;</a></div>'
+        : '')
     + '</div>'
 
-    // Short-payment panel — shown only when the owner accepted less (or more) than
-    // the billed total. Internal only; the customer's receipt shows what they paid.
-    + ((receipt.billed_total != null && Math.abs(receipt.billed_total - receipt.total) >= 0.005)
+    // Partial-receipt panel — interim, balance still owed, not counted in reports yet.
+    + (rcvIsPartial
+        ? '<div class="card" style="background:#fff7ed;border:1px solid #f0c890;">'
+          + '<div class="section-title" style="color:#9a3412;">Partial receipt &mdash; job in progress</div>'
+          + '<div style="font-size:0.9rem;color:#7a3a10;line-height:1.7;">'
+          + 'Job total: $' + money(receipt.billed_total != null ? receipt.billed_total : receipt.total) + '<br>'
+          + 'Paid so far: $' + money(receipt.total) + '<br>'
+          + '<strong>Balance remaining: $' + money(Math.max(0, Math.round(((receipt.billed_total != null ? receipt.billed_total : receipt.total) - (receipt.total || 0)) * 100) / 100)) + '</strong>'
+          + '</div>'
+          + '<div style="font-size:0.8rem;color:#a06a3a;margin-top:6px;">Not counted in reports until you finalize the job.</div>'
+          + '</div>'
+        // Finalized with a prior deposit — show the two-visit payment split.
+        : (receipt.deposit_paid != null && receipt.deposit_paid > 0)
+        ? '<div class="card" style="background:#eef6ee;border:1px solid #b6dcc0;">'
+          + '<div class="section-title" style="color:#1a7a3a;">Completed across two visits</div>'
+          + '<div style="font-size:0.9rem;color:#2a5a36;line-height:1.7;">'
+          + 'Paid earlier (prior visit): $' + money(receipt.deposit_paid) + '<br>'
+          + 'Paid today: $' + money(Math.round(((receipt.total || 0) - receipt.deposit_paid) * 100) / 100) + '<br>'
+          + '<strong>Total recorded: $' + money(receipt.total) + '</strong>'
+          + '</div></div>'
+        // Short/over-payment panel — the owner collected a different amount than billed.
+        : (receipt.billed_total != null && Math.abs(receipt.billed_total - receipt.total) >= 0.005)
         ? '<div class="card" style="background:#fff7ed;border:1px solid #f0c890;">'
           + '<div class="section-title" style="color:#9a3412;">'
           + (receipt.billed_total > receipt.total ? 'Short payment recorded' : 'Overpayment recorded')
@@ -3627,6 +3783,10 @@ router.get('/quote/view/:id', requireAuth, function(req, res) {
 
 // Branded service receipt. notes is an array of customer-facing advisory strings.
 function buildReceiptEmail(lead, r, notes) {
+  var isPartial  = r.status === 'partial';
+  var deposit    = Math.round((Number(r.deposit_paid) || 0) * 100) / 100;
+  var billedFull = (r.billed_total != null) ? r.billed_total : (r.total || 0);
+  var balance    = Math.round((billedFull - (r.total || 0)) * 100) / 100;
   var advisoryBlock = (notes && notes.length)
     ? '<div style="margin-bottom:24px;">'
       + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Advisory</p>'
@@ -3644,7 +3804,15 @@ function buildReceiptEmail(lead, r, notes) {
     + '</div>'
     + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
     + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Greetings ' + esc(lead.first_name) + ',</h2>'
-    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">Thank you for choosing Brake Knights. Here is your service receipt for today&rsquo;s visit.</p>'
+    // Partial-receipt banner — interim documentation; work continues on a later visit.
+    + (isPartial
+        ? '<div style="background:#fff7ed;border:1px solid #f0c890;border-left:4px solid #d97706;border-radius:8px;padding:14px 16px;margin:0 0 20px;">'
+          + '<p style="margin:0;color:#9a3412;font-weight:700;font-size:0.95rem;">Partial receipt &mdash; work in progress</p>'
+          + '<p style="margin:6px 0 0;color:#7a3a10;font-size:0.88rem;line-height:1.5;">This documents the work completed and the amount paid so far. The remaining work will be finished on a follow-up visit, and a final receipt will follow then.</p>'
+          + '</div>'
+        : '')
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">Thank you for choosing Brake Knights. '
+    + (isPartial ? 'Here is a partial receipt for the work done so far.' : 'Here is your service receipt for today&rsquo;s visit.') + '</p>'
 
     + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:16px;">'
     + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Details</p>'
@@ -3664,12 +3832,31 @@ function buildReceiptEmail(lead, r, notes) {
     + '<tr><td style="padding:6px 0;">Shop Supplies</td><td style="text-align:right;">$' + money(r.shop_supplies) + '</td></tr>'
     + '<tr><td style="padding:6px 0;color:#888;">Tax</td><td style="text-align:right;color:#888;">$' + money(r.tax) + '</td></tr>'
     + (function() {
-        // The line items above sum to the billed amount. When the owner accepted a
-        // different amount (short/over pay), show a Subtotal + Adjustment so the math
-        // reconciles and Total Paid reflects what the customer actually paid. Tip is
-        // added on top (never taxed). Paid-in-full with no tip = a single Total Paid.
+        // The line items above sum to the billed amount. Partial: show the full job
+        // total, what was paid this visit, and the balance remaining. Finalized with a
+        // prior deposit: show the job total, paid earlier, paid today, and total paid.
+        // Otherwise the usual short/over-pay reconciliation (adjustment) + tip.
         var tip = r.tip || 0;
-        var billed = (r.billed_total != null) ? r.billed_total : (r.total || 0);
+        if (isPartial) {
+          var rowsP = '<tr style="border-top:1px solid #e6ebf1;"><td style="padding:8px 0 0;color:#444;">Job total</td><td style="text-align:right;padding:8px 0 0;">$' + money(billedFull) + '</td></tr>'
+            + '<tr><td style="padding:6px 0 0;color:#1a7a3a;">Paid this visit</td><td style="text-align:right;padding:6px 0 0;color:#1a7a3a;">$' + money(r.total) + '</td></tr>';
+          if (tip > 0) rowsP += '<tr><td style="padding:6px 0 0;color:#444;">Tip</td><td style="text-align:right;padding:6px 0 0;">$' + money(tip) + '</td></tr>';
+          rowsP += '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#9a3412;">Balance remaining</td>'
+            + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#9a3412;">$' + money(balance > 0 ? balance : 0) + '</td></tr>';
+          return rowsP;
+        }
+        if (deposit > 0) {
+          var paidToday = Math.round(((r.total || 0) - deposit) * 100) / 100;
+          var grandD = Math.round(((r.total || 0) + tip) * 100) / 100;
+          var rowsD = '<tr style="border-top:1px solid #e6ebf1;"><td style="padding:8px 0 0;color:#444;">Job total</td><td style="text-align:right;padding:8px 0 0;">$' + money(billedFull) + '</td></tr>'
+            + '<tr><td style="padding:6px 0 0;color:#444;">Paid earlier (prior visit)</td><td style="text-align:right;padding:6px 0 0;">$' + money(deposit) + '</td></tr>'
+            + '<tr><td style="padding:6px 0 0;color:#444;">Paid today</td><td style="text-align:right;padding:6px 0 0;">$' + money(paidToday) + '</td></tr>';
+          if (tip > 0) rowsD += '<tr><td style="padding:6px 0 0;color:#444;">Tip</td><td style="text-align:right;padding:6px 0 0;">$' + money(tip) + '</td></tr>';
+          rowsD += '<tr style="border-top:2px solid #dde3ea;"><td style="padding:10px 0 0;font-weight:700;font-size:1rem;color:#0a1f3d;">Total Paid</td>'
+            + '<td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:1.1rem;color:#0a1f3d;">$' + money(grandD) + '</td></tr>';
+          return rowsD;
+        }
+        var billed = billedFull;
         var adj = Math.round(((r.total || 0) - billed) * 100) / 100;
         var grand = Math.round(((r.total || 0) + tip) * 100) / 100;
         if (adj === 0 && tip === 0) {
@@ -4003,7 +4190,14 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="text" name="paymentOther" id="qpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
     + '<div class="form-group"><label>Service address</label>'
     + '<input type="text" name="serviceAddress" data-addr-ac autocomplete="off" placeholder="Where the work was performed"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
+    // Partial-receipt toggle (split-visit jobs). Creates the lead + an in-progress
+    // partial receipt; finalize later from that lead's Send Receipt page.
+    + '<div class="form-group" style="margin-bottom:14px;">'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-weight:600;">'
+    + '<input type="checkbox" id="qPartial" name="partial" value="1" onchange="qPartialToggle()" style="margin-top:2px;width:18px;height:18px;flex-shrink:0;">'
+    + '<span>Partial receipt &mdash; job continues<br><span style="font-weight:400;color:#888;font-size:0.82rem;">Documents what was paid so far; finalize from the new lead after the next visit. Not counted in reports until finalized.</span></span>'
+    + '</label></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label><span id="qRecLabel">Amount received</span> <span id="qRecHelp" style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
     + '<input class="price-input" type="number" name="amountReceived" id="qReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
     + '<div id="qReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Tip <span style="color:#bbb;font-weight:400;">(optional — not taxed, reported separately from sales)</span></label>'
@@ -4129,7 +4323,9 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'if(!recEl||!note)return;'
     +   'var billed=parseFloat((document.getElementById("qtotalH")||{}).value||"0")||0;'
     +   'var raw=recEl.value.trim();var saleRecorded=billed;'
-    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
+    +   'if(qIsPartial()){var paidNow=raw===""?0:(parseFloat(raw)||0);saleRecorded=paidNow;var balance=Math.round((billed-paidNow)*100)/100;'
+    +     'note.style.color="#9a6a16";note.textContent="Partial: job total $"+money(billed)+" \\u00b7 collected today $"+money(paidNow)+" \\u00b7 balance remaining $"+money(balance>0?balance:0)+". Finalize after the next visit.";}'
+    +   'else if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
     +   'else{var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";saleRecorded=billed;}else{saleRecorded=rec;var diff=Math.round((billed-rec)*100)/100;'
     +     'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
     +     'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
@@ -4138,6 +4334,13 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'if(tipEl&&tnote){var tip=parseFloat(tipEl.value)||0;'
     +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
     +     'else{tnote.textContent="";}}'
+    + '}'
+    + 'function qIsPartial(){var c=document.getElementById("qPartial");return !!(c&&c.checked);}'
+    + 'function qPartialToggle(){'
+    +   'var on=qIsPartial();'
+    +   'var lbl=document.getElementById("qRecLabel");if(lbl)lbl.textContent=on?"Collected today":"Amount received";'
+    +   'var help=document.getElementById("qRecHelp");if(help)help.innerHTML=on?"(what the customer paid on this visit)":"(optional \\u2014 only if you collected a different amount than the total)";'
+    +   'qReceivedHint();'
     + '}'
     + 'function bkRecalc(){qcalc();qReceivedHint();}'
     + 'function qUpdateServices(){qUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
@@ -4490,9 +4693,11 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
 
   // Every save/send outcome creates a Quick Quote lead. Quote mode lands it in
-  // Quoted; receipt mode reflects a finished job (set further down).
+  // Quoted; a finished receipt reflects a done job; a PARTIAL receipt is a job still
+  // in progress, so its lead stays 'booked' until it's finalized from the lead page.
+  var isPartialQQ = mode === 'receipt' && req.body.partial === '1';
   var existingCustId = parseInt(req.body.customer_id) || 0;
-  var initialStatus = mode === 'receipt' ? 'completed' : 'quoted';
+  var initialStatus = mode === 'receipt' ? (isPartialQQ ? 'booked' : 'completed') : 'quoted';
   var leadInfo;
   if (existingCustId) {
     leadInfo = db.prepare(
@@ -4589,10 +4794,18 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var billedTotal    = Math.round(totalAmt * 100) / 100;
   var rawReceived    = req.body.amountReceived;
   var amountReceived = parseFloat(rawReceived);
-  var hasAdjustment  = rawReceived != null && String(rawReceived).trim() !== ''
-    && !isNaN(amountReceived) && Math.abs(amountReceived - billedTotal) >= 0.005;
-  var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
-  var storedBilled   = hasAdjustment ? billedTotal : null;
+  var hasReceivedQQ  = rawReceived != null && String(rawReceived).trim() !== '' && !isNaN(amountReceived);
+  var hasAdjustment  = !isPartialQQ && hasReceivedQQ && Math.abs(amountReceived - billedTotal) >= 0.005;
+  var storedTotal, storedBilled;
+  if (isPartialQQ) {
+    // Collected today is recorded; the full job is billed, the difference is the
+    // outstanding balance. Excluded from reports until finalized.
+    storedTotal  = hasReceivedQQ ? Math.round(amountReceived * 100) / 100 : 0;
+    storedBilled = billedTotal;
+  } else {
+    storedTotal  = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
+    storedBilled = hasAdjustment ? billedTotal : null;
+  }
   // Tip tracked separately from the sale (not taxed, not in revenue).
   var tip            = Math.round((parseFloat(req.body.tip) || 0) * 100) / 100;
   if (tip < 0) tip = 0;
@@ -4610,9 +4823,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson, isPartialQQ ? 'partial' : 'final');
   var receiptId = rInfo.lastInsertRowid;
 
   // Unify the service address + vehicle back onto the customer record.
@@ -4628,33 +4841,37 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     });
   }
 
-  followups.forEach(function(f) {
-    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
-      .run(leadId, receiptId, f.description, f.due_date, f.recipient);
-  });
+  // Advisories + the one-week check-in belong to a FINISHED job, never a partial.
+  if (!isPartialQQ) {
+    followups.forEach(function(f) {
+      db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+        .run(leadId, receiptId, f.description, f.due_date, f.recipient);
+    });
 
-  // Automatic one-week post-service check-in (same as the per-lead receipt flow):
-  // a friendly "how are your brakes?" + Google review email 7 days out, to the
-  // customer, only when we have an email and one isn't already queued for this lead.
-  if (email) {
-    var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(leadId);
-    if (!hasCheckin) {
-      var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
-      var _p = baseDay.split('-');
-      var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
-      _dt.setUTCDate(_dt.getUTCDate() + 7);
-      var checkinDue = _dt.toISOString().slice(0, 10);
-      db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
-        .run(leadId, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+    // Automatic one-week post-service check-in (how are your brakes? + review ask).
+    if (email) {
+      var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(leadId);
+      if (!hasCheckin) {
+        var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        var _p = baseDay.split('-');
+        var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
+        _dt.setUTCDate(_dt.getUTCDate() + 7);
+        var checkinDue = _dt.toISOString().slice(0, 10);
+        db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
+          .run(leadId, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+      }
     }
   }
 
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
-  var receiptDetail = '$' + storedTotal.toFixed(2)
-    + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
-    + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
-    + (payment ? ' · ' + payment : '')
-    + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+  var qqBalance = Math.round((billedTotal - storedTotal) * 100) / 100;
+  var receiptDetail = isPartialQQ
+    ? 'Collected $' + storedTotal.toFixed(2) + ' of $' + billedTotal.toFixed(2) + ' (balance $' + (qqBalance > 0 ? qqBalance : 0).toFixed(2) + ')'
+    : '$' + storedTotal.toFixed(2)
+      + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+      + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
+      + (payment ? ' · ' + payment : '')
+      + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
   if (action === 'receipt_send' && process.env.SMTP_PASS && email) {
     try {
@@ -4664,22 +4881,26 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         to:      email,
         cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
-        subject: 'Your Brake Knights Service Receipt',
+        subject: isPartialQQ ? 'Your Brake Knights Receipt (Partial — work in progress)' : 'Your Brake Knights Service Receipt',
         html:    buildReceiptEmail(lead, receipt, notes)
       });
       db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
+      if (isPartialQQ) {
+        logHistory(leadId, 'Partial receipt sent to customer', receiptDetail);
+        return res.redirect('/admin/quote/' + leadId + '?msg=partial_sent');
+      }
       db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(leadId);
       logHistory(leadId, 'Receipt sent to customer', receiptDetail);
       sendStagePush(lead, 'receipt');
       return res.redirect('/admin/quote/' + leadId + '?msg=receipt_sent');
     } catch (err) {
       console.error('Quick receipt email error:', err.message);
-      logHistory(leadId, 'Receipt saved (email failed)', receiptDetail);
+      logHistory(leadId, (isPartialQQ ? 'Partial receipt' : 'Receipt') + ' saved (email failed)', receiptDetail);
       return res.redirect('/admin/quote/' + leadId + '?msg=receipt_err');
     }
   }
-  logHistory(leadId, 'Receipt saved (not emailed)', receiptDetail);
-  res.redirect('/admin/quote/' + leadId + '?msg=receipt_saved');
+  logHistory(leadId, (isPartialQQ ? 'Partial receipt' : 'Receipt') + ' saved (not emailed)', receiptDetail);
+  res.redirect('/admin/quote/' + leadId + '?msg=' + (isPartialQQ ? 'partial_saved' : 'receipt_saved'));
 });
 
 router.post('/quick/draft/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
@@ -5133,15 +5354,19 @@ function customerProfileSections(c, opts) {
     ? jobs.map(function(l) {
         var rc = db.prepare('SELECT * FROM receipts WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
         var qt = db.prepare('SELECT * FROM quotes WHERE lead_id = ? ORDER BY id DESC LIMIT 1').get(l.id);
+        var rcPartial = rc && rc.status === 'partial';
         var totalVal = rc ? rc.total : (qt ? qt.total : null);
-        var receiptSent = rc && rc.sent_at;
+        var receiptSent = rc && rc.sent_at && !rcPartial;
         // Surface the actual quote sent on this job so it can be reopened from the
         // customer profile (data-noswap so the tap is a full navigation, not a swap).
         var viewLinks = (qt ? '<a href="/admin/quote/view/' + qt.id + '" data-noswap class="fwd-link" style="font-size:0.74rem;font-weight:600;">View quote &rarr;</a>' : '')
-          + (rc ? '<a href="/admin/receipt/view/' + rc.id + '" data-noswap class="fwd-link" style="font-size:0.74rem;font-weight:600;">View receipt &rarr;</a>' : '');
-        var extra = (totalVal != null || receiptSent || viewLinks)
+          + (rc ? '<a href="/admin/receipt/view/' + rc.id + '" data-noswap class="fwd-link" style="font-size:0.74rem;font-weight:600;">View ' + (rcPartial ? 'partial' : 'receipt') + ' &rarr;</a>' : '');
+        var statusTag = rcPartial
+          ? '<span style="font-size:0.74rem;color:#9a6a16;font-weight:700;">&#9679; Partial &mdash; in progress</span>'
+          : (receiptSent ? '<span style="font-size:0.74rem;color:#1a7a3a;font-weight:700;">&#10003; Receipt sent ' + shortDate(rc.sent_at) + '</span>' : '<span></span>');
+        var extra = (totalVal != null || receiptSent || rcPartial || viewLinks)
           ? '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;">'
-            + '<span style="font-size:0.74rem;color:#1a7a3a;font-weight:700;">' + (receiptSent ? '&#10003; Receipt sent ' + shortDate(rc.sent_at) : '') + '</span>'
+            + statusTag
             + '<span style="font-size:0.9rem;color:#0a1f3d;font-weight:700;">' + (totalVal != null ? '$' + money(totalVal) : '') + '</span>'
             + '</div>'
             + (viewLinks ? '<div style="display:flex;gap:14px;justify-content:flex-end;margin-top:4px;">' + viewLinks + '</div>' : '')
@@ -5549,6 +5774,8 @@ router.get('/appointments', requireAuth, function(req, res) {
     // latest receipt so a completed appointment card reflects the real service + total.
     + "(SELECT r.service FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_service, "
     + "(SELECT r.total FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_total, "
+    + "(SELECT r.status FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_status, "
+    + "(SELECT r.billed_total FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_billed, "
     + "(SELECT ca.address FROM customer_addresses ca WHERE ca.customer_id = l.customer_id ORDER BY ca.id DESC LIMIT 1) AS cust_addr, "
     + "(SELECT TRIM(COALESCE(cv.year,'') || ' ' || COALESCE(cv.make,'') || ' ' || COALESCE(cv.model,'')) FROM customer_vehicles cv WHERE cv.customer_id = l.customer_id ORDER BY cv.id DESC LIMIT 1) AS cust_vehicle "
     + 'FROM leads l '
@@ -5604,8 +5831,13 @@ router.get('/appointments', requireAuth, function(req, res) {
     // calendar but is shown read-only: no Reschedule/Cancel (those would revert a done
     // job to the pipeline). The card still opens the lead on tap.
     var done = a.status === 'completed' || a.status === 'receipt';
+    // A partial receipt means the job is mid-flight (an earlier visit was paid, more to
+    // come) — the lead is still booked, so show an amber in-progress badge.
+    var apptPartial = a.receipt_status === 'partial';
     var accent = STATUS_COLOR[a.status] || STATUS_COLOR.booked;
-    var doneBadge = done
+    var doneBadge = apptPartial
+      ? '<span style="font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;background:#fdeccb;color:#9a6a16;">Partial &mdash; in progress</span>'
+      : done
       ? '<span style="font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;background:' + hexA(accent, 0.14) + ';color:' + accent + ';">'
         + (a.status === 'receipt' ? 'Receipt sent' : 'Completed') + '</span>'
       : '';
@@ -6693,7 +6925,7 @@ router.get('/dashboard', requireAuth, function(req, res) {
   var monthStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-01';
 
   var leadsThisMonth   = db.prepare("SELECT COUNT(*) AS n FROM leads WHERE date(created_at) >= ?").get(monthStr).n;
-  var revenueThisMonth = db.prepare("SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL AND date(sent_at) >= ?").get(monthStr).n;
+  var revenueThisMonth = db.prepare("SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL AND status = 'final' AND date(sent_at) >= ?").get(monthStr).n;
   var openQuotes       = db.prepare("SELECT COUNT(*) AS n FROM leads WHERE status IN ('quoted','quote_accepted') AND archived = 0").get().n;
   var activeFollowups  = db.prepare("SELECT COUNT(*) AS n FROM followups WHERE sent = 0 AND date(due_date) >= date('now')").get().n;
 
@@ -6761,14 +6993,14 @@ router.get('/dashboard', requireAuth, function(req, res) {
 
 // ─── Revenue Report ────────────────────────────────────────────────────────────
 router.get('/reports/revenue', requireAuth, function(req, res) {
-  var totalRevenue = db.prepare("SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
-  var totalJobs    = db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
+  var totalRevenue = db.prepare("SELECT COALESCE(SUM(total),0) AS n FROM receipts WHERE sent_at IS NOT NULL AND status = 'final'").get().n;
+  var totalJobs    = db.prepare("SELECT COUNT(*) AS n FROM receipts WHERE sent_at IS NOT NULL AND status = 'final'").get().n;
   var avgJobValue  = totalJobs > 0 ? totalRevenue / totalJobs : 0;
   // Tips are tracked separately from sales (not taxed) and reported on their own line.
-  var totalTips    = db.prepare("SELECT COALESCE(SUM(tip),0) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
+  var totalTips    = db.prepare("SELECT COALESCE(SUM(tip),0) AS n FROM receipts WHERE sent_at IS NOT NULL AND status = 'final'").get().n;
 
   // Period-filtered stats — all receipts with sent_at, used client-side for the dropdown filter
-  var allReceiptsForFilter = db.prepare("SELECT total, sent_at FROM receipts WHERE sent_at IS NOT NULL").all();
+  var allReceiptsForFilter = db.prepare("SELECT total, sent_at FROM receipts WHERE sent_at IS NOT NULL AND status = 'final'").all();
 
   // Build last-12-months list
   var revMonths = [];
@@ -6786,7 +7018,7 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
 
   var monthData = db.prepare(
     "SELECT strftime('%Y-%m', sent_at) AS month, COALESCE(SUM(total),0) AS revenue, COUNT(*) AS jobs "
-    + "FROM receipts WHERE sent_at IS NOT NULL GROUP BY month"
+    + "FROM receipts WHERE sent_at IS NOT NULL AND status = 'final' GROUP BY month"
   ).all().reduce(function(acc, r) { acc[r.month] = r; return acc; }, {});
 
   revMonths.forEach(function(m) {
@@ -6813,7 +7045,7 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
     + '</div>';
 
   // Service revenue breakdown (split comma-separated service strings)
-  var allReceipts = db.prepare("SELECT service, total FROM receipts WHERE sent_at IS NOT NULL").all();
+  var allReceipts = db.prepare("SELECT service, total FROM receipts WHERE sent_at IS NOT NULL AND status = 'final'").all();
   var svcMap = {};
   allReceipts.forEach(function(r) {
     var svcs = (r.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
@@ -6906,7 +7138,7 @@ router.get('/reports/revenue', requireAuth, function(req, res) {
 // ─── Conversions Report ────────────────────────────────────────────────────────
 router.get('/reports/conversions', requireAuth, function(req, res) {
   var totalQuotesSent = db.prepare("SELECT COUNT(DISTINCT lead_id) AS n FROM quotes WHERE sent_at IS NOT NULL").get().n;
-  var totalJobsDone   = db.prepare("SELECT COUNT(DISTINCT lead_id) AS n FROM receipts WHERE sent_at IS NOT NULL").get().n;
+  var totalJobsDone   = db.prepare("SELECT COUNT(DISTINCT lead_id) AS n FROM receipts WHERE sent_at IS NOT NULL AND status = 'final'").get().n;
   var overallRate     = totalQuotesSent > 0 ? Math.round((totalJobsDone / totalQuotesSent) * 100) : 0;
   var stillOpen       = Math.max(0, totalQuotesSent - totalJobsDone);
 
@@ -6929,7 +7161,7 @@ router.get('/reports/conversions', requireAuth, function(req, res) {
   ).all().reduce(function(acc, r) { acc[r.month] = r.n; return acc; }, {});
 
   var rByMonth = db.prepare(
-    "SELECT strftime('%Y-%m', sent_at) AS month, COUNT(DISTINCT lead_id) AS n FROM receipts WHERE sent_at IS NOT NULL GROUP BY month"
+    "SELECT strftime('%Y-%m', sent_at) AS month, COUNT(DISTINCT lead_id) AS n FROM receipts WHERE sent_at IS NOT NULL AND status = 'final' GROUP BY month"
   ).all().reduce(function(acc, r) { acc[r.month] = r.n; return acc; }, {});
 
   convMonths.forEach(function(m) {
@@ -6981,7 +7213,7 @@ router.get('/reports/services', requireAuth, function(req, res) {
   });
 
   // Jobs + revenue by service (receipts.service, sent receipts only)
-  var svcReceipts = db.prepare("SELECT service, total FROM receipts WHERE sent_at IS NOT NULL").all();
+  var svcReceipts = db.prepare("SELECT service, total FROM receipts WHERE sent_at IS NOT NULL AND status = 'final'").all();
   var jobMap = {};
   svcReceipts.forEach(function(r) {
     var svcs = (r.service || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
@@ -7056,7 +7288,7 @@ router.get('/receipts', requireAuth, function(req, res) {
     "SELECT r.id, r.lead_id, r.service, r.vehicle, r.service_date, r.total, r.payment_method, r.sent_at, r.filed_at, "
     + "l.first_name, l.last_name, l.email, l.status AS lead_status, l.archived AS lead_archived "
     + "FROM receipts r LEFT JOIN leads l ON l.id = r.lead_id "
-    + "WHERE r.sent_at IS NOT NULL "
+    + "WHERE r.sent_at IS NOT NULL AND r.status = 'final' "
     + "ORDER BY r.sent_at DESC"
   ).all();
 
@@ -7190,11 +7422,11 @@ router.get('/receipts', requireAuth, function(req, res) {
 router.post('/receipts/file', requireAuth, function(req, res) {
   var loose = db.prepare(
     "SELECT DISTINCT l.id AS lead_id FROM receipts r JOIN leads l ON l.id = r.lead_id "
-    + "WHERE r.sent_at IS NOT NULL AND r.filed_at IS NULL AND l.status = 'receipt' AND l.archived = 0"
+    + "WHERE r.sent_at IS NOT NULL AND r.status = 'final' AND r.filed_at IS NULL AND l.status = 'receipt' AND l.archived = 0"
   ).all();
   var filed = 0;
   loose.forEach(function(row) {
-    var rs = db.prepare("UPDATE receipts SET filed_at = datetime('now') WHERE lead_id = ? AND filed_at IS NULL AND sent_at IS NOT NULL").run(row.lead_id);
+    var rs = db.prepare("UPDATE receipts SET filed_at = datetime('now') WHERE lead_id = ? AND filed_at IS NULL AND sent_at IS NOT NULL AND status = 'final'").run(row.lead_id);
     filed += rs.changes;
     db.prepare("UPDATE leads SET archived = 1, archived_at = datetime('now') WHERE id = ?").run(row.lead_id);
     logHistory(row.lead_id, 'Receipt filed', 'Filed into the monthly receipts cabinet');
