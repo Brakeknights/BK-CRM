@@ -2429,6 +2429,9 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   if (req.query.msg === 'partial_sent')  quoteAlert = '<div class="alert alert-success">Partial receipt sent. The job stays open &mdash; use Complete Job &amp; Send Receipt to finalize after the next visit.</div>';
   if (req.query.msg === 'partial_saved') quoteAlert = '<div class="alert alert-success">Partial receipt saved (no email on file). The job stays open until you finalize it.</div>';
   if (req.query.msg === 'receipt_finalized') quoteAlert = '<div class="alert alert-success">Final receipt sent. The job is complete and counts as one job in your reports.</div>';
+  if (req.query.msg === 'return_scheduled') quoteAlert = '<div class="alert alert-success">Return visit scheduled. It moved the existing appointment &mdash; no duplicate created.</div>';
+  if (req.query.msg === 'return_sent')      quoteAlert = '<div class="alert alert-success">Return visit scheduled and a confirmation was emailed to the customer.</div>';
+  if (req.query.msg === 'return_err')        quoteAlert = '<div class="alert alert-error">Return visit saved, but the confirmation email failed to send. Try again from the banner above.</div>';
   if (req.query.msg === 'quick_sent')    quoteAlert = '<div class="alert alert-success">Quick Quote sent to the customer. Lead created in the Quoted stage.</div>';
   if (req.query.msg === 'quick_saved')   quoteAlert = '<div class="alert alert-success">Lead created from Quick Quote and the quote was saved (not emailed).</div>';
   if (req.query.msg === 'quick_err')     quoteAlert = '<div class="alert alert-error">Lead and quote saved, but the email failed to send. Try resending from this page.</div>';
@@ -2468,16 +2471,50 @@ router.get('/quote/:id', requireAuth, function(req, res) {
   // Partial-receipt banner — a job in progress across more than one visit. Surfaces
   // the balance owed and a Finalize button so the job is clearly not done yet.
   var leadPartial = db.prepare("SELECT * FROM receipts WHERE lead_id = ? AND status = 'partial' ORDER BY id DESC LIMIT 1").get(lead.id);
-  var partialBanner = leadPartial
-    ? '<div class="card" style="background:#fff7ed;border:1px solid #f0c890;border-left:4px solid #d97706;">'
+  var partialBanner = '';
+  if (leadPartial) {
+    var pBalance = leadPartial.billed_total != null
+      ? Math.max(0, Math.round((leadPartial.billed_total - leadPartial.total) * 100) / 100)
+      : 0;
+    // The appointment for the return (second) visit is the SAME approved quote — we
+    // just move its date/time. Show whether a return visit is scheduled (future) or
+    // still on the original (now past) date.
+    var apptQuote = db.prepare("SELECT * FROM quotes WHERE lead_id = ? AND status = 'approved' AND pref_date IS NOT NULL ORDER BY id DESC LIMIT 1").get(lead.id);
+    var returnFuture = apptQuote && apptQuote.pref_date && apptQuote.pref_date >= easternToday();
+    var returnLine = apptQuote && apptQuote.pref_date
+      ? (returnFuture
+          ? '<span style="color:#1a7a3a;font-weight:700;">Return visit scheduled:</span> ' + esc(fmtPrefDate(apptQuote.pref_date)) + (apptQuote.pref_time ? ' at ' + esc(apptQuote.pref_time) : '')
+          : '<span style="color:#9a3412;font-weight:700;">No return visit scheduled yet</span> <span style="color:#aaa;">(last visit ' + esc(fmtPrefDate(apptQuote.pref_date)) + ')</span>')
+      : '<span style="color:#9a3412;font-weight:700;">No return visit scheduled yet</span>';
+    partialBanner = '<div class="card" style="background:#fff7ed;border:1px solid #f0c890;border-left:4px solid #d97706;">'
       + '<div class="row-sb" style="align-items:flex-start;gap:10px;">'
       + '<div><div class="section-title" style="color:#9a3412;margin:0;">Partial receipt &mdash; job in progress</div>'
       + '<div style="font-size:0.86rem;color:#7a3a10;margin-top:4px;line-height:1.5;">Paid so far <strong>$' + money(leadPartial.total) + '</strong>'
-      + (leadPartial.billed_total != null ? ' &middot; balance remaining <strong>$' + money(Math.max(0, Math.round((leadPartial.billed_total - leadPartial.total) * 100) / 100)) + '</strong>' : '')
-      + '. Not counted in reports until finalized.</div></div>'
+      + (leadPartial.billed_total != null ? ' &middot; balance remaining <strong>$' + money(pBalance) + '</strong>' : '')
+      + '. Not counted in reports until finalized.</div>'
+      + '<div style="font-size:0.84rem;margin-top:6px;">' + returnLine + '</div></div>'
       + '<a href="/admin/receipt/' + lead.id + '" class="btn btn-navy btn-sm" style="width:auto;flex-shrink:0;">Finalize &rarr;</a>'
-      + '</div></div>'
-    : '';
+      + '</div>'
+      // Schedule / reschedule the return visit on the same appointment.
+      + '<div style="margin-top:12px;">'
+      + '<button type="button" class="btn btn-outline btn-sm" style="width:auto;" onclick="var f=document.getElementById(\'returnVisitForm\');f.style.display=f.style.display===\'none\'?\'block\':\'none\';">' + ic('calendar') + (returnFuture ? 'Change return visit' : 'Schedule return visit') + '</button>'
+      + '<div id="returnVisitForm" style="display:none;margin-top:12px;padding:14px;background:#fffdf8;border:1px solid #f0d8a8;border-radius:10px;">'
+      + '<form method="POST" action="/admin/lead/' + lead.id + '/schedule-return">'
+      + '<div style="font-size:0.84rem;color:#7a5a10;margin-bottom:10px;">Pick the date and time to come back and finish the remaining work. This moves the existing appointment (no duplicate)'
+      + (pBalance > 0 ? '; the customer&rsquo;s confirmation will show the <strong>$' + money(pBalance) + ' balance due</strong>.' : '.')
+      + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'
+      + '<div class="form-group" style="margin-bottom:10px;"><label>Return date</label>'
+      + '<input type="date" name="pref_date" min="' + easternToday() + '" value="' + esc(returnFuture ? apptQuote.pref_date : '') + '" required style="width:100%;padding:9px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.9rem;"></div>'
+      + '<div class="form-group" style="margin-bottom:10px;"><label>Return time</label>'
+      + '<select name="pref_time" required style="width:100%;padding:10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.9rem;background:#fff;">' + ownerTimeOptions(apptQuote ? apptQuote.pref_time : '') + '</select></div>'
+      + '</div>'
+      + (lead.email ? '<label style="display:flex;align-items:center;gap:8px;font-size:0.84rem;color:#555;margin-bottom:10px;cursor:pointer;"><input type="checkbox" name="emailCustomer" value="1" checked style="width:16px;height:16px;"> Email the customer a return-visit confirmation</label>' : '')
+      + '<button type="submit" class="btn btn-navy btn-sm" style="width:auto;">' + (returnFuture ? 'Update Return Visit' : 'Schedule Return Visit') + '</button>'
+      + '</form></div>'
+      + '</div>'
+      + '</div>';
+  }
 
   var body = '<div class="nav-row"><a href="/admin" data-noswap class="back-link" onclick="return bkBack(\'/admin\');"><span class="bk-arrow">&#8592;</span> Back</a>' + custLink + '</div>'
     + quoteAlert
@@ -5841,10 +5878,14 @@ router.get('/appointments', requireAuth, function(req, res) {
       ? '<span style="font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:10px;background:' + hexA(accent, 0.14) + ';color:' + accent + ';">'
         + (a.status === 'receipt' ? 'Receipt sent' : 'Completed') + '</span>'
       : '';
-    // For a finished job, show what was actually done + collected (from the receipt),
-    // not what was originally scheduled. Falls back to the quote when no receipt exists.
-    var svcLine = (done && a.receipt_service && a.receipt_service.trim()) ? a.receipt_service : (a.q_service || 'Service TBD');
-    var amtVal  = (done && a.receipt_total != null) ? a.receipt_total : a.total;
+    // For a finished job, show what was actually done + collected (from the receipt).
+    // For a partial (return-visit) appointment, show the adjusted service and the
+    // BALANCE remaining, so the calendar reflects the continuation, not the old quote.
+    var apptBalance = (apptPartial && a.receipt_billed != null)
+      ? Math.max(0, Math.round((a.receipt_billed - (a.receipt_total || 0)) * 100) / 100) : null;
+    var svcLine = ((done || apptPartial) && a.receipt_service && a.receipt_service.trim()) ? a.receipt_service : (a.q_service || 'Service TBD');
+    var amtVal  = apptPartial ? (apptBalance != null ? apptBalance : a.total) : ((done && a.receipt_total != null) ? a.receipt_total : a.total);
+    var amtLabel = apptPartial && apptBalance != null ? 'Balance due ' : '';
     return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + accent + ';margin-bottom:10px;">'
       + '<div class="row-sb">'
       + '<div class="lead-name">' + esc(name) + '</div>'
@@ -5855,7 +5896,7 @@ router.get('/appointments', requireAuth, function(req, res) {
       + (veh ? '<div style="font-size:0.82rem;color:#666;margin-top:2px;">' + esc(veh) + '</div>' : '')
       + '<div style="font-size:0.85rem;color:#1a6fc4;margin-top:3px;">' + esc(dateStr) + '</div>'
       + (loc ? '<div style="font-size:0.82rem;margin-top:2px;">' + mapsLink(loc, { style: 'color:#1a6fc4;font-size:0.82rem;text-decoration:none;' }) + '</div>' : '')
-      + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">$' + money(amtVal) + '</div>'
+      + '<div style="font-size:0.85rem;color:#0a1f3d;font-weight:600;margin-top:4px;">' + amtLabel + '$' + money(amtVal) + '</div>'
       + (done
           ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
             + '<a href="/admin/quote/' + a.id + '" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;text-decoration:none;" onclick="event.stopPropagation();">Open lead &rarr;</a>'
@@ -6082,6 +6123,119 @@ router.post('/appointments/:lead_id/reschedule', requireAuth, express.urlencoded
   logHistory(lead.id, 'Appointment rescheduled', prefDate + ' at ' + prefTime);
   res.redirect('/admin/appointments?msg=rescheduled');
 });
+
+// Schedule (or move) the RETURN visit for a partial job. It reuses the same
+// appointment — the lead's approved quote — so no duplicate is created. If the lead
+// never had an appointment (e.g. a Quick Quote partial), a minimal approved quote is
+// created so the return visit shows on the calendar. The balance carries from the
+// partial receipt; the optional confirmation email shows the customer what's due.
+router.post('/lead/:id/schedule-return', requireAuth, express.urlencoded({ extended: false }), async function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.redirect('/admin');
+  backfillLeadContact(lead);
+  var prefDate = (req.body.pref_date || '').trim();
+  var prefTime = (req.body.pref_time || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(prefDate) || !prefTime) {
+    return res.redirect('/admin/quote/' + lead.id + '?msg=return_err');
+  }
+
+  var partial = db.prepare("SELECT * FROM receipts WHERE lead_id = ? AND status = 'partial' ORDER BY id DESC LIMIT 1").get(lead.id);
+  var balance = (partial && partial.billed_total != null)
+    ? Math.max(0, Math.round((partial.billed_total - partial.total) * 100) / 100)
+    : 0;
+  var svc = (partial && partial.service) || lead.service || 'Remaining brake service';
+  var location = (partial && partial.service_address) || '';
+
+  // Move the existing approved appointment, or create one if none exists.
+  var apptQuote = db.prepare("SELECT * FROM quotes WHERE lead_id = ? AND status = 'approved' ORDER BY id DESC LIMIT 1").get(lead.id);
+  var token;
+  if (apptQuote) {
+    token = apptQuote.accept_token || crypto.randomBytes(24).toString('hex');
+    db.prepare("UPDATE quotes SET pref_date = ?, pref_time = ?, accept_token = COALESCE(accept_token, ?), pref_location = COALESCE(NULLIF(pref_location,''), ?) WHERE id = ?")
+      .run(prefDate, prefTime, token, location || null, apptQuote.id);
+  } else {
+    token = crypto.randomBytes(24).toString('hex');
+    var ins = db.prepare(
+      "INSERT INTO quotes (lead_id, service, tier, total, status, accept_token, accepted_at, pref_date, pref_time, pref_location, sent_at) "
+      + "VALUES (?,?,?,?,'approved',?,datetime('now'),?,?,?,datetime('now'))"
+    ).run(lead.id, svc, 'standard', (partial ? partial.billed_total : 0) || 0, token, prefDate, prefTime, location || null);
+    apptQuote = db.prepare('SELECT * FROM quotes WHERE id = ?').get(ins.lastInsertRowid);
+  }
+
+  // Keep the lead in the active pipeline so the return visit shows as upcoming.
+  if (['booked', 'completed', 'receipt'].indexOf(lead.status) === -1) {
+    db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
+  }
+  logHistory(lead.id, 'Return visit scheduled', prefDate + ' at ' + prefTime + (balance > 0 ? ' · balance due $' + balance.toFixed(2) : ''));
+
+  var wantEmail = req.body.emailCustomer === '1';
+  if (wantEmail && process.env.SMTP_PASS && lead.email) {
+    try {
+      var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+      var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+      await tx.sendMail({
+        from:    '"Brake Knights" <greetings@brakeknights.com>',
+        to:      lead.email,
+        cc:      'greetings@brakeknights.com',
+        replyTo: 'greetings@brakeknights.com',
+        subject: 'Your return visit is scheduled — Brake Knights',
+        html:    buildReturnVisitEmail(lead, { service: svc, pref_date: prefDate, pref_time: prefTime, location: location, balance: balance, quoteId: apptQuote.id, token: token, baseUrl: baseUrl })
+      });
+      return res.redirect('/admin/quote/' + lead.id + '?msg=return_sent');
+    } catch (err) {
+      console.error('Return visit email error:', err.message);
+      return res.redirect('/admin/quote/' + lead.id + '?msg=return_err');
+    }
+  }
+  res.redirect('/admin/quote/' + lead.id + '?msg=return_scheduled');
+});
+
+// Branded confirmation for a return (second) visit on a split job. Shows the date,
+// time, remaining work and the outstanding balance the customer will pay on arrival.
+function buildReturnVisitEmail(lead, o) {
+  var WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var dlabel = (function() {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(o.pref_date || '');
+    if (!m) return o.pref_date || '';
+    var dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    return WEEKDAYS[dt.getDay()] + ', ' + MONTHS[dt.getMonth()] + ' ' + dt.getDate() + ', ' + dt.getFullYear();
+  })();
+  var gcalUrl = '';
+  var startRfc = toEasternRfc3339(o.pref_date, o.pref_time);
+  if (startRfc) {
+    var mins = totalServiceMinutes(o.service) || 60;
+    var gStart = new Date(startRfc), gEnd = new Date(gStart.getTime() + mins * 60000);
+    gcalUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+      + '&text=' + encodeURIComponent('Brake Knights - ' + (o.service || 'Return visit'))
+      + '&dates=' + icsUtcStamp(gStart) + '/' + icsUtcStamp(gEnd)
+      + '&details=' + encodeURIComponent('Return visit to finish your brake service.' + (o.balance > 0 ? ' Balance due: $' + money(o.balance) + '.' : '') + ' Call/text 703-977-4475.')
+      + '&location=' + encodeURIComponent(o.location || '');
+  }
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
+    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;">Brake Knights</h1>'
+    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service — Northern Virginia</p></div>'
+    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+    + '<h2 style="color:#0a1f3d;margin:0 0 16px;font-size:1.15rem;">Greetings ' + esc(lead.first_name) + ',</h2>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 20px;">Your return visit to finish your brake service is scheduled. Here are the details:</p>'
+    + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:20px;">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:0.92rem;color:#444;">'
+    + '<tr><td style="padding:6px 0;color:#888;width:110px;">Date</td><td style="padding:6px 0;font-weight:700;color:#0a1f3d;">' + esc(dlabel) + '</td></tr>'
+    + '<tr><td style="padding:6px 0;color:#888;">Time</td><td style="padding:6px 0;font-weight:700;color:#0a1f3d;">' + esc(o.pref_time || '') + '</td></tr>'
+    + (o.service ? '<tr><td style="padding:6px 0;color:#888;vertical-align:top;">Remaining work</td><td style="padding:6px 0;">' + esc(joinServices(o.service) || o.service) + '</td></tr>' : '')
+    + (o.location ? '<tr><td style="padding:6px 0;color:#888;">Location</td><td style="padding:6px 0;">' + esc(o.location) + '</td></tr>' : '')
+    + (o.balance > 0 ? '<tr><td style="padding:10px 0 0;color:#9a3412;font-weight:700;border-top:2px solid #dde3ea;">Balance due</td><td style="padding:10px 0 0;font-weight:700;font-size:1.05rem;color:#9a3412;border-top:2px solid #dde3ea;">$' + money(o.balance) + '</td></tr>' : '')
+    + '</table></div>'
+    + (gcalUrl ? '<div style="text-align:center;margin:0 0 22px;"><a href="' + gcalUrl + '" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;text-decoration:none;padding:13px 30px;border-radius:8px;">Add to Google Calendar</a></div>' : '')
+    + '<p style="color:#444;line-height:1.6;margin:0 0 18px;font-size:0.9rem;">We come directly to your home or office. If you need to change the time, just reply to this email or call/text us.</p>'
+    + '<div style="background:#0a1f3d;border-radius:8px;padding:20px;text-align:center;">'
+    + '<p style="color:#fff;font-weight:700;margin:0 0 8px;font-size:0.95rem;">Questions? Call or text:</p>'
+    + '<a href="tel:7039774475" style="color:#6b8ff5;font-size:1.2rem;font-weight:700;text-decoration:none;">703-977-4475</a>'
+    + '</div></div>'
+    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div>'
+    + '</div>';
+}
 
 router.post('/appointments/:lead_id/cancel', requireAuth, function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.lead_id);
