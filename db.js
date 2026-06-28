@@ -210,6 +210,18 @@ if (!receiptCols.includes('billed_total')) db.exec("ALTER TABLE receipts ADD COL
 // Tips are not taxable (and not part of taxable sales), so `total` excludes the
 // tip and revenue reporting stays clean; tips are reported on their own line.
 if (!receiptCols.includes('tip')) db.exec("ALTER TABLE receipts ADD COLUMN tip REAL NOT NULL DEFAULT 0");
+// Partial / final receipt lifecycle (split-visit jobs). A job done across more than
+// one visit gets ONE receipt: it can be sent as 'partial' (interim documentation,
+// balance to follow) and later 'final'. Reporting counts only 'final' receipts, so a
+// split job is still a single job at its full value. Existing/normal receipts default
+// to 'final' and are unaffected.
+//   status       'partial' (in progress, balance remaining) | 'final' (complete)
+//   deposit_paid amount collected in prior visit(s); shown as "Paid earlier" on the
+//                finalized receipt. Null on normal receipts.
+//   finalized_at when a partial receipt was finalized (the moment the job counts).
+if (!receiptCols.includes('status'))       db.exec("ALTER TABLE receipts ADD COLUMN status TEXT NOT NULL DEFAULT 'final'");
+if (!receiptCols.includes('deposit_paid')) db.exec("ALTER TABLE receipts ADD COLUMN deposit_paid REAL");
+if (!receiptCols.includes('finalized_at')) db.exec("ALTER TABLE receipts ADD COLUMN finalized_at TEXT");
 
 // Follow-ups: `kind` distinguishes the cron email to send. 'advisory' (default) is
 // the original receipt-advisory reminder; 'review_checkin' is the automatic one-week
