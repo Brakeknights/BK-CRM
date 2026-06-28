@@ -4190,7 +4190,14 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="text" name="paymentOther" id="qpmOther" placeholder="e.g. Zelle, Venmo, Check"></div>'
     + '<div class="form-group"><label>Service address</label>'
     + '<input type="text" name="serviceAddress" data-addr-ac autocomplete="off" placeholder="Where the work was performed"></div>'
-    + '<div class="form-group" style="margin-bottom:0;"><label>Amount received <span style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
+    // Partial-receipt toggle (split-visit jobs). Creates the lead + an in-progress
+    // partial receipt; finalize later from that lead's Send Receipt page.
+    + '<div class="form-group" style="margin-bottom:14px;">'
+    + '<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-weight:600;">'
+    + '<input type="checkbox" id="qPartial" name="partial" value="1" onchange="qPartialToggle()" style="margin-top:2px;width:18px;height:18px;flex-shrink:0;">'
+    + '<span>Partial receipt &mdash; job continues<br><span style="font-weight:400;color:#888;font-size:0.82rem;">Documents what was paid so far; finalize from the new lead after the next visit. Not counted in reports until finalized.</span></span>'
+    + '</label></div>'
+    + '<div class="form-group" style="margin-bottom:0;"><label><span id="qRecLabel">Amount received</span> <span id="qRecHelp" style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
     + '<input class="price-input" type="number" name="amountReceived" id="qReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
     + '<div id="qReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
     + '<div class="form-group" style="margin-bottom:0;"><label>Tip <span style="color:#bbb;font-weight:400;">(optional — not taxed, reported separately from sales)</span></label>'
@@ -4316,7 +4323,9 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'if(!recEl||!note)return;'
     +   'var billed=parseFloat((document.getElementById("qtotalH")||{}).value||"0")||0;'
     +   'var raw=recEl.value.trim();var saleRecorded=billed;'
-    +   'if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
+    +   'if(qIsPartial()){var paidNow=raw===""?0:(parseFloat(raw)||0);saleRecorded=paidNow;var balance=Math.round((billed-paidNow)*100)/100;'
+    +     'note.style.color="#9a6a16";note.textContent="Partial: job total $"+money(billed)+" \\u00b7 collected today $"+money(paidNow)+" \\u00b7 balance remaining $"+money(balance>0?balance:0)+". Finalize after the next visit.";}'
+    +   'else if(raw===""){note.style.color="#888";note.textContent="Paid in full: $"+money(billed)+" will be recorded.";}'
     +   'else{var rec=parseFloat(raw);if(isNaN(rec)){note.textContent="";saleRecorded=billed;}else{saleRecorded=rec;var diff=Math.round((billed-rec)*100)/100;'
     +     'if(Math.abs(diff)<0.005){note.style.color="#1a7a3a";note.textContent="Matches the total \\u2014 paid in full.";}'
     +     'else if(diff>0){note.style.color="#b26a00";note.textContent="Short $"+money(diff)+". Receipt and reports record $"+money(rec)+" (billed $"+money(billed)+").";}'
@@ -4325,6 +4334,13 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'if(tipEl&&tnote){var tip=parseFloat(tipEl.value)||0;'
     +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
     +     'else{tnote.textContent="";}}'
+    + '}'
+    + 'function qIsPartial(){var c=document.getElementById("qPartial");return !!(c&&c.checked);}'
+    + 'function qPartialToggle(){'
+    +   'var on=qIsPartial();'
+    +   'var lbl=document.getElementById("qRecLabel");if(lbl)lbl.textContent=on?"Collected today":"Amount received";'
+    +   'var help=document.getElementById("qRecHelp");if(help)help.innerHTML=on?"(what the customer paid on this visit)":"(optional \\u2014 only if you collected a different amount than the total)";'
+    +   'qReceivedHint();'
     + '}'
     + 'function bkRecalc(){qcalc();qReceivedHint();}'
     + 'function qUpdateServices(){qUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
@@ -4677,9 +4693,11 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
 
   // Every save/send outcome creates a Quick Quote lead. Quote mode lands it in
-  // Quoted; receipt mode reflects a finished job (set further down).
+  // Quoted; a finished receipt reflects a done job; a PARTIAL receipt is a job still
+  // in progress, so its lead stays 'booked' until it's finalized from the lead page.
+  var isPartialQQ = mode === 'receipt' && req.body.partial === '1';
   var existingCustId = parseInt(req.body.customer_id) || 0;
-  var initialStatus = mode === 'receipt' ? 'completed' : 'quoted';
+  var initialStatus = mode === 'receipt' ? (isPartialQQ ? 'booked' : 'completed') : 'quoted';
   var leadInfo;
   if (existingCustId) {
     leadInfo = db.prepare(
@@ -4776,10 +4794,18 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var billedTotal    = Math.round(totalAmt * 100) / 100;
   var rawReceived    = req.body.amountReceived;
   var amountReceived = parseFloat(rawReceived);
-  var hasAdjustment  = rawReceived != null && String(rawReceived).trim() !== ''
-    && !isNaN(amountReceived) && Math.abs(amountReceived - billedTotal) >= 0.005;
-  var storedTotal    = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
-  var storedBilled   = hasAdjustment ? billedTotal : null;
+  var hasReceivedQQ  = rawReceived != null && String(rawReceived).trim() !== '' && !isNaN(amountReceived);
+  var hasAdjustment  = !isPartialQQ && hasReceivedQQ && Math.abs(amountReceived - billedTotal) >= 0.005;
+  var storedTotal, storedBilled;
+  if (isPartialQQ) {
+    // Collected today is recorded; the full job is billed, the difference is the
+    // outstanding balance. Excluded from reports until finalized.
+    storedTotal  = hasReceivedQQ ? Math.round(amountReceived * 100) / 100 : 0;
+    storedBilled = billedTotal;
+  } else {
+    storedTotal  = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
+    storedBilled = hasAdjustment ? billedTotal : null;
+  }
   // Tip tracked separately from the sale (not taxed, not in revenue).
   var tip            = Math.round((parseFloat(req.body.tip) || 0) * 100) / 100;
   if (tip < 0) tip = 0;
@@ -4797,9 +4823,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson);
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson, isPartialQQ ? 'partial' : 'final');
   var receiptId = rInfo.lastInsertRowid;
 
   // Unify the service address + vehicle back onto the customer record.
@@ -4815,33 +4841,37 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
     });
   }
 
-  followups.forEach(function(f) {
-    db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
-      .run(leadId, receiptId, f.description, f.due_date, f.recipient);
-  });
+  // Advisories + the one-week check-in belong to a FINISHED job, never a partial.
+  if (!isPartialQQ) {
+    followups.forEach(function(f) {
+      db.prepare('INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient) VALUES (?,?,?,?,?)')
+        .run(leadId, receiptId, f.description, f.due_date, f.recipient);
+    });
 
-  // Automatic one-week post-service check-in (same as the per-lead receipt flow):
-  // a friendly "how are your brakes?" + Google review email 7 days out, to the
-  // customer, only when we have an email and one isn't already queued for this lead.
-  if (email) {
-    var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(leadId);
-    if (!hasCheckin) {
-      var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
-      var _p = baseDay.split('-');
-      var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
-      _dt.setUTCDate(_dt.getUTCDate() + 7);
-      var checkinDue = _dt.toISOString().slice(0, 10);
-      db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
-        .run(leadId, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+    // Automatic one-week post-service check-in (how are your brakes? + review ask).
+    if (email) {
+      var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(leadId);
+      if (!hasCheckin) {
+        var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        var _p = baseDay.split('-');
+        var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
+        _dt.setUTCDate(_dt.getUTCDate() + 7);
+        var checkinDue = _dt.toISOString().slice(0, 10);
+        db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
+          .run(leadId, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+      }
     }
   }
 
   var receipt = db.prepare('SELECT * FROM receipts WHERE id = ?').get(receiptId);
-  var receiptDetail = '$' + storedTotal.toFixed(2)
-    + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
-    + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
-    + (payment ? ' · ' + payment : '')
-    + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
+  var qqBalance = Math.round((billedTotal - storedTotal) * 100) / 100;
+  var receiptDetail = isPartialQQ
+    ? 'Collected $' + storedTotal.toFixed(2) + ' of $' + billedTotal.toFixed(2) + ' (balance $' + (qqBalance > 0 ? qqBalance : 0).toFixed(2) + ')'
+    : '$' + storedTotal.toFixed(2)
+      + (hasAdjustment ? ' received (billed $' + billedTotal.toFixed(2) + ', short $' + (billedTotal - storedTotal).toFixed(2) + ')' : '')
+      + (tip > 0 ? ' + $' + tip.toFixed(2) + ' tip' : '')
+      + (payment ? ' · ' + payment : '')
+      + (followups.length ? ' · ' + followups.length + ' reminder' + (followups.length > 1 ? 's' : '') + ' set' : '');
 
   if (action === 'receipt_send' && process.env.SMTP_PASS && email) {
     try {
@@ -4851,22 +4881,26 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         to:      email,
         cc:      'greetings@brakeknights.com',
         replyTo: 'greetings@brakeknights.com',
-        subject: 'Your Brake Knights Service Receipt',
+        subject: isPartialQQ ? 'Your Brake Knights Receipt (Partial — work in progress)' : 'Your Brake Knights Service Receipt',
         html:    buildReceiptEmail(lead, receipt, notes)
       });
       db.prepare("UPDATE receipts SET sent_at = datetime('now') WHERE id = ?").run(receiptId);
+      if (isPartialQQ) {
+        logHistory(leadId, 'Partial receipt sent to customer', receiptDetail);
+        return res.redirect('/admin/quote/' + leadId + '?msg=partial_sent');
+      }
       db.prepare("UPDATE leads SET status = 'receipt', status_updated_at = datetime('now') WHERE id = ?").run(leadId);
       logHistory(leadId, 'Receipt sent to customer', receiptDetail);
       sendStagePush(lead, 'receipt');
       return res.redirect('/admin/quote/' + leadId + '?msg=receipt_sent');
     } catch (err) {
       console.error('Quick receipt email error:', err.message);
-      logHistory(leadId, 'Receipt saved (email failed)', receiptDetail);
+      logHistory(leadId, (isPartialQQ ? 'Partial receipt' : 'Receipt') + ' saved (email failed)', receiptDetail);
       return res.redirect('/admin/quote/' + leadId + '?msg=receipt_err');
     }
   }
-  logHistory(leadId, 'Receipt saved (not emailed)', receiptDetail);
-  res.redirect('/admin/quote/' + leadId + '?msg=receipt_saved');
+  logHistory(leadId, (isPartialQQ ? 'Partial receipt' : 'Receipt') + ' saved (not emailed)', receiptDetail);
+  res.redirect('/admin/quote/' + leadId + '?msg=' + (isPartialQQ ? 'partial_saved' : 'receipt_saved'));
 });
 
 router.post('/quick/draft/:id/delete', requireAuth, express.urlencoded({ extended: false }), function(req, res) {
