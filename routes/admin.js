@@ -3252,10 +3252,18 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
       rcLineItems = parseLineItems(quote.line_items);
     }
   } catch (_) {}
-  // Finalizing: carry the partial receipt's custom line items instead of the quote's.
-  if (finalizing) rcLineItems = parseLineItems(partialReceipt.custom_line_items);
+  // Finalizing: reproduce the EXACT job the owner priced on the partial — its custom
+  // line items AND its per-service breakdown — so the finalized total matches the
+  // partial's billed amount instead of re-pricing from the standard table.
+  if (finalizing) {
+    rcLineItems = parseLineItems(partialReceipt.custom_line_items);
+    try {
+      var _psvc = JSON.parse(partialReceipt.svc_line_items || '[]');
+      if (Array.isArray(_psvc) && _psvc.length) rcSvcRows = _psvc;
+    } catch (_) {}
+  }
   // Hidden seed so the page can rebuild the exact per-service price rows on load,
-  // preserving any booked-appointment price overrides.
+  // preserving any booked-appointment / partial-receipt price overrides.
   var rcSvcSeed = JSON.stringify(rcSvcRows);
 
   // Service picker mirrors the quote tool: a multi-select of every service so the
@@ -3562,6 +3570,9 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var discount     = parseFloat(req.body.discount)     || 0;
   var lineItems    = parseLineItems(req.body.customLineItems);
   var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
+  // Per-service breakdown the owner entered — stored so a partial can be finalized at
+  // the exact price set (not re-priced from the standard table).
+  var svcLineItemsJson = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) && a.length ? JSON.stringify(a) : null; } catch (_) { return null; } })();
   var cliSum       = lineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
   var total        = partsLabor + shopSupplies + cliSum + tax - discount;
   // Short-payment handling: the owner may accept less than the billed total (cash
@@ -3630,14 +3641,14 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     db.prepare(
       "UPDATE receipts SET service = ?, vehicle = ?, service_date = ?, service_address = ?, parts_labor = ?, "
       + "shop_supplies = ?, tax = ?, total = ?, billed_total = ?, deposit_paid = ?, tip = ?, payment_method = ?, "
-      + "customer_notes = ?, office_notes = ?, custom_line_items = ?, remaining_service = NULL, status = 'final', finalized_at = datetime('now') WHERE id = ?"
-    ).run(service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, storedDeposit, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, finalizeRow.id);
+      + "customer_notes = ?, office_notes = ?, custom_line_items = ?, svc_line_items = ?, remaining_service = NULL, status = 'final', finalized_at = datetime('now') WHERE id = ?"
+    ).run(service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, storedDeposit, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, svcLineItemsJson, finalizeRow.id);
     receiptId = finalizeRow.id;
   } else {
     var info = db.prepare(
-      'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status, remaining_service) '
-      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, receiptStatus, remainingServiceStore);
+      'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status, remaining_service, svc_line_items) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, receiptStatus, remainingServiceStore, svcLineItemsJson);
     receiptId = info.lastInsertRowid;
   }
 
@@ -4938,9 +4949,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status, remaining_service) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson, isPartialQQ ? 'partial' : 'final', remainingServiceQQ);
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status, remaining_service, svc_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson, isPartialQQ ? 'partial' : 'final', remainingServiceQQ, (req.body.svcLineItems && req.body.svcLineItems.trim()) ? req.body.svcLineItems.trim() : null);
   var receiptId = rInfo.lastInsertRowid;
 
   // Unify the service address + vehicle back onto the customer record.
