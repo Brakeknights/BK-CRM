@@ -222,6 +222,10 @@ if (!receiptCols.includes('tip')) db.exec("ALTER TABLE receipts ADD COLUMN tip R
 if (!receiptCols.includes('status'))       db.exec("ALTER TABLE receipts ADD COLUMN status TEXT NOT NULL DEFAULT 'final'");
 if (!receiptCols.includes('deposit_paid')) db.exec("ALTER TABLE receipts ADD COLUMN deposit_paid REAL");
 if (!receiptCols.includes('finalized_at')) db.exec("ALTER TABLE receipts ADD COLUMN finalized_at TEXT");
+// remaining_service: on a partial receipt, the services left for the next visit. The
+// receipt's `service` holds the work completed THIS visit; `remaining_service` holds
+// what's still owed. The remaining dollar amount is derived (billed_total - total).
+if (!receiptCols.includes('remaining_service')) db.exec("ALTER TABLE receipts ADD COLUMN remaining_service TEXT");
 
 // Follow-ups: `kind` distinguishes the cron email to send. 'advisory' (default) is
 // the original receipt-advisory reminder; 'review_checkin' is the automatic one-week
