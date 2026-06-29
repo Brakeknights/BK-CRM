@@ -3428,6 +3428,9 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +   'rcReceivedHint();'
     + '}'
     + 'function bkRecalc(){rccalc();rcReceivedHint();}'
+    // Every price/service change calls rccalc(); wrap it so the Collected/Balance hint
+    // (and the partial/finalize math) always recompute from the new job total too.
+    + '(function(){if(typeof rccalc==="function"){var _o=rccalc;rccalc=function(){_o.apply(this,arguments);if(typeof rcReceivedHint==="function")rcReceivedHint();};}})();'
     // Receipt labels: the customer summary reads "Customer Receipt" / "Total Paid".
     + '(function(){var sl=document.getElementById("rcSummaryLabel");if(sl)sl.textContent="Customer Receipt";var tl=document.getElementById("rcTotalLabel");if(tl)tl.textContent="Total Paid";})();'
     + 'function rPayToggle(){'
@@ -4446,6 +4449,8 @@ router.get('/quick', requireAuth, function(req, res) {
     +   'qReceivedHint();'
     + '}'
     + 'function bkRecalc(){qcalc();qReceivedHint();}'
+    // Keep the Collected/Balance hint in sync with the live job total (see receipt builder).
+    + '(function(){if(typeof qcalc==="function"){var _o=qcalc;qcalc=function(){_o.apply(this,arguments);if(typeof qReceivedHint==="function")qReceivedHint();};}})();'
     + 'function qUpdateServices(){qUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
 
     + 'function qPayToggle(){'
