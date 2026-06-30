@@ -22,6 +22,9 @@
     "playwright": "^1.60.0",
     "sharp": "^0.34.5"
   },
+  "overrides": {
+    "form-data": "^4.0.6"
+  },
   "engines": {
     "node": ">=22"
   }
