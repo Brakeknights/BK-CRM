@@ -1656,7 +1656,7 @@ function buildAltDateOptions() {
 
 function buildAltTimeOptions() {
   var opts = '<option value="" disabled selected>Select a time...</option>';
-  for (var mins = 9 * 60; mins <= 18 * 60; mins += 30) {
+  for (var mins = 7 * 60; mins <= 21 * 60; mins += 30) {
     var h24 = Math.floor(mins / 60);
     var m = mins % 60;
     var ampm = h24 < 12 ? 'AM' : 'PM';
@@ -3283,7 +3283,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   });
 
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
-    return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+    return '<option value="' + esc(p) + '"' + (p === 'Credit/Debit Card' ? ' selected' : '') + '>' + esc(p) + '</option>';
   }).join('');
 
   var advisoryRows = advisoryRow(1, false);
@@ -4233,7 +4233,7 @@ router.get('/quick', requireAuth, function(req, res) {
     : '';
 
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
-    return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+    return '<option value="' + esc(p) + '"' + (p === 'Credit/Debit Card' ? ' selected' : '') + '>' + esc(p) + '</option>';
   }).join('');
 
   var advisoryRows = advisoryRow(1, false);
@@ -5876,7 +5876,7 @@ router.post('/customer/:id/delete', requireAuth, express.urlencoded({ extended: 
 // Wider than the customer-facing picker on purpose — the owner has full control.
 function ownerTimeOptions(sel) {
   var o = '<option value="">-- Select time --</option>';
-  for (var mins = 8 * 60; mins <= 19 * 60; mins += 30) {
+  for (var mins = 7 * 60; mins <= 21 * 60; mins += 30) {
     var h24 = Math.floor(mins / 60), m = mins % 60;
     var ampm = h24 < 12 ? 'AM' : 'PM';
     var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
