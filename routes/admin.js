@@ -3123,6 +3123,44 @@ function advisoryRow(i, hidden) {
     + '</div>';
 }
 
+// Partial-receipt service split: two checkbox pickers ("completed this visit" /
+// "remaining next visit") so the receipt itemizes what was done vs what's owed. The
+// dollar amounts come from Collected this visit + the auto balance (job total minus
+// collected) — these are display-only service lists. `pfx` namespaces the ids so the
+// per-lead builder ('rc') and Quick Quote ('q') can each render one.
+function partialSplitCard(pfx, serviceNames, doneSel, remSel, doneCustom, remCustom) {
+  function picker(kind, fieldName, label, hint, selected, customVal) {
+    var cbs = (serviceNames || []).map(function(sn) {
+      var checked = (selected || []).indexOf(sn) !== -1 ? ' checked' : '';
+      return '<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:0.9rem;cursor:pointer;">'
+        + '<input type="checkbox" class="' + pfx + kind + '-cb" value="' + esc(sn) + '" onchange="' + pfx + kind + 'Sync()"' + checked + ' style="width:17px;height:17px;flex-shrink:0;">'
+        + '<span>' + esc(sn) + '</span></label>';
+    }).join('');
+    return '<div style="margin-bottom:4px;"><div style="font-weight:700;color:#0a1f3d;font-size:0.85rem;margin-bottom:2px;">' + label + '</div>'
+      + '<div style="font-size:0.79rem;color:#888;margin-bottom:6px;">' + hint + '</div>'
+      + cbs
+      + '<input type="text" id="' + pfx + kind + 'Custom" placeholder="Other (type a service)" value="' + esc(customVal || '') + '" oninput="' + pfx + kind + 'Sync()" style="width:100%;margin-top:6px;padding:8px 10px;border:1.5px solid #dde3ea;border-radius:7px;font-size:0.88rem;">'
+      + '<input type="hidden" name="' + fieldName + '" id="' + pfx + kind + 'H">'
+      + '</div>';
+  }
+  return '<div id="' + pfx + 'SplitCard" style="display:none;margin:14px 0 0;padding:14px;background:#fffdf8;border:1px solid #f0d8a8;border-radius:10px;">'
+    + '<div style="font-weight:700;color:#9a3412;font-size:0.9rem;margin-bottom:4px;">Split the work for this partial receipt</div>'
+    + '<div style="font-size:0.8rem;color:#7a5a10;margin-bottom:12px;line-height:1.5;">Pick what you finished today and what&rsquo;s left for the return visit. The amounts come from <strong>Collected this visit</strong> and the auto balance (job total minus collected).</div>'
+    + picker('Done', 'completedService', 'Completed this visit', 'Shown as paid on the receipt.', doneSel, doneCustom)
+    + '<div style="height:1px;background:#f0d8a8;margin:12px 0;"></div>'
+    + picker('Rem', 'remainingService', 'Remaining &mdash; next visit', 'Shown as balance due on the receipt.', remSel, remCustom)
+    + '</div>';
+}
+
+// Client JS for the split pickers (concatenates checked boxes + the custom field into
+// a hidden input). `pfx` matches partialSplitCard. Returns a <script>-body string.
+function partialSplitJs(pfx) {
+  return 'function bkSplitCollect(cls,customId,hiddenId){var v=[];document.querySelectorAll("."+cls).forEach(function(cb){if(cb.checked)v.push(cb.value);});var c=(document.getElementById(customId)||{}).value;if(c&&c.trim())v.push(c.trim());var h=document.getElementById(hiddenId);if(h)h.value=v.join(", ");}'
+    + 'function ' + pfx + 'DoneSync(){bkSplitCollect("' + pfx + 'Done-cb","' + pfx + 'DoneCustom","' + pfx + 'DoneH");}'
+    + 'function ' + pfx + 'RemSync(){bkSplitCollect("' + pfx + 'Rem-cb","' + pfx + 'RemCustom","' + pfx + 'RemH");}'
+    + 'function ' + pfx + 'SplitShow(on){var c=document.getElementById("' + pfx + 'SplitCard");if(c)c.style.display=on?"block":"none";' + pfx + 'DoneSync();' + pfx + 'RemSync();}';
+}
+
 router.get('/receipt/:id', requireAuth, function(req, res) {
   var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
   if (!lead) return res.redirect('/admin');
@@ -3144,7 +3182,16 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     || {};
 
   // When finalizing, prefill the full job the owner entered on the partial receipt.
-  var service   = (finalizing ? (partialReceipt.service || quote.service) : quote.service) || lead.service || '';
+  // When finalizing, the full job = work done on the partial (its `service`) PLUS the
+  // remaining work, so the finalize form prefills every service across both visits.
+  var finalizeFullService = '';
+  if (finalizing) {
+    var _parts = [];
+    if (partialReceipt.service) _parts.push(partialReceipt.service);
+    if (partialReceipt.remaining_service) _parts.push(partialReceipt.remaining_service);
+    finalizeFullService = _parts.join(', ');
+  }
+  var service   = (finalizing ? (finalizeFullService || partialReceipt.service || quote.service) : quote.service) || lead.service || '';
   // The receipt must reflect THIS lead's vehicle, not whatever car was most
   // recently added to the customer profile (a customer can own several). Prefer
   // the lead's own vehicle string; when set, upgrade it to the matching structured
@@ -3205,10 +3252,18 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
       rcLineItems = parseLineItems(quote.line_items);
     }
   } catch (_) {}
-  // Finalizing: carry the partial receipt's custom line items instead of the quote's.
-  if (finalizing) rcLineItems = parseLineItems(partialReceipt.custom_line_items);
+  // Finalizing: reproduce the EXACT job the owner priced on the partial — its custom
+  // line items AND its per-service breakdown — so the finalized total matches the
+  // partial's billed amount instead of re-pricing from the standard table.
+  if (finalizing) {
+    rcLineItems = parseLineItems(partialReceipt.custom_line_items);
+    try {
+      var _psvc = JSON.parse(partialReceipt.svc_line_items || '[]');
+      if (Array.isArray(_psvc) && _psvc.length) rcSvcRows = _psvc;
+    } catch (_) {}
+  }
   // Hidden seed so the page can rebuild the exact per-service price rows on load,
-  // preserving any booked-appointment price overrides.
+  // preserving any booked-appointment / partial-receipt price overrides.
   var rcSvcSeed = JSON.stringify(rcSvcRows);
 
   // Service picker mirrors the quote tool: a multi-select of every service so the
@@ -3307,6 +3362,8 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
           + '<input type="checkbox" id="rcPartial" name="partial" value="1" onchange="rcPartialToggle()" style="margin-top:2px;width:18px;height:18px;flex-shrink:0;">'
           + '<span>Partial receipt &mdash; job continues<br><span style="font-weight:400;color:#888;font-size:0.82rem;">Send interim documentation now and finalize after the next visit. Stays one job; not counted in reports until finalized.</span></span>'
           + '</label></div>')
+    // Split pickers (shown only when Partial is toggled).
+    + (finalizing ? '' : partialSplitCard('rc', rPricingKeys, [], [], '', ''))
     // Amount field. Normal: optional short-pay. Partial: amount collected today.
     // Finalize: balance collected today (the earlier payment is already recorded).
     + '<div class="form-group" style="margin:14px 0 0;"><label><span id="rcRecLabel">'
@@ -3369,14 +3426,19 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
     +     'if(tip>0){tnote.style.color="#1a4a7a";tnote.textContent="Tip $"+money(tip)+" tracked separately (not taxed). Customer total: $"+money(Math.round((saleRecorded+tip)*100)/100)+".";}'
     +     'else{tnote.textContent="";}}'
     + '}'
+    + partialSplitJs('rc')
     + 'function rcPartialToggle(){'
     +   'var on=rcIsPartial();'
-    +   'var lbl=document.getElementById("rcRecLabel");if(lbl)lbl.textContent=on?"Collected today":"Amount received";'
+    +   'var lbl=document.getElementById("rcRecLabel");if(lbl)lbl.textContent=on?"Collected this visit":"Amount received";'
     +   'var help=document.getElementById("rcRecHelp");if(help)help.innerHTML=on?"(what the customer paid on this visit)":"(optional \\u2014 only if you collected a different amount than the total above)";'
     +   'var send=document.getElementById("rcSendLabel");if(send)send.textContent=on?"Send Partial Receipt":"Send Receipt";'
+    +   'rcSplitShow(on);'
     +   'rcReceivedHint();'
     + '}'
     + 'function bkRecalc(){rccalc();rcReceivedHint();}'
+    // Every price/service change calls rccalc(); wrap it so the Collected/Balance hint
+    // (and the partial/finalize math) always recompute from the new job total too.
+    + '(function(){if(typeof rccalc==="function"){var _o=rccalc;rccalc=function(){_o.apply(this,arguments);if(typeof rcReceivedHint==="function")rcReceivedHint();};}})();'
     // Receipt labels: the customer summary reads "Customer Receipt" / "Total Paid".
     + '(function(){var sl=document.getElementById("rcSummaryLabel");if(sl)sl.textContent="Customer Receipt";var tl=document.getElementById("rcTotalLabel");if(tl)tl.textContent="Total Paid";})();'
     + 'function rPayToggle(){'
@@ -3492,6 +3554,10 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var service      = (req.body.service || '').trim();
   var customSvc    = (req.body.customService || '').trim();
   if (customSvc && service.split(',').map(function(s){return s.trim().toLowerCase();}).indexOf(customSvc.toLowerCase()) === -1) service = service ? service + ', ' + customSvc : customSvc;
+  // Partial service split (display lists): work completed this visit vs what's left.
+  var completedService = (req.body.completedService || '').trim();
+  var remainingServiceStr = (req.body.remainingService || '').trim();
+  var remainingServiceStore = null;
   var vehicle      = [req.body.veh_year, req.body.veh_make, req.body.veh_model].map(function(v){return (v||'').trim();}).filter(Boolean).join(' ');
   var serviceDate  = (req.body.serviceDate || '').trim() || easternToday();
   var address      = (req.body.serviceAddress || '').trim();
@@ -3504,6 +3570,9 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
   var discount     = parseFloat(req.body.discount)     || 0;
   var lineItems    = parseLineItems(req.body.customLineItems);
   var lineItemsJson = lineItems.length ? JSON.stringify(lineItems) : null;
+  // Per-service breakdown the owner entered — stored so a partial can be finalized at
+  // the exact price set (not re-priced from the standard table).
+  var svcLineItemsJson = (function(){ try { var a = JSON.parse(req.body.svcLineItems || '[]'); return Array.isArray(a) && a.length ? JSON.stringify(a) : null; } catch (_) { return null; } })();
   var cliSum       = lineItems.reduce(function(a, it){ return a + (Number(it.amount) || 0); }, 0);
   var total        = partsLabor + shopSupplies + cliSum + tax - discount;
   // Short-payment handling: the owner may accept less than the billed total (cash
@@ -3525,6 +3594,10 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     // so the difference is the outstanding balance. Excluded from reports until final.
     storedTotal  = hasReceived ? Math.round(amountReceived * 100) / 100 : 0;
     storedBilled = billedTotal;
+    // The receipt's `service` becomes the work completed THIS visit; what's left is
+    // stored in remaining_service. Both fall back to the full job string if not split.
+    if (completedService) service = completedService;
+    remainingServiceStore = remainingServiceStr || null;
   } else if (isFinalize) {
     // The field is the balance collected today; default to the full remaining balance.
     var collectedNow = hasReceived ? Math.round(amountReceived * 100) / 100 : Math.round((billedTotal - depositPaid) * 100) / 100;
@@ -3568,14 +3641,14 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     db.prepare(
       "UPDATE receipts SET service = ?, vehicle = ?, service_date = ?, service_address = ?, parts_labor = ?, "
       + "shop_supplies = ?, tax = ?, total = ?, billed_total = ?, deposit_paid = ?, tip = ?, payment_method = ?, "
-      + "customer_notes = ?, office_notes = ?, custom_line_items = ?, status = 'final', finalized_at = datetime('now') WHERE id = ?"
-    ).run(service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, storedDeposit, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, finalizeRow.id);
+      + "customer_notes = ?, office_notes = ?, custom_line_items = ?, svc_line_items = ?, remaining_service = NULL, status = 'final', finalized_at = datetime('now') WHERE id = ?"
+    ).run(service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, storedDeposit, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, svcLineItemsJson, finalizeRow.id);
     receiptId = finalizeRow.id;
   } else {
     var info = db.prepare(
-      'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status) '
-      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-    ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, receiptStatus);
+      'INSERT INTO receipts (lead_id, quote_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status, remaining_service, svc_line_items) '
+      + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).run(lead.id, quote ? quote.id : null, service, vehicle, serviceDate, address, partsLabor, shopSupplies, tax, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, lineItemsJson, receiptStatus, remainingServiceStore, svcLineItemsJson);
     receiptId = info.lastInsertRowid;
   }
 
@@ -3854,9 +3927,13 @@ function buildReceiptEmail(lead, r, notes) {
     + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:16px;">'
     + '<p style="font-weight:700;color:#0a1f3d;margin:0 0 10px;font-size:0.82rem;text-transform:uppercase;letter-spacing:.5px;">Service Details</p>'
     + '<table style="width:100%;border-collapse:collapse;font-size:0.9rem;color:#444;">'
-    + '<tr><td style="padding:5px 0;color:#888;width:90px;">Date</td><td style="padding:5px 0;">' + esc(fmtPrefDate(r.service_date)) + '</td></tr>'
+    + '<tr><td style="padding:5px 0;color:#888;width:120px;">Date</td><td style="padding:5px 0;">' + esc(fmtPrefDate(r.service_date)) + '</td></tr>'
     + (r.vehicle ? '<tr><td style="padding:5px 0;color:#888;">Vehicle</td><td style="padding:5px 0;">' + esc(r.vehicle) + '</td></tr>' : '')
-    + '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(joinServices(r.service) || r.service || '—') + '</td></tr>'
+    + (isPartial
+        // Split job: itemize what was finished now vs what's left for the return visit.
+        ? '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Completed this visit</td><td style="padding:5px 0;font-weight:600;">' + esc(joinServices(r.service) || r.service || '—') + '</td></tr>'
+          + (r.remaining_service ? '<tr><td style="padding:5px 0;color:#9a3412;vertical-align:top;">Remaining (next visit)</td><td style="padding:5px 0;font-weight:600;color:#9a3412;">' + esc(joinServices(r.remaining_service) || r.remaining_service) + '</td></tr>' : '')
+        : '<tr><td style="padding:5px 0;color:#888;vertical-align:top;">Service</td><td style="padding:5px 0;font-weight:600;">' + esc(joinServices(r.service) || r.service || '—') + '</td></tr>')
     + '</table></div>'
 
     + '<div style="background:#f4f7fb;border-radius:8px;padding:20px;margin-bottom:24px;">'
@@ -4234,6 +4311,7 @@ router.get('/quick', requireAuth, function(req, res) {
     + '<input type="checkbox" id="qPartial" name="partial" value="1" onchange="qPartialToggle()" style="margin-top:2px;width:18px;height:18px;flex-shrink:0;">'
     + '<span>Partial receipt &mdash; job continues<br><span style="font-weight:400;color:#888;font-size:0.82rem;">Documents what was paid so far; finalize from the new lead after the next visit. Not counted in reports until finalized.</span></span>'
     + '</label></div>'
+    + partialSplitCard('q', serviceNames, [], [], '', '')
     + '<div class="form-group" style="margin-bottom:0;"><label><span id="qRecLabel">Amount received</span> <span id="qRecHelp" style="color:#bbb;font-weight:400;">(optional — only if you collected a different amount than the total)</span></label>'
     + '<input class="price-input" type="number" name="amountReceived" id="qReceived" min="0" step="0.01" placeholder="Leave blank if paid in full" oninput="qReceivedHint()" onfocus="this.select()" style="text-align:left;width:100%;max-width:220px;">'
     + '<div id="qReceivedNote" style="font-size:0.82rem;margin-top:6px;color:#888;"></div></div>'
@@ -4373,13 +4451,17 @@ router.get('/quick', requireAuth, function(req, res) {
     +     'else{tnote.textContent="";}}'
     + '}'
     + 'function qIsPartial(){var c=document.getElementById("qPartial");return !!(c&&c.checked);}'
+    + partialSplitJs('q')
     + 'function qPartialToggle(){'
     +   'var on=qIsPartial();'
-    +   'var lbl=document.getElementById("qRecLabel");if(lbl)lbl.textContent=on?"Collected today":"Amount received";'
+    +   'var lbl=document.getElementById("qRecLabel");if(lbl)lbl.textContent=on?"Collected this visit":"Amount received";'
     +   'var help=document.getElementById("qRecHelp");if(help)help.innerHTML=on?"(what the customer paid on this visit)":"(optional \\u2014 only if you collected a different amount than the total)";'
+    +   'qSplitShow(on);'
     +   'qReceivedHint();'
     + '}'
     + 'function bkRecalc(){qcalc();qReceivedHint();}'
+    // Keep the Collected/Balance hint in sync with the live job total (see receipt builder).
+    + '(function(){if(typeof qcalc==="function"){var _o=qcalc;qcalc=function(){_o.apply(this,arguments);if(typeof qReceivedHint==="function")qReceivedHint();};}})();'
     + 'function qUpdateServices(){qUpdateServiceHidden();qRenderTags();qHints();qcalc();}'
 
     + 'function qPayToggle(){'
@@ -4834,11 +4916,18 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   var hasReceivedQQ  = rawReceived != null && String(rawReceived).trim() !== '' && !isNaN(amountReceived);
   var hasAdjustment  = !isPartialQQ && hasReceivedQQ && Math.abs(amountReceived - billedTotal) >= 0.005;
   var storedTotal, storedBilled;
+  var remainingServiceQQ = null;
   if (isPartialQQ) {
     // Collected today is recorded; the full job is billed, the difference is the
     // outstanding balance. Excluded from reports until finalized.
     storedTotal  = hasReceivedQQ ? Math.round(amountReceived * 100) / 100 : 0;
     storedBilled = billedTotal;
+    // Service split: `service` becomes the work completed this visit, remaining_service
+    // holds what's left (both fall back to the full job string if not split).
+    var qCompleted = (req.body.completedService || '').trim();
+    var qRemaining = (req.body.remainingService || '').trim();
+    if (qCompleted) service = qCompleted;
+    remainingServiceQQ = qRemaining || null;
   } else {
     storedTotal  = hasAdjustment ? Math.round(amountReceived * 100) / 100 : billedTotal;
     storedBilled = hasAdjustment ? billedTotal : null;
@@ -4860,9 +4949,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
   }
 
   var rInfo = db.prepare(
-    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status) '
-    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson, isPartialQQ ? 'partial' : 'final');
+    'INSERT INTO receipts (lead_id, service, vehicle, service_date, service_address, parts_labor, shop_supplies, tax, total, billed_total, tip, payment_method, customer_notes, office_notes, custom_line_items, status, remaining_service, svc_line_items) '
+    + 'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).run(leadId, service, vehicle, serviceDate, address, partsLabor, shopSupplies, taxAmt, storedTotal, storedBilled, tip, payment, JSON.stringify(notes), officeNotes, customLineItemsJson, isPartialQQ ? 'partial' : 'final', remainingServiceQQ, (req.body.svcLineItems && req.body.svcLineItems.trim()) ? req.body.svcLineItems.trim() : null);
   var receiptId = rInfo.lastInsertRowid;
 
   // Unify the service address + vehicle back onto the customer record.
@@ -5813,6 +5902,7 @@ router.get('/appointments', requireAuth, function(req, res) {
     + "(SELECT r.total FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_total, "
     + "(SELECT r.status FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_status, "
     + "(SELECT r.billed_total FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_billed, "
+    + "(SELECT r.remaining_service FROM receipts r WHERE r.lead_id = l.id ORDER BY r.id DESC LIMIT 1) AS receipt_remaining, "
     + "(SELECT ca.address FROM customer_addresses ca WHERE ca.customer_id = l.customer_id ORDER BY ca.id DESC LIMIT 1) AS cust_addr, "
     + "(SELECT TRIM(COALESCE(cv.year,'') || ' ' || COALESCE(cv.make,'') || ' ' || COALESCE(cv.model,'')) FROM customer_vehicles cv WHERE cv.customer_id = l.customer_id ORDER BY cv.id DESC LIMIT 1) AS cust_vehicle "
     + 'FROM leads l '
@@ -5883,7 +5973,11 @@ router.get('/appointments', requireAuth, function(req, res) {
     // BALANCE remaining, so the calendar reflects the continuation, not the old quote.
     var apptBalance = (apptPartial && a.receipt_billed != null)
       ? Math.max(0, Math.round((a.receipt_billed - (a.receipt_total || 0)) * 100) / 100) : null;
-    var svcLine = ((done || apptPartial) && a.receipt_service && a.receipt_service.trim()) ? a.receipt_service : (a.q_service || 'Service TBD');
+    // A partial appointment is the RETURN visit, so show the remaining work to be done;
+    // a finished job shows what was actually performed (from its receipt).
+    var svcLine = apptPartial
+      ? ((a.receipt_remaining && a.receipt_remaining.trim()) ? a.receipt_remaining : (a.receipt_service || a.q_service || 'Remaining work'))
+      : ((done && a.receipt_service && a.receipt_service.trim()) ? a.receipt_service : (a.q_service || 'Service TBD'));
     var amtVal  = apptPartial ? (apptBalance != null ? apptBalance : a.total) : ((done && a.receipt_total != null) ? a.receipt_total : a.total);
     var amtLabel = apptPartial && apptBalance != null ? 'Balance due ' : '';
     return '<div class="card appt-card" data-date="' + esc(a.pref_date || '') + '" onclick="if(!event.target.closest(\'a,button,select,form,input\')){window.location=\'/admin/quote/' + a.id + '\';}" style="cursor:pointer;border-left:4px solid ' + accent + ';margin-bottom:10px;">'
@@ -6143,7 +6237,9 @@ router.post('/lead/:id/schedule-return', requireAuth, express.urlencoded({ exten
   var balance = (partial && partial.billed_total != null)
     ? Math.max(0, Math.round((partial.billed_total - partial.total) * 100) / 100)
     : 0;
-  var svc = (partial && partial.service) || lead.service || 'Remaining brake service';
+  // The return visit is for the REMAINING work; fall back to the partial's service or
+  // the lead service if the job wasn't split into completed/remaining.
+  var svc = (partial && (partial.remaining_service || partial.service)) || lead.service || 'Remaining brake service';
   var location = (partial && partial.service_address) || '';
 
   // Move the existing approved appointment, or create one if none exists.
