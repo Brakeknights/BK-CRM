@@ -655,12 +655,17 @@ function reviewCheckinEmail(f) {
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div></div>';
 }
 
-setInterval(function() {
+function runFollowupCron() {
   if (!process.env.SMTP_PASS) return;
 
+  // Fall back to the linked customer's email when the lead row has none (phone /
+  // appointment-booked leads keep contact info on the customer record), so their
+  // one-week check-ins and reminders still reach the customer.
   var due = db.prepare(
-    "SELECT f.*, l.first_name, l.last_name, l.phone, l.email AS lead_email, l.vehicle "
+    "SELECT f.*, l.first_name, l.last_name, l.phone, "
+    + "COALESCE(NULLIF(TRIM(l.email), ''), c.email) AS lead_email, l.vehicle "
     + "FROM followups f JOIN leads l ON l.id = f.lead_id "
+    + "LEFT JOIN customers c ON c.id = l.customer_id "
     + "WHERE f.sent = 0 AND date(f.due_date) <= date('now')"
   ).all();
   if (due.length === 0) return;
@@ -701,7 +706,13 @@ setInterval(function() {
       }).catch(function(err) { console.error('Follow-up customer email error:', err.message); });
     }
   });
-}, 6 * 60 * 60 * 1000); // check every 6 hours
+}
+// Each deploy restarts the server, which resets the interval below to a fresh
+// 6-hour countdown. Without an initial run, frequent deploys could postpone due
+// follow-ups indefinitely (a check-in due today never fires because the server
+// keeps restarting before the first tick). Run once ~90s after boot, then every 6h.
+setTimeout(runFollowupCron, 90 * 1000);
+setInterval(runFollowupCron, 6 * 60 * 60 * 1000); // check every 6 hours
 
 // ─── Month-end receipt filing ─────────────────────────────────────────────────
 // At the turn of each month, automatically "file" the prior month's receipts:
