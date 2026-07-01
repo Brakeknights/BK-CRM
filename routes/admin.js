@@ -3103,6 +3103,19 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
 
 var PAYMENT_METHODS = ['Cash', 'Zelle', 'Credit/Debit Card', 'Other'];
 
+// Services that are diagnostic-only, not actual repair work. A receipt made up
+// ENTIRELY of these (e.g. a brake inspection where nothing was fixed) should not
+// trigger the automatic post-service check-in or the 6-month referral, since both
+// emails presume real brake work was done ("how are your brakes?" / "since we
+// serviced your brakes"). Any recognized repair, custom service, or unknown token
+// makes it a repair job and the emails send as normal.
+var NON_REPAIR_SERVICES = { 'brake inspection': 1, 'describe issue / not sure': 1 };
+function isInspectionOnly(serviceStr) {
+  var tokens = String(serviceStr || '').split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+  if (!tokens.length) return false; // no services listed → treat as a repair (send)
+  return tokens.every(function(t) { return NON_REPAIR_SERVICES[t]; });
+}
+
 // Renders one advisory row: a customer-facing note plus an optional date-picker
 // follow-up reminder. Pass hidden=true for rows 2-4 (shown via "+ Add Advisory").
 function advisoryRow(i, hidden) {
@@ -3674,8 +3687,10 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
         .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
     });
 
-    // Automatic one-week post-service check-in (how are your brakes? + review ask).
-    if (lead.email) {
+    // Automatic post-service check-in (how are your brakes? + review ask) and the
+    // 6-month referral. Skipped for inspection-only visits (no repairs made), since
+    // both emails presume real brake work was done.
+    if (lead.email && !isInspectionOnly(service)) {
       var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(lead.id);
       if (!hasCheckin) {
         // Split jobs: start the clock when the FINAL receipt is sent, never from the
@@ -4992,8 +5007,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         .run(leadId, receiptId, f.description, f.due_date, f.recipient);
     });
 
-    // Automatic one-week post-service check-in (how are your brakes? + review ask).
-    if (email) {
+    // Post-service check-in + 6-month referral. Skipped for inspection-only visits
+    // (no repairs made), since both emails presume real brake work was done.
+    if (email && !isInspectionOnly(service)) {
       var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(leadId);
       if (!hasCheckin) {
         var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
