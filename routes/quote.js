@@ -677,13 +677,14 @@ router.post('/:id/:token/cancel', express.urlencoded({ extended: false }), async
   if (!q) return res.status(404).send(shell('Quote Not Found', '<div class="card"><h1>Quote not found</h1></div>'));
 
   var reason = (req.body.cancelReason || '').trim();
-  // Mark the quote cancelled and return the lead to the open-quote pipeline stage.
+  // Mark the quote cancelled and move the lead to Follow Up so the owner sees it
+  // needs attention/rescheduling (same stage an owner-side cancellation lands in).
   db.prepare("UPDATE quotes SET status='cancelled' WHERE id=?").run(q.id);
-  db.prepare("UPDATE leads SET status='quoted', status_updated_at=datetime('now') WHERE id=?").run(q.lead_id);
+  db.prepare("UPDATE leads SET status='follow_up', status_updated_at=datetime('now') WHERE id=?").run(q.lead_id);
   db.prepare("INSERT INTO lead_history (lead_id, event, detail) VALUES (?, ?, ?)").run(
     q.lead_id, 'Customer cancelled appointment', reason || null
   );
-  sendStagePush({ id: q.lead_id, first_name: q.first_name, last_name: q.last_name, service: q.service }, 'quoted');
+  sendStagePush({ id: q.lead_id, first_name: q.first_name, last_name: q.last_name, service: q.service }, 'follow_up');
 
   if (process.env.SMTP_PASS) {
     try {

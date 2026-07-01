@@ -1656,7 +1656,7 @@ function buildAltDateOptions() {
 
 function buildAltTimeOptions() {
   var opts = '<option value="" disabled selected>Select a time...</option>';
-  for (var mins = 9 * 60; mins <= 18 * 60; mins += 30) {
+  for (var mins = 7 * 60; mins <= 21 * 60; mins += 30) {
     var h24 = Math.floor(mins / 60);
     var m = mins % 60;
     var ampm = h24 < 12 ? 'AM' : 'PM';
@@ -3283,7 +3283,7 @@ router.get('/receipt/:id', requireAuth, function(req, res) {
   });
 
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
-    return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+    return '<option value="' + esc(p) + '"' + (p === 'Credit/Debit Card' ? ' selected' : '') + '>' + esc(p) + '</option>';
   }).join('');
 
   var advisoryRows = advisoryRow(1, false);
@@ -4233,7 +4233,7 @@ router.get('/quick', requireAuth, function(req, res) {
     : '';
 
   var paymentOpts = PAYMENT_METHODS.map(function(p) {
-    return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+    return '<option value="' + esc(p) + '"' + (p === 'Credit/Debit Card' ? ' selected' : '') + '>' + esc(p) + '</option>';
   }).join('');
 
   var advisoryRows = advisoryRow(1, false);
@@ -5876,7 +5876,7 @@ router.post('/customer/:id/delete', requireAuth, express.urlencoded({ extended: 
 // Wider than the customer-facing picker on purpose — the owner has full control.
 function ownerTimeOptions(sel) {
   var o = '<option value="">-- Select time --</option>';
-  for (var mins = 8 * 60; mins <= 19 * 60; mins += 30) {
+  for (var mins = 7 * 60; mins <= 21 * 60; mins += 30) {
     var h24 = Math.floor(mins / 60), m = mins % 60;
     var ampm = h24 < 12 ? 'AM' : 'PM';
     var h12 = h24 % 12 === 0 ? 12 : h24 % 12;
@@ -5998,7 +5998,7 @@ router.get('/appointments', requireAuth, function(req, res) {
           : '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'
             + '<a href="/admin/appointments/' + a.id + '/edit" class="btn btn-sm" style="width:auto;background:#eef6ee;color:#1a7a3a;border:1px solid #b6dcc0;text-decoration:none;" onclick="event.stopPropagation();">' + ic('edit') + 'Edit</a>'
             + '<button type="button" class="btn btn-sm" style="width:auto;background:#f0f4ff;color:#1a6fc4;border:1px solid #b0c4e0;" onclick="apptToggleReschedule(' + a.id + ');event.stopPropagation();">' + ic('calendar') + 'Reschedule</button>'
-            + '<form method="POST" action="/admin/appointments/' + a.id + '/cancel" style="display:inline;margin:0;" onsubmit="return confirm(\'Cancel this appointment? The lead will return to the pipeline.\');">'
+            + '<form method="POST" action="/admin/appointments/' + a.id + '/cancel" style="display:inline;margin:0;" onsubmit="return confirm(\'Cancel this appointment? The lead will move to Follow Up.\');">'
             + '<button type="submit" class="btn btn-sm" style="width:auto;background:#fff3f3;color:#c0392b;border:1px solid #f5c6c6;" onclick="event.stopPropagation();">Cancel Appt</button>'
             + '</form>'
             + '</div>')
@@ -6160,7 +6160,7 @@ router.get('/appointments', requireAuth, function(req, res) {
   if (req.query.msg === 'rescheduled') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment rescheduled.</div>';
   if (req.query.msg === 'appt_updated') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment updated. The customer was not emailed.</div>';
   if (req.query.msg === 'appt_updated_email') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Appointment updated and an updated confirmation was emailed to the customer.</div>';
-  if (req.query.msg === 'cancelled') apptMsg = '<div class="alert" style="margin-bottom:14px;background:#fff8e1;border:1px solid #f0b429;color:#6b4c00;padding:10px 14px;border-radius:8px;">Appointment cancelled. Lead returned to pipeline.</div>';
+  if (req.query.msg === 'cancelled') apptMsg = '<div class="alert" style="margin-bottom:14px;background:#fff8e1;border:1px solid #f0b429;color:#6b4c00;padding:10px 14px;border-radius:8px;">Appointment cancelled. Lead moved to Follow Up.</div>';
   if (req.query.msg === 'blocked') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Time blocked off.</div>';
   if (req.query.msg === 'blockremoved') apptMsg = '<div class="alert alert-success" style="margin-bottom:14px;">Time block removed.</div>';
 
@@ -6338,10 +6338,10 @@ router.post('/appointments/:lead_id/cancel', requireAuth, function(req, res) {
   if (!lead) return res.redirect('/admin/appointments');
   db.prepare("UPDATE quotes SET pref_date = NULL, pref_time = NULL WHERE lead_id = ? AND status = 'approved'")
     .run(lead.id);
-  db.prepare("UPDATE leads SET status = 'approved', status_updated_at = datetime('now') WHERE id = ?")
+  db.prepare("UPDATE leads SET status = 'follow_up', status_updated_at = datetime('now') WHERE id = ?")
     .run(lead.id);
-  logHistory(lead.id, 'Appointment cancelled', 'Lead returned to pipeline');
-  sendStagePush(lead, 'approved');
+  logHistory(lead.id, 'Appointment cancelled', 'Lead moved to Follow Up for rescheduling');
+  sendStagePush(lead, 'follow_up');
   res.redirect('/admin/appointments?msg=cancelled');
 });
 

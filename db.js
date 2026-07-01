@@ -268,6 +268,15 @@ db.exec(`
     )
 `);
 
+// ─── Heal the phantom 'approved' lead status ───────────────────────────────────
+// Cancelling an appointment used to set the LEAD status to 'approved' — a value
+// that was never a real pipeline stage (no dropdown option, no color, no label),
+// so those leads rendered as a blank "APPROVED" badge with the status select stuck
+// on "New". 'approved' is only ever a valid status on the quotes table, never on
+// leads. Move any lead stranded there into 'follow_up' (the stage cancelled
+// appointments now land in). Idempotent — only touches leads still in that state.
+db.exec("UPDATE leads SET status = 'follow_up', status_updated_at = datetime('now') WHERE status = 'approved'");
+
 // ─── Customer home address ─────────────────────────────────────────────────────
 const custCols = db.prepare("PRAGMA table_info(customers)").all().map(c => c.name);
 if (!custCols.includes('home_address')) db.exec("ALTER TABLE customers ADD COLUMN home_address TEXT");
