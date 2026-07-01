@@ -3678,7 +3678,10 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
     if (lead.email) {
       var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(lead.id);
       if (!hasCheckin) {
-        var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        // Split jobs: start the clock when the FINAL receipt is sent, never from the
+        // earlier partial visit. On finalize, base the due date on today (the send day).
+        var baseDay = isFinalize ? easternToday()
+          : ((serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday());
         var _p = baseDay.split('-');
         var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
         _dt.setUTCDate(_dt.getUTCDate() + 7);
@@ -3691,7 +3694,9 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
       // of mind, no service reminder, no incentive). One per lead.
       var hasReferral = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'referral_6mo'").get(lead.id);
       if (!hasReferral) {
-        var _rb = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        // Same rule as the check-in: on finalize, count from the final-receipt send date.
+        var _rb = isFinalize ? easternToday()
+          : ((serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday());
         var _rp = _rb.split('-');
         var _rdt = new Date(Date.UTC(+_rp[0], +_rp[1] - 1, +_rp[2]));
         _rdt.setUTCMonth(_rdt.getUTCMonth() + 6);
