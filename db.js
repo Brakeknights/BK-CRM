@@ -233,7 +233,8 @@ if (!receiptCols.includes('svc_line_items')) db.exec("ALTER TABLE receipts ADD C
 
 // Follow-ups: `kind` distinguishes the cron email to send. 'advisory' (default) is
 // the original receipt-advisory reminder; 'review_checkin' is the automatic one-week
-// post-service check-in that also asks for a Google review.
+// post-service check-in that also asks for a Google review; 'referral_6mo' is the
+// automatic ~6-month "we're still here, send friends our way" referral note.
 const followupCols = db.prepare("PRAGMA table_info(followups)").all().map(c => c.name);
 if (!followupCols.includes('kind')) db.exec("ALTER TABLE followups ADD COLUMN kind TEXT NOT NULL DEFAULT 'advisory'");
 

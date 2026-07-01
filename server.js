@@ -655,6 +655,29 @@ function reviewCheckinEmail(f) {
     + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div></div>';
 }
 
+// Automatic ~6-month "we're still here" note. Stays top of mind and asks the
+// customer to send friends our way. Referral-only: no service reminder, no incentive.
+function referralEmail(f) {
+  function e(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  return '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;">'
+    + '<div style="background:#0a1f3d;padding:28px 32px;border-radius:8px 8px 0 0;text-align:center;">'
+    + '<h1 style="color:#fff;margin:0 0 4px;font-size:1.4rem;"><img src="https://brakeknights.com/images/favicon.png" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:10px;border-radius:6px;"> Brake Knights</h1>'
+    + '<p style="color:#8aadcf;margin:0;font-size:0.88rem;">Mobile Brake Service, Northern Virginia</p></div>'
+    + '<div style="padding:32px;border:1px solid #e0e7ef;border-top:none;border-radius:0 0 8px 8px;">'
+    + '<h2 style="color:#0a1f3d;margin:0 0 16px;">Hi ' + e(f.first_name) + ',</h2>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 16px;">It has been about six months since we serviced your brakes' + (f.vehicle ? ' on your <strong>' + e(f.vehicle) + '</strong>' : '') + '. We just wanted to say thanks again for trusting us with your vehicle, and to remind you we are still here whenever you need us.</p>'
+    + '<p style="color:#444;line-height:1.6;margin:0 0 24px;">We are a small, local team, and most of our work comes from customers who spread the word. If you know a friend, family member, or neighbor who needs brake work, we would be grateful if you pointed them our way. We will take great care of them, just like we did for you.</p>'
+    + '<div style="background:#f4f7fb;border:1px solid #dde7f2;border-radius:8px;padding:22px;text-align:center;">'
+    + '<p style="color:#0a1f3d;font-weight:700;margin:0 0 6px;font-size:1rem;">Know someone who needs brakes?</p>'
+    + '<p style="color:#555;line-height:1.6;margin:0 0 16px;font-size:0.92rem;">Send them our way, or pass along our number. We come to them, at home or work.</p>'
+    + '<a href="tel:7039774475" style="display:inline-block;background:#4169e1;color:#fff;font-weight:700;font-size:0.98rem;text-decoration:none;padding:13px 30px;border-radius:8px;margin:0 4px 8px;">Call or text 703-977-4475</a>'
+    + '<a href="https://brakeknights.com" style="display:inline-block;background:#fff;color:#0a1f3d;border:2px solid #4169e1;font-weight:700;font-size:0.98rem;text-decoration:none;padding:11px 26px;border-radius:8px;margin:0 4px 8px;">Visit brakeknights.com</a>'
+    + '</div>'
+    + '<p style="color:#444;line-height:1.6;margin:22px 0 0;">Thanks again, and we are always just a call or text away when you need us next.<br>The Brake Knights Team</p>'
+    + '</div>'
+    + '<div style="text-align:center;padding:16px;color:#aaa;font-size:0.78rem;">Brake Knights &middot; Call/Text 703-977-4475 &middot; brakeknights.com</div></div>';
+}
+
 function runFollowupCron() {
   if (!process.env.SMTP_PASS) return;
 
@@ -693,16 +716,21 @@ function runFollowupCron() {
       }).catch(function(err) { console.error('Follow-up owner email error:', err.message); });
     }
     if (toCustomer) {
-      var isCheckin = f.kind === 'review_checkin';
+      var isCheckin  = f.kind === 'review_checkin';
+      var isReferral = f.kind === 'referral_6mo';
+      var custSubject, custHtml;
+      if (isCheckin)       { custSubject = 'How are your brakes? A quick check-in from Brake Knights'; custHtml = reviewCheckinEmail(f); }
+      else if (isReferral) { custSubject = 'Thinking of Brake Knights? Send a friend our way';        custHtml = referralEmail(f); }
+      else                 { custSubject = 'A reminder from Brake Knights';                            custHtml = followupCustomerEmail(f); }
       transporter.sendMail({
         from:    '"Brake Knights" <greetings@brakeknights.com>',
         to:      f.lead_email,
-        // CC the owner on the one-week check-in so it's visible when (and that) it
-        // actually went out. A copy lands in greetings@brakeknights.com.
-        cc:      isCheckin ? 'greetings@brakeknights.com' : undefined,
+        // CC the owner on the automated touch emails (check-in + 6-month referral) so
+        // it's visible when and that they actually went out. A copy lands in greetings@.
+        cc:      (isCheckin || isReferral) ? 'greetings@brakeknights.com' : undefined,
         replyTo: 'greetings@brakeknights.com',
-        subject: isCheckin ? 'How are your brakes? A quick check-in from Brake Knights' : 'A reminder from Brake Knights',
-        html:    isCheckin ? reviewCheckinEmail(f) : followupCustomerEmail(f)
+        subject: custSubject,
+        html:    custHtml
       }).catch(function(err) { console.error('Follow-up customer email error:', err.message); });
     }
   });

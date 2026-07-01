@@ -3686,6 +3686,19 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
         db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
           .run(lead.id, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
       }
+
+      // Automatic ~6-month "we're still here" note that asks for referrals (stay top
+      // of mind, no service reminder, no incentive). One per lead.
+      var hasReferral = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'referral_6mo'").get(lead.id);
+      if (!hasReferral) {
+        var _rb = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        var _rp = _rb.split('-');
+        var _rdt = new Date(Date.UTC(+_rp[0], +_rp[1] - 1, +_rp[2]));
+        _rdt.setUTCMonth(_rdt.getUTCMonth() + 6);
+        var referralDue = _rdt.toISOString().slice(0, 10);
+        db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'referral_6mo')")
+          .run(lead.id, receiptId, 'Six-month referral request', referralDue, 'customer');
+      }
     }
 
     // Job done but receipt not delivered yet → 'completed'. Email below advances it
@@ -4985,6 +4998,19 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         var checkinDue = _dt.toISOString().slice(0, 10);
         db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
           .run(leadId, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+      }
+
+      // Automatic ~6-month "we're still here" note that asks for referrals (stay top
+      // of mind, no service reminder, no incentive). One per lead.
+      var hasReferral = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'referral_6mo'").get(leadId);
+      if (!hasReferral) {
+        var _rb = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        var _rp = _rb.split('-');
+        var _rdt = new Date(Date.UTC(+_rp[0], +_rp[1] - 1, +_rp[2]));
+        _rdt.setUTCMonth(_rdt.getUTCMonth() + 6);
+        var referralDue = _rdt.toISOString().slice(0, 10);
+        db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'referral_6mo')")
+          .run(leadId, receiptId, 'Six-month referral request', referralDue, 'customer');
       }
     }
   }
