@@ -470,10 +470,26 @@ function schedulingPanel(lead, quote, compact) {
   if (!quote || !quote.accepted_at || !quote.pref_date) return '';
   var pad = compact ? '12px' : '16px';
   if (lead.status === 'booked') {
+    // On the full lead page (not compact board cards), surface whether the customer
+    // can actually be emailed: offer a one-tap resend, or flag a missing email so the
+    // owner knows the confirmation never reached them.
+    var confirmExtra = '';
+    if (!compact) {
+      confirmExtra = lead.email
+        ? '<form method="POST" action="/admin/quote/' + lead.id + '/resend-confirmation" data-noswap style="margin:10px 0 0;">'
+          + '<button type="submit" class="btn btn-sm btn-outline" style="width:auto;">Resend confirmation</button>'
+          + '<span style="font-size:0.78rem;color:#888;margin-left:8px;">to ' + esc(lead.email) + '</span>'
+          + '</form>'
+        : '<div style="margin:10px 0 0;background:#fff3f3;border:1px solid #f5c6c6;border-left:4px solid #c0392b;border-radius:8px;padding:10px 12px;">'
+          + '<div style="font-weight:700;color:#c0392b;font-size:0.83rem;">&#9888; No email on file</div>'
+          + '<div style="font-size:0.8rem;color:#7a2a22;margin-top:2px;line-height:1.45;">This customer never received a confirmation. Add an email on the Contact Info card below, then use Resend confirmation.</div>'
+          + '</div>';
+    }
     return '<div style="background:#eaf6ee;border:1px solid #bfe3cb;border-radius:8px;padding:' + pad + ';margin-bottom:12px;">'
       + '<div style="font-weight:700;color:#1a7a3a;font-size:0.9rem;">&#10003; Appointment confirmed</div>'
       + '<div style="color:#444;font-size:0.85rem;margin-top:3px;">' + esc(fmtPrefDate(quote.pref_date)) + ' at ' + esc(quote.pref_time || '—') + '</div>'
       + (quote.pref_location ? '<div style="font-size:0.83rem;margin-top:2px;">' + mapsLink(quote.pref_location, { style: 'color:#1a6fc4;text-decoration:none;' }) + '</div>' : '')
+      + confirmExtra
       + '</div>';
   }
   if (lead.status !== 'quote_accepted') return '';
@@ -489,6 +505,7 @@ function schedulingPanel(lead, quote, compact) {
     + '<div style="font-size:0.88rem;color:#1a2a3a;">' + esc(fmtPrefDate(quote.pref_date)) + ' at <strong>' + esc(quote.pref_time || 'time TBD') + '</strong></div>'
     + (quote.pref_location ? '<div style="font-size:0.83rem;margin-top:2px;">' + mapsLink(quote.pref_location, { style: 'color:#1a6fc4;text-decoration:none;' }) + '</div>' : '')
     + (quote.scheduling_notes ? '<div style="font-size:0.82rem;color:#666;font-style:italic;margin-top:4px;">' + esc(quote.scheduling_notes) + '</div>' : '')
+    + (!compact && !lead.email ? '<div style="margin-top:10px;background:#fff3f3;border:1px solid #f5c6c6;border-left:4px solid #c0392b;border-radius:8px;padding:9px 11px;font-size:0.8rem;color:#7a2a22;line-height:1.45;"><strong style="color:#c0392b;">&#9888; No email on file.</strong> Approving now won&rsquo;t send a confirmation. Add the customer&rsquo;s email on the Contact Info card first.</div>' : '')
     + '<div style="display:flex;gap:8px;margin-top:12px;">'
     + '<a href="/admin/quote/' + lead.id + '/approve-schedule" data-noswap class="btn btn-sm" style="flex:1;text-align:center;background:#1a7a3a;color:#fff;border:none;">&#10003; Approve Time</a>'
     + '<a href="/admin/quote/' + lead.id + '/deny-schedule" data-noswap class="btn btn-sm" style="flex:1;text-align:center;background:#c0392b;color:#fff;border:none;">&#10005; Not Available</a>'
@@ -1674,6 +1691,7 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
   if (!lead) return res.redirect('/admin');
   var quote = db.prepare('SELECT * FROM quotes WHERE lead_id = ? AND accepted_at IS NOT NULL ORDER BY id DESC LIMIT 1').get(lead.id);
   if (!quote) return res.redirect('/admin/quote/' + lead.id + '?msg=no_accepted_quote');
+  backfillLeadContact(lead); // use the linked customer's email if the lead has none
 
   db.prepare("UPDATE leads SET status = 'booked', status_updated_at = datetime('now') WHERE id = ?").run(lead.id);
   // Mark the accepted quote as approved so it appears on the appointments calendar
@@ -1774,7 +1792,37 @@ router.get('/quote/:id/approve-schedule', requireAuth, async function(req, res) 
       await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, cc: 'greetings@brakeknights.com', subject: 'Your appointment is confirmed — Brake Knights', html });
     } catch (err) { console.error('Approve schedule email error:', err.message); }
   }
-  res.redirect('/admin/quote/' + lead.id + '?msg=approved');
+  res.redirect('/admin/quote/' + lead.id + '?msg=' + (lead.email ? 'approved' : 'approved_no_email'));
+});
+
+// Resend the branded appointment confirmation for a booked lead. For customers who
+// had no email when the appointment was confirmed (or a send that failed): the owner
+// adds the email to the contact card, then resends the exact same confirmation.
+router.post('/quote/:id/resend-confirmation', requireAuth, async function(req, res) {
+  var lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(req.params.id);
+  if (!lead) return res.redirect('/admin');
+  backfillLeadContact(lead); // pull email from the linked customer if the lead lacks it
+  var quote = db.prepare("SELECT * FROM quotes WHERE lead_id = ? AND status = 'approved' AND pref_date IS NOT NULL ORDER BY id DESC LIMIT 1").get(lead.id);
+  if (!quote) return res.redirect('/admin/quote/' + lead.id + '?msg=resend_no_appt');
+  if (!process.env.SMTP_PASS || !lead.email) return res.redirect('/admin/quote/' + lead.id + '?msg=resend_no_email');
+  try {
+    var tx = nodemailer.createTransport({ host: 'smtp.hostinger.com', port: 465, secure: true, auth: { user: 'greetings@brakeknights.com', pass: process.env.SMTP_PASS } });
+    var baseUrl = (req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host');
+    var li = quoteLineItemsParts(quote.line_items);
+    var html = appointmentEmailHtml({
+      firstName: lead.first_name, service: quote.service, vehicle: lead.vehicle,
+      parts: quote.price_parts, labor: quote.price_labor, supplies: quote.shop_supplies, tax: quote.tax, total: quote.total,
+      svcLineItems: li.svc, customLineItems: li.custom, discount: quote.discount, discountLabel: quote.discount_label, customerNotes: quote.customer_notes,
+      pref_date: quote.pref_date, pref_time: quote.pref_time, pref_location: quote.pref_location,
+      baseUrl: baseUrl, quoteId: quote.id, token: quote.accept_token, isUpdate: false
+    });
+    await tx.sendMail({ from: '"Brake Knights" <greetings@brakeknights.com>', to: lead.email, cc: 'greetings@brakeknights.com', subject: 'Your appointment is confirmed - Brake Knights', html: html });
+    logHistory(lead.id, 'Confirmation email resent', lead.email);
+    return res.redirect('/admin/quote/' + lead.id + '?msg=confirmation_resent');
+  } catch (err) {
+    console.error('Resend confirmation error:', err.message);
+    return res.redirect('/admin/quote/' + lead.id + '?msg=resend_err');
+  }
 });
 
 router.get('/quote/:id/deny-schedule', requireAuth, function(req, res) {
@@ -2418,6 +2466,11 @@ router.get('/quote/:id', requireAuth, function(req, res) {
 
   var quoteAlert = '';
   if (req.query.msg === 'approved')   quoteAlert = '<div class="alert alert-success">Time confirmed. Customer notified.</div>';
+  if (req.query.msg === 'approved_no_email') quoteAlert = '<div class="alert alert-error" style="background:#fff3f3;color:#7a2a22;border-color:#f5c6c6;">Time confirmed and the appointment is booked, but there is <strong>no email on file</strong>, so no confirmation was sent. Add the customer&rsquo;s email on the Contact Info card, then use <strong>Resend confirmation</strong>.</div>';
+  if (req.query.msg === 'confirmation_resent') quoteAlert = '<div class="alert alert-success">Confirmation email resent to the customer.</div>';
+  if (req.query.msg === 'resend_no_email') quoteAlert = '<div class="alert alert-error" style="background:#fff3f3;color:#7a2a22;border-color:#f5c6c6;">No email on file. Add the customer&rsquo;s email on the Contact Info card, then resend.</div>';
+  if (req.query.msg === 'resend_no_appt') quoteAlert = '<div class="alert alert-error">No booked appointment found to resend a confirmation for.</div>';
+  if (req.query.msg === 'resend_err') quoteAlert = '<div class="alert alert-error">Could not resend the confirmation email. Check your connection and try again.</div>';
   if (req.query.msg === 'denied')     quoteAlert = '<div class="alert alert-error" style="background:#fff8e1;color:#7a5a00;border-color:#f0d080;">Time denied. Customer notified — we\'ll reach out to reschedule.</div>';
   if (req.query.msg === 'quote_sent') quoteAlert = '<div class="alert alert-success">Quote sent to customer successfully.</div>';
   if (req.query.msg === 'quote_sent_sep') quoteAlert = '<div class="alert alert-success">Sent as a separate quote. This is a new lead, so both quotes now track through the pipeline independently.</div>';
@@ -3103,6 +3156,19 @@ function buildQuoteEmail(lead, service, tier, parts, labor, shopSupplies, tax, t
 
 var PAYMENT_METHODS = ['Cash', 'Zelle', 'Credit/Debit Card', 'Other'];
 
+// Services that are diagnostic-only, not actual repair work. A receipt made up
+// ENTIRELY of these (e.g. a brake inspection where nothing was fixed) should not
+// trigger the automatic post-service check-in or the 6-month referral, since both
+// emails presume real brake work was done ("how are your brakes?" / "since we
+// serviced your brakes"). Any recognized repair, custom service, or unknown token
+// makes it a repair job and the emails send as normal.
+var NON_REPAIR_SERVICES = { 'brake inspection': 1, 'describe issue / not sure': 1 };
+function isInspectionOnly(serviceStr) {
+  var tokens = String(serviceStr || '').split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+  if (!tokens.length) return false; // no services listed → treat as a repair (send)
+  return tokens.every(function(t) { return NON_REPAIR_SERVICES[t]; });
+}
+
 // Renders one advisory row: a customer-facing note plus an optional date-picker
 // follow-up reminder. Pass hidden=true for rows 2-4 (shown via "+ Add Advisory").
 function advisoryRow(i, hidden) {
@@ -3674,17 +3740,37 @@ router.post('/receipt/:id/send', requireAuth, express.urlencoded({ extended: fal
         .run(lead.id, receiptId, f.description, f.due_date, f.recipient);
     });
 
-    // Automatic one-week post-service check-in (how are your brakes? + review ask).
-    if (lead.email) {
+    // Automatic post-service check-in (how are your brakes? + review ask) and the
+    // 6-month referral. Skipped for inspection-only visits (no repairs made), since
+    // both emails presume real brake work was done.
+    if (lead.email && !isInspectionOnly(service)) {
       var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(lead.id);
       if (!hasCheckin) {
-        var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        // Split jobs: start the clock when the FINAL receipt is sent, never from the
+        // earlier partial visit. On finalize, base the due date on today (the send day).
+        var baseDay = isFinalize ? easternToday()
+          : ((serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday());
         var _p = baseDay.split('-');
         var _dt = new Date(Date.UTC(+_p[0], +_p[1] - 1, +_p[2]));
         _dt.setUTCDate(_dt.getUTCDate() + 7);
         var checkinDue = _dt.toISOString().slice(0, 10);
         db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
           .run(lead.id, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+      }
+
+      // Automatic ~6-month "we're still here" note that asks for referrals (stay top
+      // of mind, no service reminder, no incentive). One per lead.
+      var hasReferral = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'referral_6mo'").get(lead.id);
+      if (!hasReferral) {
+        // Same rule as the check-in: on finalize, count from the final-receipt send date.
+        var _rb = isFinalize ? easternToday()
+          : ((serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday());
+        var _rp = _rb.split('-');
+        var _rdt = new Date(Date.UTC(+_rp[0], +_rp[1] - 1, +_rp[2]));
+        _rdt.setUTCMonth(_rdt.getUTCMonth() + 6);
+        var referralDue = _rdt.toISOString().slice(0, 10);
+        db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'referral_6mo')")
+          .run(lead.id, receiptId, 'Six-month referral request', referralDue, 'customer');
       }
     }
 
@@ -4974,8 +5060,9 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         .run(leadId, receiptId, f.description, f.due_date, f.recipient);
     });
 
-    // Automatic one-week post-service check-in (how are your brakes? + review ask).
-    if (email) {
+    // Post-service check-in + 6-month referral. Skipped for inspection-only visits
+    // (no repairs made), since both emails presume real brake work was done.
+    if (email && !isInspectionOnly(service)) {
       var hasCheckin = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'review_checkin'").get(leadId);
       if (!hasCheckin) {
         var baseDay = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
@@ -4985,6 +5072,19 @@ router.post('/quick', requireAuth, express.urlencoded({ extended: false }), asyn
         var checkinDue = _dt.toISOString().slice(0, 10);
         db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'review_checkin')")
           .run(leadId, receiptId, 'One-week check-in and Google review request', checkinDue, 'customer');
+      }
+
+      // Automatic ~6-month "we're still here" note that asks for referrals (stay top
+      // of mind, no service reminder, no incentive). One per lead.
+      var hasReferral = db.prepare("SELECT 1 FROM followups WHERE lead_id = ? AND kind = 'referral_6mo'").get(leadId);
+      if (!hasReferral) {
+        var _rb = (serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)) ? serviceDate : easternToday();
+        var _rp = _rb.split('-');
+        var _rdt = new Date(Date.UTC(+_rp[0], +_rp[1] - 1, +_rp[2]));
+        _rdt.setUTCMonth(_rdt.getUTCMonth() + 6);
+        var referralDue = _rdt.toISOString().slice(0, 10);
+        db.prepare("INSERT INTO followups (lead_id, receipt_id, description, due_date, recipient, kind) VALUES (?,?,?,?,?, 'referral_6mo')")
+          .run(leadId, receiptId, 'Six-month referral request', referralDue, 'customer');
       }
     }
   }
@@ -6486,6 +6586,7 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     + '<div class="card">'
     + '<label style="display:flex;align-items:center;gap:10px;font-weight:500;cursor:pointer;">'
     + '<input type="checkbox" name="send_email" value="1" style="width:18px;height:18px;"> Send confirmation email to customer</label>'
+    + '<div id="apptEmailWarn" style="display:none;margin-top:10px;background:#fff3f3;border:1px solid #f5c6c6;border-left:4px solid #c0392b;border-radius:8px;padding:9px 11px;font-size:0.82rem;color:#7a2a22;line-height:1.45;"><strong style="color:#c0392b;">&#9888; No email on file for this customer.</strong> They will not receive a confirmation. Add an email above to send one.</div>'
     + '</div>'
 
     + '<button type="button" id="apptPreviewBtn" class="btn btn-outline" style="margin-bottom:8px;" onclick="apptPreview()">Preview Email</button>'
@@ -6584,6 +6685,17 @@ router.get('/appointments/new', requireAuth, function(req, res) {
     +     'var q=inp.value.trim().toLowerCase();'
     +     'if(q){var hits=CUST_LIST.filter(function(c){return c.search.indexOf(q)!==-1;}).slice(0,8);showDrop(hits);}'
     +   '});'
+    + '})();'
+    // Live "no email on file" flag: once a customer is picked (or a new one is being
+    // entered) with no email, warn that no confirmation can be sent. Polls because the
+    // hidden email field is set programmatically by the picker/autofill (no events).
+    + '(function(){'
+    +   'var warn=document.getElementById("apptEmailWarn");if(!warn)return;'
+    +   'function eff(){var h=(document.getElementById("apptCustEmail")||{}).value||"";var ce=document.querySelector("[name=cust_email]");return (h||(ce&&ce.value)||"").trim();}'
+    +   'function upd(){var hasCust=((document.getElementById("apptCustId")||{}).value||"")!=="";var fn=(document.querySelector("[name=cust_first]")||{}).value||"";var engaged=hasCust||fn.trim()!=="";warn.style.display=(engaged&&!eff())?"block":"none";}'
+    +   'var ce=document.querySelector("[name=cust_email]");if(ce)ce.addEventListener("input",upd);'
+    +   'var cf=document.querySelector("[name=cust_first]");if(cf)cf.addEventListener("input",upd);'
+    +   'setInterval(upd,400);upd();'
     + '})();'
     // Shared quote pricing wiring (per-service rows, tier, calc, tags, hints).
     + quotePricingJs('appt')
